@@ -1,0 +1,22 @@
+# Rails
+/log/*
+/tmp/*
+/storage/*
+!/log/.keep
+!/tmp/.keep
+!/storage/.keep
+/db/*.sqlite3
+/db/*.sqlite3-*
+config/master.key
+config/credentials/*.key
+.env*
+
+# Kamal
+.kamal/
+
+# Node / Frontend
+frontend/node_modules/
+frontend/dist/
+
+# OS
+.DS_Store
