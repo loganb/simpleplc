@@ -9,7 +9,7 @@
 # One RTUClient is opened per HostInterface per cycle so the half-duplex
 # RS-485 bus is never accessed concurrently.
 
-POLL_INTERVAL = 1 # seconds
+POLL_INTERVAL = 10 # seconds
 
 Rails.logger.info "Poller starting (interval: #{POLL_INTERVAL}s)"
 
@@ -27,7 +27,7 @@ loop do
           parity:    iface.parity.to_sym
         ) do |client|
           client.read_retry_timeout = 0.5
-          client.read_retries = 1
+          client.read_retries = 2
 
           iface.devices.each do |device|
             state = begin
