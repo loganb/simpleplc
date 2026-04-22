@@ -1,5 +1,3 @@
-// @ts-nocheck
-// @ts-nocheck
 import {EventEmitter} from 'fbemitter';
 import RateLimiter from './RateLimiter';
 
@@ -18,10 +16,11 @@ export interface TxnResult {
   readonly status: 'succeeded' | 'error',
   readonly seq: number,
   readonly id: RecordId | null,
-  readonly errors?: any
+  readonly errors?: unknown
 }
 
-export interface Record {
+//
+interface RecordFlags {
   readonly _loading: boolean,
   readonly _loaded: boolean,
   readonly _found: boolean,
@@ -29,14 +28,14 @@ export interface Record {
   readonly _new?: boolean, 
   readonly _error?: number, 
   readonly lock_version?: number,
-  readonly id?: RecordId
+  readonly id: RecordId
 }
 export type Identifiable = {id: RecordId};
 /*
  * ExtantRecord<T> is guaranteed to have an 'id', but isn't necessarily found yet
  *
  */
-export type ExtantRecord<T extends Identifiable> = Record & {id: RecordId<T['id']>}; //Guaranteed to have an Id, some placeholder loading records don't guarantee this
+export type ExtantRecord<T extends Identifiable> = RecordFlags & {id: RecordId<T['id']>}; //Guaranteed to have an Id, some placeholder loading records don't guarantee this
 
 /*
  * A record that isn't found, so it has no data
@@ -48,7 +47,7 @@ type NotFoundRecord<T extends Identifiable> = (ExtantRecord<T> & {_found: false}
  */
 export type FoundRecord<T extends Identifiable> = (ExtantRecord<T> & {_found: true}) & Omit<T,'id'>;
 export type ModelRecord<T extends Identifiable> = NotFoundRecord<T> | FoundRecord<T>;
-export type LoadingRecord<T extends Identifiable> = Record & {_loading: true, _found: false} & Pick<T,'id'>;
+export type LoadingRecord<T extends Identifiable> = RecordFlags & {_loading: true, _found: false} & Pick<T,'id'>;
 export type ExistingRecord<T extends Identifiable> = FoundRecord<T> & { _new: false | undefined } & Pick<T, 'id'>;
 
 export type IdType<FIELDS extends Identifiable> = ModelRecord<FIELDS>['id'];
@@ -56,13 +55,12 @@ export type IdType<FIELDS extends Identifiable> = ModelRecord<FIELDS>['id'];
 /*
  * On New Records, the id column is an opaque object, and all fields are optional. 
  */
-export type NewRecord<T> = Record & Partial<Omit<T,'id'>> & {id: NewRecordId, _new: true}; //These are returned from new()
+export type NewRecord<T> = RecordFlags & Partial<Omit<T,'id'>> & {id: NewRecordId, _new: true}; //These are returned from new()
 // Type for what is patchable by the patch method
 export type PatchRecord<T> = Partial<Omit<T,'id'>>;
-export type SingletonRecord<T> = Record & {id: null} & T;
 
 //Array of actual records
-export interface ReifiedQueryResult<T extends Identifiable, MD = any, RecordType = ModelRecord<T>> extends Array<RecordType> {
+export interface ReifiedQueryResult<T extends Identifiable, MD = unknown, RecordType = ModelRecord<T>> extends Array<RecordType> {
   readonly _loading: boolean,
   readonly _loaded: boolean,
   readonly _found: boolean,
@@ -82,7 +80,7 @@ interface QueryResult extends Array<RecordId> {
   readonly _epoch: number,
   readonly _seq?: number,
   readonly _error?: number,
-  readonly metadata?: any,
+  readonly metadata?: unknown,
 }
 
 export type IoOp = {
@@ -106,6 +104,7 @@ export type IoOp = {
  * the models. 
  * 
  */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export interface _ModelDefinition<T extends Identifiable> {
   name: string,
   inflections: {
@@ -117,7 +116,6 @@ export interface _ModelDefinition<T extends Identifiable> {
 }
 export type SingletonModelDefinition<T extends Identifiable> = _ModelDefinition<T> & {singleton: true};
 export type ModelDefinition<T extends Identifiable> = _ModelDefinition<T> & {singleton: false};
-// export type ModelDefinition<T> = MultitonModelDefinition<T> | SingletonModelDefinition<T>;
 
 class BaseModel<T extends Identifiable> {
   readonly name: string;
@@ -128,7 +126,7 @@ class BaseModel<T extends Identifiable> {
   readonly server_side_new: boolean;
 
   queries: Map<string | null, Map<string,QueryResult>>;
-  instances: Map<RecordId | null,Record|SingletonRecord<T>>; //Null is allowed for singletons
+  instances: Map<RecordId,RecordFlags>;
   query_epoch: number;
 
   store: RestfulModelStore;
@@ -155,7 +153,7 @@ class Model<T extends Identifiable> extends BaseModel<T> {
     return this.store.fetchMulti(this,ids,force);
   }
 
-  public queryFor(name: string | null, arg: any) : ReifiedQueryResult<T> {
+  public queryFor(name: string | null, arg: Record<string, unknown> | null) : ReifiedQueryResult<T> {
     return this.store.queryFor(this, name, arg);
   };
   public destroy(id: RecordId) : Txn {
@@ -175,15 +173,16 @@ class Model<T extends Identifiable> extends BaseModel<T> {
   }
 }
 
+//TODO: The name is used as a standin for the id since we don't have one for singletons. Not sure what the best way is to handle this. 
 class SingletonModel<T extends Identifiable> extends BaseModel<T> {
   public readonly singleton = true;
-  
+
   fetch(force = false) : ModelRecord<T> {
-    return this.store.fetch(this, null, force);
+    return this.store.fetch(this, this.name, force);
   }
 
   destroy() : Txn {
-    return this.store.destroy(this, null);
+    return this.store.destroy(this, this.name);
   }
 
   create(record: Partial<T>) : Txn {
@@ -191,7 +190,7 @@ class SingletonModel<T extends Identifiable> extends BaseModel<T> {
   }
 
   patch(changes: Partial<T>) : Txn {
-    return this.store.patch(this, null, changes);
+    return this.store.patch(this, this.name, changes);
   }
 }
 
@@ -209,7 +208,7 @@ export default class RestfulModelStore extends EventEmitter {
   axios: AxiosInstance;
   models: {[modelName: string]: Model<Identifiable>|SingletonModel<Identifiable>};
   txns: WeakMap<Txn,TxnResult>;
-  news: WeakMap<NewRecordId, any>;
+  news: WeakMap<NewRecordId, Identifiable>;
   seq: number;
   is_dirty: boolean = false;
 
@@ -217,7 +216,7 @@ export default class RestfulModelStore extends EventEmitter {
   io_timeout?: number;
   io_rate_limiter = new RateLimiter({initialRps: 10});
 
-  constructor(axios: any) {
+  constructor(axios: AxiosInstance) {
     super();
     this.axios  = axios;
     this.models = {};
@@ -272,12 +271,13 @@ export default class RestfulModelStore extends EventEmitter {
   }
 
   // Returns a model for the given id
-  fetch<T extends Identifiable>(model: Model<T> | SingletonModel<T>, id: RecordId | null, force: boolean = false) : NotFoundRecord<T> | FoundRecord<T> {
+  fetch<T extends Identifiable>(model: Model<T> | SingletonModel<T>, id: RecordId, force: boolean = false) : NotFoundRecord<T> | FoundRecord<T> {
     if((typeof(id) === 'undefined' || id == null) && !model.singleton) {
       throw new Error("Whoops!");
     }
     //See if we get a hit in the unsaved set, followed by the cache, otherwise kick off a load cycle
-    var exists = true, record = this.fetchNewRecord(model, id) || model.instances.get(id) || {
+    let exists = true;
+    const record = this.fetchNewRecord(model, id) || model.instances.get(id) || {
       _loading: true,
       _loaded:  exists = false,
       _found:   false,
@@ -286,19 +286,19 @@ export default class RestfulModelStore extends EventEmitter {
     };
     if(!exists || (record && record._loaded && force)) {
       //Always return a blank object
-      model.instances.set(id, record as any); //TODO: Fix types here
+      model.instances.set(id, record);
       this.soil();
       this.io_queue.enqueue({
         io_type: 'fetch',
         model: model,
         run_time: 0, //The distant past, so means "right now"
-        record: record as any, //TODO
+        record: record,
       });
       this.schedule_queue_processing();
     }
 
     this.emit('loadSequence',record._seq);
-    return record as any; //TODO fix this type assertion
+    return record;
     //return this.models.get(id) || ret;
   }
 
@@ -312,7 +312,7 @@ export default class RestfulModelStore extends EventEmitter {
    */
   create<T extends Identifiable>(model: Model<T>|SingletonModel<T>, record: Partial<T>) {
     const {id, ...record_params} = record;
-    let new_record = {...record_params, ...{
+    const new_record = {...record_params, ...{
       _loading: true,
       _loaded:  false,
       _found:   true,
@@ -321,15 +321,15 @@ export default class RestfulModelStore extends EventEmitter {
     const txn = { record: new_record, seq: new_record._seq };
 
 
-    var url = "/" + encodeURIComponent(model.singleton ? model.name : model.inflections.plural) + '.json';
+    const url = "/" + encodeURIComponent(model.singleton ? model.name : model.inflections.plural) + '.json';
 
-    let request = this.axios.post(url,
+    const request = this.axios.post(url,
       {[model.name]: record_params},
       {
       }
     );
 
-    request.then((response: any) => {
+    request.then((response) => {
       //Put all the new entities in
       this.update_store(response);
 
@@ -348,7 +348,7 @@ export default class RestfulModelStore extends EventEmitter {
       //Will force a reload of queries
       model.query_epoch++;
       this.soil();
-    }).catch((error: any) => {
+    }).catch((error) => {
       const response = error.response;
       this.txns.set(txn, {
         id: null,
@@ -366,13 +366,13 @@ export default class RestfulModelStore extends EventEmitter {
    * Creates a new, blank record that can later be "patched" but will actually do a "create"
    */
   new<T extends Identifiable>(model: Model<T>|SingletonModel<T>, initial_fields: Partial<Omit<T,"id">>) : NewRecord<T> {
-    var id = {
+    const id = {
       seq: this.seq++,
       //To madke it usable as, e.g., a key in a React list
       toString() { return "new-"+this.seq; }
     } as NewRecordId; //Opaque object as the id
 
-    var ret = Object.assign({},initial_fields,{
+    const ret = Object.assign({},initial_fields,{
       _loading: model.server_side_new,
       _loaded:  true,
       _found:   !model.server_side_new, //It's not considered "found" until a round-trip to the server
@@ -386,7 +386,7 @@ export default class RestfulModelStore extends EventEmitter {
       const query_string = JSON.stringify({[model.name]: initial_fields});
       const url = "/" + encodeURIComponent(model.singleton ? model.name : model.inflections.plural) + '/new.json?json=' + encodeURIComponent(query_string);
 
-      let request = this.axios.get(url,
+      const request = this.axios.get(url,
         {
           headers: {
             'X-CSRF-Token': document.head.querySelector('meta[name=csrf-token]')!.getAttribute('content')
@@ -394,11 +394,12 @@ export default class RestfulModelStore extends EventEmitter {
         }
       );
 
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       request.then((response: any) => {
         //These will only be "ancillary" records, not the new object
         this.update_store(response);
   
-        let new_object = response.data.data as T; //The new record
+        const new_object = response.data.data as T; //The new record
 
         this.news.set(id, Object.assign({},
           ret,
@@ -407,7 +408,8 @@ export default class RestfulModelStore extends EventEmitter {
         ));
 
         this.soil();
-      }).catch((error: any) => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      }).catch((_error) => {
         //TODO: Does not handle errors on new correctly, can safely retry
         // const response = error.response;
 
@@ -438,8 +440,8 @@ export default class RestfulModelStore extends EventEmitter {
     return txn_result;
   }
 
-  destroy<T extends Identifiable>(model: Model<T>|SingletonModel<T>, id: T['id'] | null) {
-    let new_record = this.news.get(id as NewRecordId);
+  destroy<T extends Identifiable>(model: Model<T>|SingletonModel<T>, id: T['id']) : Txn {
+    const new_record = this.news.get(id as NewRecordId);
     if(new_record) {
       //We're destroying a record that never existed in the first place
       this.news.delete(id as NewRecordId);
@@ -462,9 +464,9 @@ export default class RestfulModelStore extends EventEmitter {
     this.soil();
 
 
-    let url = "/" + encodeURIComponent(model.singleton ? model.name : model.inflections.plural) + (id ? ('/' + encodeURIComponent(id.toString())) : '') + '.json';
+    const url = "/" + encodeURIComponent(model.singleton ? model.name : model.inflections.plural) + (id ? ('/' + encodeURIComponent(id.toString())) : '') + '.json';
 
-    let request = this.axios.delete(url,
+    const request = this.axios.delete(url,
       {
         headers: {
           'X-CSRF-Token': document.head.querySelector('meta[name=csrf-token]')!.getAttribute('content')
@@ -486,9 +488,9 @@ export default class RestfulModelStore extends EventEmitter {
       model.instances.delete(id);
 
       this.soil();
-    }).catch((e: any) => (console.log("ERROR 2!!",e))); //TODO: Handle errors
+    }).catch((e) => (console.log("ERROR 2!!",e))); //TODO: Handle errors
 
-    request.catch((e: any) => (
+    request.catch((e) => (
       console.log("Something bad happened during the destroy", e)
     ));
 
@@ -503,16 +505,16 @@ export default class RestfulModelStore extends EventEmitter {
    */
   patch<T extends Identifiable>(model: Model<T>|SingletonModel<T>, id: RecordId | null, changes: Partial<T>) : Txn {
     //Do a create instead if this is a model created from new()
-    let new_record = this.news.get(id as NewRecordId);
+    const new_record = this.news.get(id as NewRecordId);
     if(typeof(new_record) === 'object') {
       const initial_values = ObjectFilterBy(new_record, (k) => (k[0] !== '_'))
       return this.create(model, {...initial_values, ...changes, id: id});
     }
     const txn = { model: model.name, id: id, changes: changes, seq: this.seq++ };
 
-    var url = "/" + encodeURIComponent(model.singleton ? model.name : model.inflections.plural) + (id ? ('/' + encodeURIComponent(id.toString())) : '');
+    const url = "/" + encodeURIComponent(model.singleton ? model.name : model.inflections.plural) + (id ? ('/' + encodeURIComponent(id.toString())) : '');
 
-    let request = this.axios.patch(url,
+    const request = this.axios.patch(url,
       {[model.name]: changes},
       {
         headers: {
@@ -521,6 +523,7 @@ export default class RestfulModelStore extends EventEmitter {
       }
     );
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     request.then((response: any) => {
       //Put all the new entities in
       this.update_store(response);
@@ -547,8 +550,9 @@ export default class RestfulModelStore extends EventEmitter {
     return txn;
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   queryFor<T extends Identifiable>(model: Model<T>, name: string | null, arg: any) : ReifiedQueryResult<T> {
-    var canonName = name;
+    const canonName = name;
     const canonArg  = this.canonicalize_query(arg);
     const querySet  = this.queriesForName(model, canonName);
     const epochAtStart = model.query_epoch;
@@ -577,7 +581,7 @@ export default class RestfulModelStore extends EventEmitter {
       querySet.set(canonArg, unresolvedResult);
     }
 
-    let ret = Object.assign(
+    const ret = Object.assign(
       unresolvedResult.map((id) => (this.fetch(model, id))),
       {
         _loading: unresolvedResult._loading || doLoad,
@@ -623,9 +627,9 @@ export default class RestfulModelStore extends EventEmitter {
 
   emptyLoadingQuery<T extends Identifiable>() : LoadingQueryResult<T> {
     const q : LoadingQueryResult<T> = Object.assign([],{
-      _loading: true as true,
-      _loaded: false as false,
-      _found: false as false
+      _loading: true as const,
+      _loaded: false as const,
+      _found: false as const
     });
     return q;
   }
@@ -641,7 +645,7 @@ export default class RestfulModelStore extends EventEmitter {
 
   // null is allowed for "name" for queries that don't specify a sub-route, e.g. "/my_models?q={some_query:'foo'}"
   private queriesForName<T extends Identifiable>(model: Model<T>, name: string | null): Map<string | null, QueryResult> {
-    var q = model.queries;
+    const q = model.queries;
     return q.get(name) || q.set(name, new Map()).get(name)!;
   }
 
@@ -651,7 +655,7 @@ export default class RestfulModelStore extends EventEmitter {
   // }
 
   //converts the arg into a JSON-able object that represents the query params
-  private canonicalize_query(arg: any) {
+  private canonicalize_query(arg: Record<string, unknown> | null) : string | null {
     if(!arg) return null;
     if(typeof arg !== "object" || Array.isArray(arg)) {
       throw new Error("Canonicalizer must be passed an object at the top level");
@@ -661,6 +665,7 @@ export default class RestfulModelStore extends EventEmitter {
   }
 
   // Internal helper that returns an object ready to be serialized
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private canonicalize_query_obj(arg: any) : any {
     if(arg === undefined || arg === null) {
       return null;
@@ -672,9 +677,9 @@ export default class RestfulModelStore extends EventEmitter {
       return arg;
     } else if(typeof arg === 'object') {
       //JS enumerates properties in insertion order, so this standardizes the property order to guarantee identical serialization
-      const ret = {} as any;
+      const ret = {} as Record<string, unknown>;
       const props = Object.getOwnPropertyNames(arg).sort();
-      for(let k of props) {
+      for(const k of props) {
         ret[k] = this.canonicalize_query_obj(arg[k]);
       }
       return ret;
@@ -683,6 +688,7 @@ export default class RestfulModelStore extends EventEmitter {
     }
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   update_store(response: any) {
     const update_seq = this.seq++;
     // Invalidate anything specified in the invalidates clause
@@ -701,19 +707,19 @@ export default class RestfulModelStore extends EventEmitter {
     }
 
     // Read any model objects in the response
-    for(let model of Object.values(this.models)) {
+    for(const model of Object.values(this.models)) {
       if(model.singleton) {
         if(response.data[model.name]) {
-          let item = response.data[model.name];
+          const item = response.data[model.name];
           item._loading = false; item._loaded = true;item._found = true;item._seq = update_seq;
-          model.instances.set(null, item);
+          model.instances.set(model.name, item);
         }
       } else {
-        for(let item of (response.data[model.inflections.plural] || [])) {
+        for(const item of (response.data[model.inflections.plural] || [])) {
           item._loading = false; item._loaded = true;item._found = true;
 
           //If a lock_version exists on the model, it's used to avoid unnecessary repaints
-          let orig = model.instances.get(item.id);
+          const orig = model.instances.get(item.id);
           if(!orig || !orig.lock_version || !item.lock_version || orig.lock_version !== item.lock_version)
             item._seq = update_seq;
           else
@@ -753,12 +759,12 @@ export default class RestfulModelStore extends EventEmitter {
         headers: {
           Accept: 'application/json'
         }
-      }))).then((response: any) => {
+      }))).then((response) => {
         if(op.io_type === 'query') {
           const query = op.query;
           //Extra work of responding to the query-specific portion
           //Get the IDs out of the query
-          let queryResults = response.data.query;
+          const queryResults = response.data.query;
           queryResults._loading = false;
           queryResults._loaded  = true;
           queryResults._found   = true;
@@ -769,7 +775,7 @@ export default class RestfulModelStore extends EventEmitter {
         }
         //This updates the model store which is uniform across both queries & fetches
         this.update_store(response);
-      }).catch((error: any) => {
+      }).catch((error) => {
         let retriable_error, terminal_error;
         if(op.io_type === 'fetch') {
           const id = op.record.id;
@@ -809,7 +815,7 @@ export default class RestfulModelStore extends EventEmitter {
           const query = op.query;
           const error_count = query.error_count + 1;
           terminal_error = () => {
-            let queryResults = Object.assign([], {
+            const queryResults = Object.assign([], {
               _loaded: true,
               _loading: false,
               _found: false,
@@ -819,7 +825,7 @@ export default class RestfulModelStore extends EventEmitter {
             this.queriesForName(model as Model<Identifiable>, query.name).set(query.name, queryResults);
           }
           retriable_error = () => {
-            let queryResults = Object.assign([], {
+            const queryResults = Object.assign([], {
               _loaded: true,
               _loading: true,
               _found: false,
@@ -888,13 +894,13 @@ export default class RestfulModelStore extends EventEmitter {
 }
 
 
-function ObjectFilterBy(obj: any, predicate: (k: any) => boolean) {
+function ObjectFilterBy(obj: Record<string,unknown>, predicate: (k: string) => boolean) {
   return Object.keys(obj)
     .filter(key => predicate(key))
     .reduce((out, key) => {
       out[key] = obj[key];
       return out;
-    }, {} as any);
+    }, {} as Record<string,unknown>);
 }
 
 /****
