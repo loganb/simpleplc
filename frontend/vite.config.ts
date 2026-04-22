@@ -11,4 +11,10 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  server: {
+    proxy: {
+      '/devices': 'http://localhost:3000',
+      '/host_interfaces': 'http://localhost:3000',
+    },
+  },
 })

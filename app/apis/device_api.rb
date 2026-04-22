@@ -5,6 +5,10 @@ class DeviceApi < RestfulApi
     scope
   end
 
+  def expound(objects)
+    HostInterface.where(id: objects.map(&:host_interface_id).uniq)
+  end
+
   def serialize(device)
     {
       id:               device.id,
