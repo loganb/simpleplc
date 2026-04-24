@@ -4,19 +4,29 @@
 # Delegates all query, access-control, and serialization logic to a
 # companion API class named <ModelName>Api (see RestfulApi).
 #
-# Response format:
+# Response format (compatible with RestfulModelStore client):
 #
+#   Index:
 #   {
-#     "objects": {
-#       "ClassName":  [ { …serialized… }, … ],
-#       "OtherClass": [ … ]
-#     },
-#     "metadata":   { … },   // optional, from api_instance.query_metadata
-#     "invalidates": { … }   // optional, on mutating responses
+#     "query":      [id1, id2, …],
+#     "devices":    [ { …serialized… }, … ],
+#     "host_interfaces": [ … ],
+#     "metadata":   { … }
 #   }
 #
-# For create, the root key is "object" (singular) for the primary resource,
-# alongside the "objects" sidecar for expounded records.
+#   Show / Update:
+#   {
+#     "devices":    [ { …serialized… } ],
+#     "host_interfaces": [ … ],
+#     "invalidates": { … }
+#   }
+#
+#   Create:
+#   {
+#     "id":         123,
+#     "devices":    [ { …serialized… } ],
+#     "invalidates": { … }
+#   }
 #
 module RestfulApiController
   extend ActiveSupport::Concern
@@ -72,7 +82,8 @@ module RestfulApiController
 
     expounded = expounded_objects_for(objects)
 
-    response_json = { objects: serialize_by_class(objects.concat(expounded)) }
+    response_json = serialize_flat(objects + expounded)
+    response_json[:query] = objects.map(&:id)
     response_json[:metadata] = metadata if metadata
     render json: response_json
   end
@@ -89,7 +100,7 @@ module RestfulApiController
     objects   = fetched_objects.select.each_with_index { |_o, i| permissions[i] }
     expounded = expounded_objects_for(objects)
 
-    render json: { objects: serialize_by_class(objects.concat(expounded)) }
+    render json: serialize_flat(objects.concat(expounded))
   end
 
   # POST /resources
@@ -100,11 +111,9 @@ module RestfulApiController
     object    = api_instance.create(request_params)
     expounded = expounded_objects_for([object])
 
-    response_json = {
-      object:     api_instance.serialize(object),
-      objects:    serialize_by_class(expounded + [object]),
-      invalidates: api_instance.invalidates(object)
-    }
+    response_json = serialize_flat(expounded + [object])
+    response_json[:id] = object.id
+    response_json[:invalidates] = api_instance.invalidates(object)
     render json: response_json, status: :created
   end
 
@@ -118,10 +127,9 @@ module RestfulApiController
     object    = api_instance.new(request_params)
     expounded = expounded_objects_for([object])
 
-    render json: {
-      object:  api_instance.serialize(object),
-      objects: serialize_by_class(expounded)
-    }
+    response_json = serialize_flat(expounded)
+    response_json[:data] = api_instance.serialize(object)
+    render json: response_json
   end
 
   # PATCH/PUT /resources/:id
@@ -135,10 +143,9 @@ module RestfulApiController
     api_instance.update(object, request_params)
     expounded = expounded_objects_for([object])
 
-    render json: {
-      objects:    serialize_by_class([object].concat(expounded)),
-      invalidates: api_instance.invalidates(object)
-    }
+    response_json = serialize_flat([object].concat(expounded))
+    response_json[:invalidates] = api_instance.invalidates(object)
+    render json: response_json
   end
 
   # DELETE /resources/:id
@@ -165,14 +172,21 @@ module RestfulApiController
       .reduce([]) { |memo, class_objs| memo.concat(class_objs) }
   end
 
-  # Groups objects by class name and serializes each using the appropriate API instance.
-  # Returns a hash like: { "Device" => [{…}, …], "Reading" => [{…}, …] }
-  def serialize_by_class(objects)
+  # Groups objects by pluralized underscore class name and serializes each.
+  # Returns a flat hash like: { "devices" => [{…}, …], "host_interfaces" => [{…}, …] }
+  def serialize_flat(objects)
     objects
-      .group_by { |o| o.class.respond_to?(:api_class_name) ? o.class.api_class_name : o.class.name }
+      .group_by { |o| api_class_name_for(o.class) }
+      .transform_keys { |name| name.underscore.pluralize.to_sym }
       .transform_values do |group|
         inst = api_instance_for(group.first.class)
         group.map { |o| inst.serialize(o) }
       end
+  end
+
+  # Returns the API-facing class name for a model class.
+  # Supports STI via an optional .api_class_name class method.
+  def api_class_name_for(clazz)
+    clazz.respond_to?(:api_class_name) ? clazz.api_class_name : clazz.name
   end
 end

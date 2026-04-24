@@ -2,9 +2,13 @@ import axios from 'axios';
 import RestfulModelStore from './lib/RestfulModelStore';
 import type { ModelDefinition } from './lib/RestfulModelStore';
 
+// In production, override via the global. In dev, hit localhost Rails.
+const API_BASE = (globalThis as Record<string, unknown>).PLC_API_BASE as string
+  ?? 'http://localhost:3000';
+
 const AxiosClient = axios.create({
-  baseURL: '',
-  headers: { Accept: 'application/json' }
+  baseURL: API_BASE,
+  headers: { Accept: 'application/json' },
 });
 
 const Store = new RestfulModelStore(AxiosClient);
@@ -31,7 +35,7 @@ export interface DeviceFields {
 export const Device: ModelDefinition<DeviceFields> = {
   name: 'device',
   inflections: { plural: 'devices', title: 'Device' },
-  singleton: false
+  singleton: false,
 };
 
 export interface HostInterfaceFields {
@@ -46,7 +50,7 @@ export interface HostInterfaceFields {
 export const HostInterface: ModelDefinition<HostInterfaceFields> = {
   name: 'host_interface',
   inflections: { plural: 'host_interfaces', title: 'HostInterface' },
-  singleton: false
+  singleton: false,
 };
 
 export { AxiosClient, Store };

@@ -1,11 +1,9 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { useLoaders } from "@/lib/DataLoader2"
-import { Store, Device, HostInterface } from "@/store"
-import type { DeviceFields, HostInterfaceFields } from "@/store"
-import type { FoundRecord, ReifiedQueryResult } from "@/lib/RestfulModelStore"
+import { useLoaders } from './lib/DataLoader2';
+import { Store, Device, HostInterface } from './store';
+import type { DeviceFields, HostInterfaceFields } from './store';
+import type { FoundRecord, ReifiedQueryResult } from './lib/RestfulModelStore';
 
-function App() {
+export function App() {
   const { devices, interfaces } = useLoaders(() => {
     const devices = Store.m(Device).queryFor(null, {});
     const interfaces = Store.m(HostInterface).queryFor(null, {});
@@ -13,17 +11,17 @@ function App() {
   }, [Store]);
 
   return (
-    <div className="min-h-screen bg-background">
-      <header className="border-b px-6 py-4">
-        <h1 className="text-2xl font-bold tracking-tight">PLC Controller</h1>
-        <p className="text-sm text-muted-foreground">HVAC Monitoring Dashboard</p>
+    <div class="min-h-screen bg-surface">
+      <header class="border-b border-border px-6 py-4">
+        <h1 class="text-2xl font-bold tracking-tight">PLC Controller</h1>
+        <p class="text-sm text-text-muted">HVAC Monitoring Dashboard</p>
       </header>
 
-      <main className="p-6">
+      <main class="p-6">
         {!devices._loaded ? (
-          <p className="text-muted-foreground">Loading devices...</p>
+          <p class="text-text-muted">Loading devices...</p>
         ) : (
-          <div className="grid gap-4 md:grid-cols-3">
+          <div class="grid gap-4 md:grid-cols-3">
             {devices.map((device) => (
               <DeviceCard
                 key={device.id as number}
@@ -35,100 +33,98 @@ function App() {
         )}
       </main>
     </div>
-  )
+  );
 }
 
 function DeviceCard({ device, interfaces }: {
-  device: ReifiedQueryResult<DeviceFields>[number],
-  interfaces: ReifiedQueryResult<HostInterfaceFields>
+  device: ReifiedQueryResult<DeviceFields>[number];
+  interfaces: ReifiedQueryResult<HostInterfaceFields>;
 }) {
   if (!device._found) return null;
-  const found = device as FoundRecord<DeviceFields>;
-  const state = found.current_state;
-  const iface = interfaces.find((i) => i._found && (i as FoundRecord<HostInterfaceFields>).id === found.host_interface_id);
+  const d = device as FoundRecord<DeviceFields>;
+  const state = d.current_state;
+  const iface = interfaces.find((i) => i._found && (i as FoundRecord<HostInterfaceFields>).id === d.host_interface_id);
   const ifaceFound = iface?._found ? iface as FoundRecord<HostInterfaceFields> : null;
 
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-sm font-medium">{found.name}</CardTitle>
+    <div class="rounded-lg border border-border bg-surface p-4 space-y-3">
+      <div class="flex items-center justify-between">
+        <h2 class="text-sm font-semibold">{d.name}</h2>
         <StatusBadge status={state?.status ?? null} />
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <span>Addr {found.modbus_address}</span>
-          {ifaceFound && <span>on {ifaceFound.port}</span>}
-        </div>
+      </div>
 
-        {state?.data && <DeviceData data={state.data} driver={found.driver} />}
+      <div class="flex items-center gap-2 text-xs text-text-muted">
+        <span>Addr {d.modbus_address}</span>
+        {ifaceFound && <span>on {ifaceFound.port}</span>}
+      </div>
 
-        {state?.polled_at && (
-          <p className="text-xs text-muted-foreground">
-            Polled: {new Date(state.polled_at).toLocaleTimeString()}
-          </p>
-        )}
-      </CardContent>
-    </Card>
+      {state?.data && <DeviceData data={state.data} />}
+
+      {state?.polled_at && (
+        <p class="text-xs text-text-muted">
+          Polled: {new Date(state.polled_at).toLocaleTimeString()}
+        </p>
+      )}
+    </div>
   );
 }
 
 function StatusBadge({ status }: { status: string | null }) {
-  if (status === "ok") {
-    return <Badge className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">OK</Badge>;
+  if (status === 'ok') {
+    return <span class="inline-block rounded-full bg-ok-bg px-2 py-0.5 text-xs font-medium text-ok">OK</span>;
   }
-  if (status === "error") {
-    return <Badge variant="destructive">Error</Badge>;
+  if (status === 'error') {
+    return <span class="inline-block rounded-full bg-error-bg px-2 py-0.5 text-xs font-medium text-error">Error</span>;
   }
-  return <Badge variant="outline">Unknown</Badge>;
+  return <span class="inline-block rounded-full bg-surface-alt px-2 py-0.5 text-xs font-medium text-text-muted">Unknown</span>;
 }
 
-function DeviceData({ data }: { data: Record<string, unknown>, driver: string }) {
-  if ("temperatures" in data) {
+function DeviceData({ data }: { data: Record<string, unknown> }) {
+  if ('temperatures' in data) {
     const temps = data.temperatures as (number | null)[];
-    const active = temps.map((t, i) => ({ ch: i + 1, temp: t })).filter((t) => t.temp !== null);
+    const active = temps
+      .map((t, i) => ({ ch: i + 1, temp: t }))
+      .filter((t) => t.temp !== null);
 
     return (
-      <div className="grid grid-cols-2 gap-1">
+      <div class="grid grid-cols-2 gap-1">
         {active.map(({ ch, temp }) => (
-          <div key={ch} className="flex justify-between rounded bg-muted px-2 py-1 text-sm">
-            <span className="text-muted-foreground">Ch {ch}</span>
-            <span className="font-mono font-medium">{temp!.toFixed(1)}&deg;C</span>
+          <div key={ch} class="flex justify-between rounded bg-surface-alt px-2 py-1 text-sm">
+            <span class="text-text-muted">Ch {ch}</span>
+            <span class="font-mono font-medium">{temp!.toFixed(1)}&deg;C</span>
           </div>
         ))}
         {active.length === 0 && (
-          <p className="col-span-2 text-xs text-muted-foreground">No active channels</p>
+          <p class="col-span-2 text-xs text-text-muted">No active channels</p>
         )}
       </div>
     );
   }
 
-  if ("outputs" in data && "inputs" in data) {
+  if ('outputs' in data && 'inputs' in data) {
     const outputs = data.outputs as boolean[];
     const inputs = data.inputs as boolean[];
-
     return (
-      <div className="space-y-2">
+      <div class="space-y-2">
         <IORow label="Outputs" values={outputs} />
         <IORow label="Inputs" values={inputs} />
       </div>
     );
   }
 
-  return <pre className="text-xs overflow-auto">{JSON.stringify(data, null, 2)}</pre>;
+  return <pre class="text-xs overflow-auto">{JSON.stringify(data, null, 2)}</pre>;
 }
 
-function IORow({ label, values }: { label: string, values: boolean[] }) {
+function IORow({ label, values }: { label: string; values: boolean[] }) {
   return (
     <div>
-      <p className="text-xs text-muted-foreground mb-1">{label}</p>
-      <div className="flex gap-1">
+      <p class="text-xs text-text-muted mb-1">{label}</p>
+      <div class="flex gap-1">
         {values.map((v, i) => (
           <div
             key={i}
-            className={`h-6 w-6 rounded text-center text-xs leading-6 font-mono ${
-              v
-                ? "bg-green-500 text-white"
-                : "bg-muted text-muted-foreground"
+            class={`h-6 w-6 rounded text-center text-xs leading-6 font-mono ${
+              v ? 'bg-ok text-white' : 'bg-surface-alt text-text-muted'
             }`}
           >
             {i + 1}
@@ -138,5 +134,3 @@ function IORow({ label, values }: { label: string, values: boolean[] }) {
     </div>
   );
 }
-
-export default App

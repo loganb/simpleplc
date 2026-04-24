@@ -104,8 +104,9 @@ export type IoOp = {
  * the models. 
  * 
  */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export interface _ModelDefinition<T extends Identifiable> {
+  /** Phantom field — carries the record type T through the type system. Never set at runtime. */
+  readonly __recordType?: T,
   name: string,
   inflections: {
     title: string,
