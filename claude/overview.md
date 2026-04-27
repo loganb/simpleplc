@@ -2,12 +2,12 @@
 
 ## Purpose
 
-HVAC PLC controller application — a web interface for controlling HVAC programmable logic controllers.
+HVAC PLC controller application — a web interface for monitoring and controlling HVAC programmable logic controllers over Modbus.
 
 ## Architecture
 
-- **Backend**: Rails 8.1 in API-only mode (no server-rendered views), serving JSON.
-- **Frontend**: React 19 + TypeScript SPA built with Vite, lives in `frontend/`. Uses shadcn/ui (Radix + Tailwind CSS v4) for components and styling. Dev server on port 5173, Rails API on port 3000.
+- **Backend**: Rails 8.1 in API-only mode, serving JSON via RestfulApiController + RestfulApi pattern.
+- **Frontend**: Preact + TypeScript, bundled with esbuild, styled with Tailwind CSS v4. Lives in `frontend/`. Designed for static deployment (S3, GitHub Pages). Communicates with Rails via CORS.
 - **Database**: SQLite3 (via the Solid stack — Solid Queue, Solid Cache, Solid Cable — no Redis needed).
 - **Real-time**: ActionCable backed by Solid Cable for WebSocket support.
 - **Deployment**: Docker + Kamal, with Thruster for HTTP caching/compression.
@@ -15,12 +15,24 @@ HVAC PLC controller application — a web interface for controlling HVAC program
 
 ## Current State
 
-Backend has Modbus polling working — three devices (DS18B20 temp board, NTC temp board, relay I/O board) are being polled and their state stored in the `devices` table (`current_state` JSON column). Frontend has a placeholder dashboard shell with shadcn/ui Card components for each device.
+- **Modbus polling** working — three devices (DS18B20 temp board, NTC temp board, relay I/O board) polled and state stored in `devices.current_state` JSON column.
+- **REST API** exposes devices, host_interfaces, measurements, and measurement_data with the RestfulApiController pattern (flat JSON wire format compatible with RestfulModelStore).
+- **Measurements** — named values with a source device + JSON path (e.g. `temperatures[4]`), update period, optional units. `measurement_data` table stores timestamped float readings.
+- **Frontend dashboard** shows device cards with live data + measurement cards with latest values + CRUD form for measurements.
 
 ## Key Entry Points
 
-- `bin/dev` / `Procfile.dev` — starts both Rails and Vite dev servers.
-- `config/routes.rb` — empty, ready for API routes.
-- `frontend/src/App.tsx` — main dashboard component.
-- `frontend/src/components/ui/` — shadcn/ui components (add more via `npx shadcn@latest add <component>`).
-- `frontend/src/lib/utils.ts` — shadcn utility (cn class merger).
+- `config/routes.rb` — resources for host_interfaces, devices, measurements, measurement_data.
+- `app/apis/` — RestfulApi subclasses (DeviceApi, HostInterfaceApi, MeasurementApi, MeasurementDatumApi).
+- `lib/restful_api_controller.rb` — controller mixin providing REST actions.
+- `frontend/src/App.tsx` — main Preact dashboard component.
+- `frontend/src/store.ts` — RestfulModelStore instance + model definitions.
+- `frontend/src/lib/` — RestfulModelStore, DataLoader2, TreeStore, RateLimiter, MemoryStore (ported from BioTrack).
+- `frontend/build.mjs` — esbuild config (dev server on port 5174, or static build to `public/`).
+
+## Data Model
+
+- `host_interfaces` — serial port config (port, baud, parity, etc.)
+- `devices` — Modbus devices (belongs_to host_interface, driver, modbus_address, current_state JSON)
+- `measurements` — named values (name, source_type, device_id, source_path, update_period, units)
+- `measurement_data` — time-series readings (measurement_id, value float nullable, recorded_at)

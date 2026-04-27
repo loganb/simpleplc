@@ -158,7 +158,8 @@ class SubTree<TT extends UXTreeDefinition> extends EventEmitter implements URLTr
 }
 
 // Example tree structure definition
-export type ExampleTreeDefinition = {
+/*
+type ExampleTreeDefinition = {
   data: { counter: number };
   pages: {
     home: {
@@ -173,3 +174,4 @@ export type ExampleTreeDefinition = {
     };
   };
 };
+*/

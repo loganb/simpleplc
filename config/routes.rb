@@ -7,4 +7,6 @@ Rails.application.routes.draw do
 
   resources :host_interfaces
   resources :devices
+  resources :measurements
+  resources :measurement_data, only: [ :index, :show, :create ]
 end

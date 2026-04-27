@@ -1,5 +1,3 @@
-// @ts-nocheck
-// @ts-nocheck
 import {EventEmitter} from 'fbemitter';
 
 

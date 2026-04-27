@@ -53,4 +53,35 @@ export const HostInterface: ModelDefinition<HostInterfaceFields> = {
   singleton: false,
 };
 
+export interface MeasurementFields {
+  id: number;
+  name: string;
+  source_type: string;
+  device_id: number | null;
+  source_path: string | null;
+  update_period: number;
+  units: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export const Measurement: ModelDefinition<MeasurementFields> = {
+  name: 'measurement',
+  inflections: { plural: 'measurements', title: 'Measurement' },
+  singleton: false,
+};
+
+export interface MeasurementDatumFields {
+  id: number;
+  measurement_id: number;
+  value: number | null;
+  recorded_at: string;
+}
+
+export const MeasurementDatum: ModelDefinition<MeasurementDatumFields> = {
+  name: 'measurement_datum',
+  inflections: { plural: 'measurement_data', title: 'MeasurementDatum' },
+  singleton: false,
+};
+
 export { AxiosClient, Store };

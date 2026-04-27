@@ -1,13 +1,17 @@
+import { useState } from 'preact/hooks';
 import { useLoaders } from './lib/DataLoader2';
-import { Store, Device, HostInterface } from './store';
-import type { DeviceFields, HostInterfaceFields } from './store';
-import type { FoundRecord, ReifiedQueryResult } from './lib/RestfulModelStore';
+import { Store, Device, HostInterface, Measurement, MeasurementDatum } from './store';
+import type { DeviceFields, HostInterfaceFields, MeasurementFields, MeasurementDatumFields } from './store';
+import type { FoundRecord, ReifiedQueryResult, Txn } from './lib/RestfulModelStore';
 
 export function App() {
-  const { devices, interfaces } = useLoaders(() => {
+  const [showForm, setShowForm] = useState<number | 'new' | null>(null);
+
+  const { devices, interfaces, measurements } = useLoaders(() => {
     const devices = Store.m(Device).queryFor(null, {});
     const interfaces = Store.m(HostInterface).queryFor(null, {});
-    return { devices, interfaces };
+    const measurements = Store.m(Measurement).queryFor(null, {});
+    return { devices, interfaces, measurements };
   }, [Store]);
 
   return (
@@ -17,24 +21,263 @@ export function App() {
         <p class="text-sm text-text-muted">HVAC Monitoring Dashboard</p>
       </header>
 
-      <main class="p-6">
-        {!devices._loaded ? (
-          <p class="text-text-muted">Loading devices...</p>
-        ) : (
-          <div class="grid gap-4 md:grid-cols-3">
-            {devices.map((device) => (
-              <DeviceCard
-                key={device.id as number}
-                device={device}
-                interfaces={interfaces}
-              />
-            ))}
+      <main class="p-6 space-y-8">
+        {/* Devices */}
+        <section>
+          <h2 class="text-lg font-semibold mb-4">Devices</h2>
+          {!devices._loaded ? (
+            <p class="text-text-muted">Loading devices...</p>
+          ) : (
+            <div class="grid gap-4 md:grid-cols-3">
+              {devices.map((device) => (
+                <DeviceCard key={device.id as number} device={device} interfaces={interfaces} />
+              ))}
+            </div>
+          )}
+        </section>
+
+        {/* Measurements */}
+        <section>
+          <div class="flex items-center justify-between mb-4">
+            <h2 class="text-lg font-semibold">Measurements</h2>
+            <button
+              class="rounded bg-active px-3 py-1.5 text-sm font-medium text-white hover:opacity-90"
+              onClick={() => setShowForm('new')}
+            >
+              + New Measurement
+            </button>
           </div>
-        )}
+
+          {showForm !== null && (
+            <MeasurementForm
+              editId={showForm === 'new' ? null : showForm}
+              devices={devices}
+              onClose={() => setShowForm(null)}
+            />
+          )}
+
+          {!measurements._loaded ? (
+            <p class="text-text-muted">Loading measurements...</p>
+          ) : measurements.length === 0 ? (
+            <p class="text-text-muted">No measurements configured yet.</p>
+          ) : (
+            <div class="grid gap-4 md:grid-cols-3">
+              {measurements.map((m) => (
+                <MeasurementCard
+                  key={m.id as number}
+                  measurement={m}
+                  devices={devices}
+                  onEdit={(id) => setShowForm(id)}
+                />
+              ))}
+            </div>
+          )}
+        </section>
       </main>
     </div>
   );
 }
+
+// ---------------------------------------------------------------------------
+// Measurement components
+// ---------------------------------------------------------------------------
+
+function MeasurementCard({ measurement, devices, onEdit }: {
+  measurement: ReifiedQueryResult<MeasurementFields>[number];
+  devices: ReifiedQueryResult<DeviceFields>;
+  onEdit: (id: number) => void;
+}) {
+  if (!measurement._found) return null;
+  const m = measurement as FoundRecord<MeasurementFields>;
+
+  const { latest } = useLoaders(() => {
+    const data = Store.m(MeasurementDatum).queryFor(null, { measurement_id: m.id, limit: 1 });
+    const latest = data._found && data.length > 0 ? data[0] : null;
+    return { latest };
+  }, [Store]);
+
+  const device = devices.find((d) => d._found && (d as FoundRecord<DeviceFields>).id === m.device_id);
+  const deviceName = device?._found ? (device as FoundRecord<DeviceFields>).name : null;
+
+  const latestDatum = latest?._found ? latest as FoundRecord<MeasurementDatumFields> : null;
+
+  return (
+    <div class="rounded-lg border border-border bg-surface p-4 space-y-2">
+      <div class="flex items-center justify-between">
+        <h3 class="text-sm font-semibold">{m.name}</h3>
+        <button
+          class="text-xs text-text-muted hover:text-text"
+          onClick={() => onEdit(m.id as number)}
+        >
+          Edit
+        </button>
+      </div>
+
+      <div class="text-2xl font-mono font-bold">
+        {latestDatum
+          ? latestDatum.value !== null
+            ? <>{latestDatum.value.toFixed(1)}{m.units && <span class="text-sm text-text-muted ml-1">{m.units}</span>}</>
+            : <span class="text-text-muted">—</span>
+          : <span class="text-text-muted text-sm">No data</span>
+        }
+      </div>
+
+      <div class="text-xs text-text-muted space-y-0.5">
+        {deviceName && <p>Source: {deviceName}</p>}
+        {m.source_path && <p>Path: {m.source_path}</p>}
+        <p>Every {m.update_period}s</p>
+        {latestDatum?.recorded_at && (
+          <p>{new Date(latestDatum.recorded_at).toLocaleTimeString()}</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function MeasurementForm({ editId, devices, onClose }: {
+  editId: number | null;
+  devices: ReifiedQueryResult<DeviceFields>;
+  onClose: () => void;
+}) {
+  const existing = editId !== null
+    ? Store.m(Measurement).fetch(editId)
+    : null;
+  const found = existing?._found ? existing as FoundRecord<MeasurementFields> : null;
+
+  const [name, setName] = useState(found?.name ?? '');
+  const [deviceId, setDeviceId] = useState(String(found?.device_id ?? ''));
+  const [sourcePath, setSourcePath] = useState(found?.source_path ?? '');
+  const [updatePeriod, setUpdatePeriod] = useState(String(found?.update_period ?? 60));
+  const [units, setUnits] = useState(found?.units ?? '');
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = () => {
+    const fields = {
+      name,
+      source_type: 'device' as const,
+      device_id: parseInt(deviceId, 10),
+      source_path: sourcePath || null,
+      update_period: parseInt(updatePeriod, 10),
+      units: units || null,
+    };
+    setSaving(true);
+    let txn: Txn;
+    if (editId !== null) {
+      txn = Store.m(Measurement).patch(editId, fields);
+    } else {
+      txn = Store.m(Measurement).create(fields);
+    }
+    // Poll for completion
+    const check = () => {
+      const result = Store.txn_status(txn);
+      if (result) {
+        setSaving(false);
+        if (result.status === 'succeeded') onClose();
+      } else {
+        setTimeout(check, 100);
+      }
+    };
+    check();
+  };
+
+  const handleDelete = () => {
+    if (editId === null) return;
+    Store.m(Measurement).destroy(editId);
+    onClose();
+  };
+
+  const foundDevices = devices.filter((d) => d._found) as FoundRecord<DeviceFields>[];
+
+  return (
+    <div class="rounded-lg border border-border bg-surface-alt p-4 mb-4 space-y-3">
+      <h3 class="text-sm font-semibold">{editId !== null ? 'Edit' : 'New'} Measurement</h3>
+
+      <div class="grid gap-3 md:grid-cols-2">
+        <label class="block">
+          <span class="text-xs text-text-muted">Name</span>
+          <input
+            class="mt-1 block w-full rounded border border-border bg-surface px-2 py-1.5 text-sm"
+            value={name}
+            onInput={(e) => setName((e.target as HTMLInputElement).value)}
+          />
+        </label>
+
+        <label class="block">
+          <span class="text-xs text-text-muted">Device</span>
+          <select
+            class="mt-1 block w-full rounded border border-border bg-surface px-2 py-1.5 text-sm"
+            value={deviceId}
+            onChange={(e) => setDeviceId((e.target as HTMLSelectElement).value)}
+          >
+            <option value="">Select device...</option>
+            {foundDevices.map((d) => (
+              <option key={d.id} value={String(d.id)}>{d.name}</option>
+            ))}
+          </select>
+        </label>
+
+        <label class="block">
+          <span class="text-xs text-text-muted">Source Path</span>
+          <input
+            class="mt-1 block w-full rounded border border-border bg-surface px-2 py-1.5 text-sm font-mono"
+            placeholder="e.g. temperatures[4]"
+            value={sourcePath}
+            onInput={(e) => setSourcePath((e.target as HTMLInputElement).value)}
+          />
+        </label>
+
+        <label class="block">
+          <span class="text-xs text-text-muted">Update Period (seconds)</span>
+          <input
+            type="number"
+            min="1"
+            class="mt-1 block w-full rounded border border-border bg-surface px-2 py-1.5 text-sm"
+            value={updatePeriod}
+            onInput={(e) => setUpdatePeriod((e.target as HTMLInputElement).value)}
+          />
+        </label>
+
+        <label class="block">
+          <span class="text-xs text-text-muted">Units</span>
+          <input
+            class="mt-1 block w-full rounded border border-border bg-surface px-2 py-1.5 text-sm"
+            placeholder="e.g. °C, PSI"
+            value={units}
+            onInput={(e) => setUnits((e.target as HTMLInputElement).value)}
+          />
+        </label>
+      </div>
+
+      <div class="flex gap-2">
+        <button
+          class="rounded bg-active px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+          onClick={handleSave}
+          disabled={saving || !name || !deviceId}
+        >
+          {saving ? 'Saving...' : editId !== null ? 'Update' : 'Create'}
+        </button>
+        <button
+          class="rounded border border-border px-3 py-1.5 text-sm font-medium text-text-muted hover:text-text"
+          onClick={onClose}
+        >
+          Cancel
+        </button>
+        {editId !== null && (
+          <button
+            class="ml-auto rounded border border-error px-3 py-1.5 text-sm font-medium text-error hover:bg-error-bg"
+            onClick={handleDelete}
+          >
+            Delete
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Device components (unchanged)
+// ---------------------------------------------------------------------------
 
 function DeviceCard({ device, interfaces }: {
   device: ReifiedQueryResult<DeviceFields>[number];

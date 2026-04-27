@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_04_19_235135) do
+ActiveRecord::Schema[8.1].define(version: 2026_04_24_223249) do
   create_table "devices", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.json "current_state"
@@ -33,5 +33,27 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_19_235135) do
     t.datetime "updated_at", null: false
   end
 
+  create_table "measurement_data", force: :cascade do |t|
+    t.integer "measurement_id", null: false
+    t.datetime "recorded_at", null: false
+    t.float "value"
+    t.index ["measurement_id", "recorded_at"], name: "index_measurement_data_on_measurement_id_and_recorded_at"
+    t.index ["measurement_id"], name: "index_measurement_data_on_measurement_id"
+  end
+
+  create_table "measurements", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.integer "device_id"
+    t.string "name", null: false
+    t.string "source_path"
+    t.string "source_type", default: "device", null: false
+    t.string "units"
+    t.integer "update_period", default: 60, null: false
+    t.datetime "updated_at", null: false
+    t.index ["device_id"], name: "index_measurements_on_device_id"
+  end
+
   add_foreign_key "devices", "host_interfaces"
+  add_foreign_key "measurement_data", "measurements"
+  add_foreign_key "measurements", "devices"
 end

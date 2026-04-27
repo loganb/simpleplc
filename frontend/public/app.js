@@ -6473,6 +6473,16 @@ var HostInterface = {
   inflections: { plural: "host_interfaces", title: "HostInterface" },
   singleton: false
 };
+var Measurement = {
+  name: "measurement",
+  inflections: { plural: "measurements", title: "Measurement" },
+  singleton: false
+};
+var MeasurementDatum = {
+  name: "measurement_datum",
+  inflections: { plural: "measurement_data", title: "MeasurementDatum" },
+  singleton: false
+};
 
 // node_modules/preact/jsx-runtime/dist/jsxRuntime.module.js
 var f3 = 0;
@@ -6487,24 +6497,240 @@ function u3(e3, t3, n2, o3, i3, u4) {
 
 // src/App.tsx
 function App() {
-  const { devices, interfaces } = useLoaders(() => {
+  const [showForm, setShowForm] = d2(null);
+  const { devices, interfaces, measurements } = useLoaders(() => {
     const devices2 = Store.m(Device).queryFor(null, {});
     const interfaces2 = Store.m(HostInterface).queryFor(null, {});
-    return { devices: devices2, interfaces: interfaces2 };
+    const measurements2 = Store.m(Measurement).queryFor(null, {});
+    return { devices: devices2, interfaces: interfaces2, measurements: measurements2 };
   }, [Store]);
   return /* @__PURE__ */ u3("div", { class: "min-h-screen bg-surface", children: [
     /* @__PURE__ */ u3("header", { class: "border-b border-border px-6 py-4", children: [
       /* @__PURE__ */ u3("h1", { class: "text-2xl font-bold tracking-tight", children: "PLC Controller" }),
       /* @__PURE__ */ u3("p", { class: "text-sm text-text-muted", children: "HVAC Monitoring Dashboard" })
     ] }),
-    /* @__PURE__ */ u3("main", { class: "p-6", children: !devices._loaded ? /* @__PURE__ */ u3("p", { class: "text-text-muted", children: "Loading devices..." }) : /* @__PURE__ */ u3("div", { class: "grid gap-4 md:grid-cols-3", children: devices.map((device) => /* @__PURE__ */ u3(
-      DeviceCard,
-      {
-        device,
-        interfaces
-      },
-      device.id
-    )) }) })
+    /* @__PURE__ */ u3("main", { class: "p-6 space-y-8", children: [
+      /* @__PURE__ */ u3("section", { children: [
+        /* @__PURE__ */ u3("h2", { class: "text-lg font-semibold mb-4", children: "Devices" }),
+        !devices._loaded ? /* @__PURE__ */ u3("p", { class: "text-text-muted", children: "Loading devices..." }) : /* @__PURE__ */ u3("div", { class: "grid gap-4 md:grid-cols-3", children: devices.map((device) => /* @__PURE__ */ u3(DeviceCard, { device, interfaces }, device.id)) })
+      ] }),
+      /* @__PURE__ */ u3("section", { children: [
+        /* @__PURE__ */ u3("div", { class: "flex items-center justify-between mb-4", children: [
+          /* @__PURE__ */ u3("h2", { class: "text-lg font-semibold", children: "Measurements" }),
+          /* @__PURE__ */ u3(
+            "button",
+            {
+              class: "rounded bg-active px-3 py-1.5 text-sm font-medium text-white hover:opacity-90",
+              onClick: () => setShowForm("new"),
+              children: "+ New Measurement"
+            }
+          )
+        ] }),
+        showForm !== null && /* @__PURE__ */ u3(
+          MeasurementForm,
+          {
+            editId: showForm === "new" ? null : showForm,
+            devices,
+            onClose: () => setShowForm(null)
+          }
+        ),
+        !measurements._loaded ? /* @__PURE__ */ u3("p", { class: "text-text-muted", children: "Loading measurements..." }) : measurements.length === 0 ? /* @__PURE__ */ u3("p", { class: "text-text-muted", children: "No measurements configured yet." }) : /* @__PURE__ */ u3("div", { class: "grid gap-4 md:grid-cols-3", children: measurements.map((m3) => /* @__PURE__ */ u3(
+          MeasurementCard,
+          {
+            measurement: m3,
+            devices,
+            onEdit: (id) => setShowForm(id)
+          },
+          m3.id
+        )) })
+      ] })
+    ] })
+  ] });
+}
+function MeasurementCard({ measurement, devices, onEdit }) {
+  if (!measurement._found) return null;
+  const m3 = measurement;
+  const { latest } = useLoaders(() => {
+    const data = Store.m(MeasurementDatum).queryFor(null, { measurement_id: m3.id, limit: 1 });
+    const latest2 = data._found && data.length > 0 ? data[0] : null;
+    return { latest: latest2 };
+  }, [Store]);
+  const device = devices.find((d3) => d3._found && d3.id === m3.device_id);
+  const deviceName = device?._found ? device.name : null;
+  const latestDatum = latest?._found ? latest : null;
+  return /* @__PURE__ */ u3("div", { class: "rounded-lg border border-border bg-surface p-4 space-y-2", children: [
+    /* @__PURE__ */ u3("div", { class: "flex items-center justify-between", children: [
+      /* @__PURE__ */ u3("h3", { class: "text-sm font-semibold", children: m3.name }),
+      /* @__PURE__ */ u3(
+        "button",
+        {
+          class: "text-xs text-text-muted hover:text-text",
+          onClick: () => onEdit(m3.id),
+          children: "Edit"
+        }
+      )
+    ] }),
+    /* @__PURE__ */ u3("div", { class: "text-2xl font-mono font-bold", children: latestDatum ? latestDatum.value !== null ? /* @__PURE__ */ u3(S, { children: [
+      latestDatum.value.toFixed(1),
+      m3.units && /* @__PURE__ */ u3("span", { class: "text-sm text-text-muted ml-1", children: m3.units })
+    ] }) : /* @__PURE__ */ u3("span", { class: "text-text-muted", children: "\u2014" }) : /* @__PURE__ */ u3("span", { class: "text-text-muted text-sm", children: "No data" }) }),
+    /* @__PURE__ */ u3("div", { class: "text-xs text-text-muted space-y-0.5", children: [
+      deviceName && /* @__PURE__ */ u3("p", { children: [
+        "Source: ",
+        deviceName
+      ] }),
+      m3.source_path && /* @__PURE__ */ u3("p", { children: [
+        "Path: ",
+        m3.source_path
+      ] }),
+      /* @__PURE__ */ u3("p", { children: [
+        "Every ",
+        m3.update_period,
+        "s"
+      ] }),
+      latestDatum?.recorded_at && /* @__PURE__ */ u3("p", { children: new Date(latestDatum.recorded_at).toLocaleTimeString() })
+    ] })
+  ] });
+}
+function MeasurementForm({ editId, devices, onClose }) {
+  const existing = editId !== null ? Store.m(Measurement).fetch(editId) : null;
+  const found = existing?._found ? existing : null;
+  const [name, setName] = d2(found?.name ?? "");
+  const [deviceId, setDeviceId] = d2(String(found?.device_id ?? ""));
+  const [sourcePath, setSourcePath] = d2(found?.source_path ?? "");
+  const [updatePeriod, setUpdatePeriod] = d2(String(found?.update_period ?? 60));
+  const [units, setUnits] = d2(found?.units ?? "");
+  const [saving, setSaving] = d2(false);
+  const handleSave = () => {
+    const fields = {
+      name,
+      source_type: "device",
+      device_id: parseInt(deviceId, 10),
+      source_path: sourcePath || null,
+      update_period: parseInt(updatePeriod, 10),
+      units: units || null
+    };
+    setSaving(true);
+    let txn;
+    if (editId !== null) {
+      txn = Store.m(Measurement).patch(editId, fields);
+    } else {
+      txn = Store.m(Measurement).create(fields);
+    }
+    const check = () => {
+      const result = Store.txn_status(txn);
+      if (result) {
+        setSaving(false);
+        if (result.status === "succeeded") onClose();
+      } else {
+        setTimeout(check, 100);
+      }
+    };
+    check();
+  };
+  const handleDelete = () => {
+    if (editId === null) return;
+    Store.m(Measurement).destroy(editId);
+    onClose();
+  };
+  const foundDevices = devices.filter((d3) => d3._found);
+  return /* @__PURE__ */ u3("div", { class: "rounded-lg border border-border bg-surface-alt p-4 mb-4 space-y-3", children: [
+    /* @__PURE__ */ u3("h3", { class: "text-sm font-semibold", children: [
+      editId !== null ? "Edit" : "New",
+      " Measurement"
+    ] }),
+    /* @__PURE__ */ u3("div", { class: "grid gap-3 md:grid-cols-2", children: [
+      /* @__PURE__ */ u3("label", { class: "block", children: [
+        /* @__PURE__ */ u3("span", { class: "text-xs text-text-muted", children: "Name" }),
+        /* @__PURE__ */ u3(
+          "input",
+          {
+            class: "mt-1 block w-full rounded border border-border bg-surface px-2 py-1.5 text-sm",
+            value: name,
+            onInput: (e3) => setName(e3.target.value)
+          }
+        )
+      ] }),
+      /* @__PURE__ */ u3("label", { class: "block", children: [
+        /* @__PURE__ */ u3("span", { class: "text-xs text-text-muted", children: "Device" }),
+        /* @__PURE__ */ u3(
+          "select",
+          {
+            class: "mt-1 block w-full rounded border border-border bg-surface px-2 py-1.5 text-sm",
+            value: deviceId,
+            onChange: (e3) => setDeviceId(e3.target.value),
+            children: [
+              /* @__PURE__ */ u3("option", { value: "", children: "Select device..." }),
+              foundDevices.map((d3) => /* @__PURE__ */ u3("option", { value: String(d3.id), children: d3.name }, d3.id))
+            ]
+          }
+        )
+      ] }),
+      /* @__PURE__ */ u3("label", { class: "block", children: [
+        /* @__PURE__ */ u3("span", { class: "text-xs text-text-muted", children: "Source Path" }),
+        /* @__PURE__ */ u3(
+          "input",
+          {
+            class: "mt-1 block w-full rounded border border-border bg-surface px-2 py-1.5 text-sm font-mono",
+            placeholder: "e.g. temperatures[4]",
+            value: sourcePath,
+            onInput: (e3) => setSourcePath(e3.target.value)
+          }
+        )
+      ] }),
+      /* @__PURE__ */ u3("label", { class: "block", children: [
+        /* @__PURE__ */ u3("span", { class: "text-xs text-text-muted", children: "Update Period (seconds)" }),
+        /* @__PURE__ */ u3(
+          "input",
+          {
+            type: "number",
+            min: "1",
+            class: "mt-1 block w-full rounded border border-border bg-surface px-2 py-1.5 text-sm",
+            value: updatePeriod,
+            onInput: (e3) => setUpdatePeriod(e3.target.value)
+          }
+        )
+      ] }),
+      /* @__PURE__ */ u3("label", { class: "block", children: [
+        /* @__PURE__ */ u3("span", { class: "text-xs text-text-muted", children: "Units" }),
+        /* @__PURE__ */ u3(
+          "input",
+          {
+            class: "mt-1 block w-full rounded border border-border bg-surface px-2 py-1.5 text-sm",
+            placeholder: "e.g. \xB0C, PSI",
+            value: units,
+            onInput: (e3) => setUnits(e3.target.value)
+          }
+        )
+      ] })
+    ] }),
+    /* @__PURE__ */ u3("div", { class: "flex gap-2", children: [
+      /* @__PURE__ */ u3(
+        "button",
+        {
+          class: "rounded bg-active px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50",
+          onClick: handleSave,
+          disabled: saving || !name || !deviceId,
+          children: saving ? "Saving..." : editId !== null ? "Update" : "Create"
+        }
+      ),
+      /* @__PURE__ */ u3(
+        "button",
+        {
+          class: "rounded border border-border px-3 py-1.5 text-sm font-medium text-text-muted hover:text-text",
+          onClick: onClose,
+          children: "Cancel"
+        }
+      ),
+      editId !== null && /* @__PURE__ */ u3(
+        "button",
+        {
+          class: "ml-auto rounded border border-error px-3 py-1.5 text-sm font-medium text-error hover:bg-error-bg",
+          onClick: handleDelete,
+          children: "Delete"
+        }
+      )
+    ] })
   ] });
 }
 function DeviceCard({ device, interfaces }) {
