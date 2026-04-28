@@ -24,7 +24,7 @@ type TrackedData<D> = {data: D, data_sequences: number[], global_sequences: numb
 //This needs to be a global b/c any internal state inside useLoaders could be stale because useEffect isn't refreshed every time
 let forceRenderCounter = 1;
 
-export function useLoaders<D>(loaderFunc : LoaderFunc<D>, stores : Trackable[], deps?: any[] ) : D {
+export function useLoaders<D>(loaderFunc : LoaderFunc<D>, stores : Trackable[], deps?: React.Inputs ) : D {
   //Pull data and track
   function trackAndLoad() {
     const seq_values: number[] = stores.map(() => (0)); //Hack to fill with zeros
@@ -49,7 +49,7 @@ export function useLoaders<D>(loaderFunc : LoaderFunc<D>, stores : Trackable[], 
   
   // 1) Memoized based on the dependencies, changes when the props change
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const memoizedPropsData = useMemo(trackAndLoad, deps as readonly unknown[]);
+  const memoizedPropsData = useMemo(trackAndLoad, deps);
 
   // 2) Data Loaded whenever the stores change
   const changedDataLoad = useRef<TrackedData<D> | undefined>(undefined);
@@ -79,8 +79,7 @@ export function useLoaders<D>(loaderFunc : LoaderFunc<D>, stores : Trackable[], 
       // console.log("CLEANING UP AN EFFECT");
       subscriptions.map((s) => (s.remove()))
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, deps as readonly unknown[]); //useEffect needs to be resubscribed whenever the deps change because the trackAndLoad closure will be different
+  }, deps); //useEffect needs to be resubscribed whenever the deps change because the trackAndLoad closure will be different
   //NOTE: This is weird because on every call, the trackAndLoad closure will technically be different, but it will be ignored unless 
   //      the "deps" actually changed
 

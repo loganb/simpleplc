@@ -77,10 +77,52 @@ interface QueryResult extends Array<RecordId> {
   readonly _loading: boolean,
   readonly _loaded: boolean,
   readonly _found: boolean,
-  readonly _epoch: number,
+  readonly _query_version: number,
   readonly _seq?: number,
   readonly _error?: number,
   readonly metadata?: unknown,
+}
+
+class TwoGenerationCache<K,V> {
+  current = new Map<K,V>();
+  previous = new Map<K,V>();
+
+  get(key: K) : V | undefined {
+    const currentValue = this.current.get(key);
+    if(currentValue) return currentValue;
+
+    const previousValue = this.previous.get(key);
+    if(previousValue) {
+      this.current.set(key, previousValue);
+      this.previous.delete(key);
+    }
+    return previousValue;
+  }
+
+  has(key: K) {
+    return this.get(key) !== undefined;
+  }
+
+  set(key: K, value: V) {
+    this.current.set(key, value);
+    return this;
+  }
+
+  delete(key: K) {
+    const deletedCurrent = this.current.delete(key);
+    const deletedPrevious = this.previous.delete(key);
+    return deletedCurrent || deletedPrevious;
+  }
+
+  clear() {
+    this.current.clear();
+    this.previous.clear();
+  }
+
+  advance() {
+    this.previous = this.current;
+    this.current = new Map();
+  }
 }
 
 export type IoOp = {
@@ -94,7 +136,7 @@ export type IoOp = {
   query: {
     name: string | null,
     args: string | null,
-    epoch_at_start: number,
+    query_version_at_start: number,
     error_count: number
   }
 });
@@ -126,9 +168,9 @@ class BaseModel<T extends Identifiable> {
   };
   readonly server_side_new: boolean;
 
-  queries: Map<string | null, Map<string,QueryResult>>;
-  instances: Map<RecordId,RecordFlags>;
-  query_epoch: number;
+  queries: Map<string | null, TwoGenerationCache<string | null,QueryResult>>;
+  instances: TwoGenerationCache<RecordId,RecordFlags>;
+  query_version: number;
 
   store: RestfulModelStore;
 
@@ -136,9 +178,9 @@ class BaseModel<T extends Identifiable> {
     this.store = store;
     this.name = definition.name;
     this.inflections = definition.inflections;
-    this.instances = new Map();
+    this.instances = new TwoGenerationCache();
     this.queries   = new Map();
-    this.query_epoch = 0; //Increments with every piece of new data
+    this.query_version = 0; //Increments when model queries may have stale membership
     this.server_side_new = !!definition.server_side_new;
   }
 }
@@ -154,8 +196,8 @@ class Model<T extends Identifiable> extends BaseModel<T> {
     return this.store.fetchMulti(this,ids,force);
   }
 
-  public queryFor(name: string | null, arg: Record<string, unknown> | null) : ReifiedQueryResult<T> {
-    return this.store.queryFor(this, name, arg);
+  public queryFor(name: string | null, arg: Record<string, unknown> | null, force = false) : ReifiedQueryResult<T> {
+    return this.store.queryFor(this, name, arg, force);
   };
   public destroy(id: RecordId) : Txn {
     return this.store.destroy(this, id);
@@ -196,6 +238,10 @@ class SingletonModel<T extends Identifiable> extends BaseModel<T> {
 }
 
 // type Json = string | number | boolean | null | Json[] | { [key: string]: Json };``
+export interface RestfulModelStoreOptions {
+  cacheEpochIntervalMs?: number;
+}
+
 /*
  * axios - An instance of axios configured with a base_url
  * inflections - {
@@ -216,8 +262,9 @@ export default class RestfulModelStore extends EventEmitter {
   io_queue   = new Collections.PriorityQueue<IoOp>((a,b) => (a.run_time - b.run_time));
   io_timeout?: number;
   io_rate_limiter = new RateLimiter({initialRps: 10});
+  cache_epoch_interval?: number;
 
-  constructor(axios: AxiosInstance) {
+  constructor(axios: AxiosInstance, options: RestfulModelStoreOptions = {}) {
     super();
     this.axios  = axios;
     this.models = {};
@@ -225,6 +272,12 @@ export default class RestfulModelStore extends EventEmitter {
     //Mapping of placeholder ids -> (new record | id of created record), particularly useful after save
     this.news   = new WeakMap();
     this.seq    = 0; //Increments with every piece of new data
+
+    if(options.cacheEpochIntervalMs) {
+      this.cache_epoch_interval = window.setInterval(() => {
+        this.advanceEpoch();
+      }, options.cacheEpochIntervalMs);
+    }
   }
 
   /*
@@ -232,6 +285,25 @@ export default class RestfulModelStore extends EventEmitter {
    */
   getSequence() {
     return this.seq;
+  }
+
+  advanceEpoch() {
+    for(const model of Object.values(this.models)) {
+      model.instances.advance();
+      for(const queryCache of model.queries.values()) {
+        queryCache.advance();
+      }
+    }
+    this.seq++;
+    this.emit('cacheEpochAdvanced');
+    this.soil();
+  }
+
+  stopCacheEpochTimer() {
+    if(this.cache_epoch_interval) {
+      window.clearInterval(this.cache_epoch_interval);
+      this.cache_epoch_interval = undefined;
+    }
   }
 
   /*
@@ -347,7 +419,7 @@ export default class RestfulModelStore extends EventEmitter {
       }
 
       //Will force a reload of queries
-      model.query_epoch++;
+      model.query_version++;
       this.soil();
     }).catch((error) => {
       const response = error.response;
@@ -484,7 +556,7 @@ export default class RestfulModelStore extends EventEmitter {
       });
 
       //clear all queries for the the model
-      model.query_epoch++;
+      model.query_version++;
       //clear the model that was deleted
       model.instances.delete(id);
 
@@ -537,7 +609,7 @@ export default class RestfulModelStore extends EventEmitter {
       });
 
       //clear all queries for the the model
-      model.query_epoch++;
+      model.query_version++;
       this.soil();
     }).catch(() => {
       this.txns.set(txn, {
@@ -552,11 +624,11 @@ export default class RestfulModelStore extends EventEmitter {
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  queryFor<T extends Identifiable>(model: Model<T>, name: string | null, arg: any) : ReifiedQueryResult<T> {
+  queryFor<T extends Identifiable>(model: Model<T>, name: string | null, arg: any, force = false) : ReifiedQueryResult<T> {
     const canonName = name;
     const canonArg  = this.canonicalize_query(arg);
     const querySet  = this.queriesForName(model, canonName);
-    const epochAtStart = model.query_epoch;
+    const queryVersionAtStart = model.query_version;
 
     let unresolvedResult : QueryResult;
     let doLoad = false;
@@ -564,9 +636,9 @@ export default class RestfulModelStore extends EventEmitter {
     //Pull from cache, figure out if we need to reload
     if(querySet.has(canonArg)) {
       unresolvedResult = querySet.get(canonArg)!;
-      if(unresolvedResult._epoch < model.query_epoch) {
+      if(unresolvedResult._query_version < model.query_version || (unresolvedResult._loaded && force)) {
         doLoad = true;
-        querySet.set(canonArg, Object.assign([], unresolvedResult, {_epoch: model.queryFor}));
+        querySet.set(canonArg, Object.assign([], unresolvedResult, {_query_version: model.query_version, _loading: true}));
       }
     } else {
       // No query in the cache, so make a placeholder and
@@ -575,7 +647,7 @@ export default class RestfulModelStore extends EventEmitter {
         _loaded:  false,
         _found:   false,
         _seq:     this.seq++,
-        _epoch:   epochAtStart,
+        _query_version:   queryVersionAtStart,
         _metadata: {}
       });
       doLoad = true;
@@ -601,7 +673,7 @@ export default class RestfulModelStore extends EventEmitter {
         query: {
           name: canonName,
           args: canonArg,
-          epoch_at_start: epochAtStart,
+          query_version_at_start: queryVersionAtStart,
           error_count: 0
         }
       });
@@ -645,9 +717,9 @@ export default class RestfulModelStore extends EventEmitter {
   }
 
   // null is allowed for "name" for queries that don't specify a sub-route, e.g. "/my_models?q={some_query:'foo'}"
-  private queriesForName<T extends Identifiable>(model: Model<T>, name: string | null): Map<string | null, QueryResult> {
+  private queriesForName<T extends Identifiable>(model: Model<T>, name: string | null): TwoGenerationCache<string | null, QueryResult> {
     const q = model.queries;
-    return q.get(name) || q.set(name, new Map()).get(name)!;
+    return q.get(name) || q.set(name, new TwoGenerationCache()).get(name)!;
   }
 
   // private getQuery(name, arg) {
@@ -700,7 +772,7 @@ export default class RestfulModelStore extends EventEmitter {
         if(model) {
           const invalidation = invalidates[clazz];
           if(invalidation === "all" || invalidation === "queries")
-            model.query_epoch++;
+            model.query_version++;
           if(invalidation === "all" || invalidation === "records")
             model.instances.clear();
         }
@@ -770,7 +842,7 @@ export default class RestfulModelStore extends EventEmitter {
           queryResults._loaded  = true;
           queryResults._found   = true;
           queryResults._seq     = this.seq++;
-          queryResults._epoch   = query.epoch_at_start;
+          queryResults._query_version = query.query_version_at_start;
           queryResults.metadata = response.data.metadata;
           this.queriesForName(model as Model<Identifiable>, query.name).set(query.args, queryResults);
         }
@@ -821,9 +893,9 @@ export default class RestfulModelStore extends EventEmitter {
               _loading: false,
               _found: false,
               _seq: this.seq++,
-              _epoch: query.epoch_at_start
+              _query_version: query.query_version_at_start
             });
-            this.queriesForName(model as Model<Identifiable>, query.name).set(query.name, queryResults);
+            this.queriesForName(model as Model<Identifiable>, query.name).set(query.args, queryResults);
           }
           retriable_error = () => {
             const queryResults = Object.assign([], {
@@ -831,18 +903,18 @@ export default class RestfulModelStore extends EventEmitter {
               _loading: true,
               _found: false,
               _seq: this.seq++,
-              _epoch: query.epoch_at_start,
+              _query_version: query.query_version_at_start,
               _error_count: error_count
             });
-            this.queriesForName(model as Model<Identifiable>, query.name).set(query.name, queryResults);
+            this.queriesForName(model as Model<Identifiable>, query.name).set(query.args, queryResults);
             this.soil();
 
             this.io_queue.enqueue(Object.assign({},op,{
               run_time: now + 1000*Math.min(Math.max(0,Math.min(error_count,10)-1)**1.5,30),
               query: Object.assign({},op.query,{
                 error_count: error_count,
-                //Since we're retrying the query, it is running in the current epoch, there's no chance it's stale
-                epoch_at_start: model.query_epoch
+                //Since we're retrying the query, it is running against the current query version.
+                query_version_at_start: model.query_version
               })
             }));
           }

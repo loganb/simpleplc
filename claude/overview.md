@@ -8,6 +8,9 @@ HVAC PLC controller application — a web interface for monitoring and controlli
 
 - **Backend**: Rails 8.1 in API-only mode, serving JSON via RestfulApiController + RestfulApi pattern.
 - **Frontend**: Preact + TypeScript, bundled with esbuild, styled with Tailwind CSS v4. Lives in `frontend/`. Designed for static deployment (S3, GitHub Pages). Communicates with Rails via CORS.
+  - `frontend/public/` is the static template source (hand-written `index.html`, future favicons/manifests). Checked into git.
+  - `frontend/dist/` is the build output (gitignored). `build.mjs` copies `public/` → `dist/` and writes `app.js`, `app.css`, `index.css` alongside.
+  - Two CSS pipelines write into `dist/`: (1) the Tailwind CLI subprocess processes `src/index.css` → `dist/index.css`; (2) esbuild bundles `.css`/`.scss` imports from the TSX module graph (entry `src/widgets.scss` plus any component-colocated styles) → `dist/app.css`. SCSS handled by `esbuild-sass-plugin`. Tailwind's `@apply` is only available inside `src/index.css` — component SCSS uses Tailwind utility classes via `className` instead.
 - **Database**: SQLite3 (via the Solid stack — Solid Queue, Solid Cache, Solid Cable — no Redis needed).
 - **Real-time**: ActionCable backed by Solid Cable for WebSocket support.
 - **Deployment**: Docker + Kamal, with Thruster for HTTP caching/compression.
@@ -18,7 +21,7 @@ HVAC PLC controller application — a web interface for monitoring and controlli
 - **Modbus polling** working — three devices (DS18B20 temp board, NTC temp board, relay I/O board) polled and state stored in `devices.current_state` JSON column.
 - **REST API** exposes devices, host_interfaces, measurements, and measurement_data with the RestfulApiController pattern (flat JSON wire format compatible with RestfulModelStore).
 - **Measurements** — named values with a source device + JSON path (e.g. `temperatures[4]`), update period, optional units. `measurement_data` table stores timestamped float readings.
-- **Frontend dashboard** shows device cards with live data + measurement cards with latest values + CRUD form for measurements.
+- **Frontend dashboard** shows device cards with live data + measurement cards with latest values + CRUD form for measurements. It refreshes live queries every 5 minutes and uses bounded frontend store cache epochs to avoid unbounded long-session cache growth.
 
 ## Key Entry Points
 
@@ -27,8 +30,8 @@ HVAC PLC controller application — a web interface for monitoring and controlli
 - `lib/restful_api_controller.rb` — controller mixin providing REST actions.
 - `frontend/src/App.tsx` — main Preact dashboard component.
 - `frontend/src/store.ts` — RestfulModelStore instance + model definitions.
-- `frontend/src/lib/` — RestfulModelStore, DataLoader2, TreeStore, RateLimiter, MemoryStore (ported from BioTrack).
-- `frontend/build.mjs` — esbuild config (dev server on port 5174, or static build to `public/`).
+- `frontend/src/lib/` — RestfulModelStore, DataLoader2, TreeStore, RateLimiter, MemoryStore (ported from BioTrack). RestfulModelStore has two-generation record/query caches; `query_version` is the separate per-model query invalidation counter.
+- `frontend/build.mjs` — esbuild config + Tailwind CLI subprocess + `public/` → `dist/` copy. Dev server on port 5174 serving `dist/`; static build writes to `dist/`.
 
 ## Data Model
 

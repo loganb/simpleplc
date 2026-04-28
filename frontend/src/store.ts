@@ -11,7 +11,9 @@ const AxiosClient = axios.create({
   headers: { Accept: 'application/json' },
 });
 
-const Store = new RestfulModelStore(AxiosClient);
+const Store = new RestfulModelStore(AxiosClient, {
+  cacheEpochIntervalMs: 5 * 60 * 1000,
+});
 
 // ---------------------------------------------------------------------------
 // Model Definitions

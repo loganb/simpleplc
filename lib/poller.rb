@@ -19,6 +19,7 @@ loop do
   # Wrap each cycle in the Rails reloader so constants (driver classes, models)
   # are available and correctly reloaded in development between iterations.
   Rails.application.reloader.wrap do
+    # Pass 1: Read every device on every host interface
     HostInterface.includes(:devices).each do |iface|
       begin
         ModBus::RTUClient.connect(iface.port, iface.baud_rate,
@@ -44,6 +45,15 @@ loop do
         end
       rescue => e
         Rails.logger.error "Poller: failed to connect to #{iface.port}: #{e.message}"
+      end
+    end
+
+    # Pass 2: Sample any measurements whose update_period has elapsed
+    Measurement.where(source_type: "device").includes(:device).find_each do |m|
+      begin
+        m.take_sample! if m.due?
+      rescue => e
+        Rails.logger.warn "Poller: error sampling measurement #{m.id} (#{m.name}): #{e.message}"
       end
     end
   end

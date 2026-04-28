@@ -1,4 +1,4 @@
-import { useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { useLoaders } from './lib/DataLoader2';
 import { Store, Device, HostInterface, Measurement, MeasurementDatum } from './store';
 import type { DeviceFields, HostInterfaceFields, MeasurementFields, MeasurementDatumFields } from './store';
@@ -6,13 +6,27 @@ import type { FoundRecord, ReifiedQueryResult, Txn } from './lib/RestfulModelSto
 
 export function App() {
   const [showForm, setShowForm] = useState<number | 'new' | null>(null);
+  const [refreshToken, setRefreshToken] = useState(0);
+  const lastForcedRefreshToken = useRef(0);
+
+  useEffect(() => {
+    const subscription = Store.addListener('cacheEpochAdvanced', () => {
+      setRefreshToken((token) => token + 1);
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, []);
 
   const { devices, interfaces, measurements } = useLoaders(() => {
-    const devices = Store.m(Device).queryFor(null, {});
-    const interfaces = Store.m(HostInterface).queryFor(null, {});
-    const measurements = Store.m(Measurement).queryFor(null, {});
+    const force = refreshToken > lastForcedRefreshToken.current;
+    if (force) lastForcedRefreshToken.current = refreshToken;
+    const devices = Store.m(Device).queryFor(null, {}, force);
+    const interfaces = Store.m(HostInterface).queryFor(null, {}, force);
+    const measurements = Store.m(Measurement).queryFor(null, {}, force);
     return { devices, interfaces, measurements };
-  }, [Store]);
+  }, [Store], [refreshToken]);
 
   return (
     <div class="min-h-screen bg-surface">
@@ -67,6 +81,7 @@ export function App() {
                   key={m.id as number}
                   measurement={m}
                   devices={devices}
+                  refreshToken={refreshToken}
                   onEdit={(id) => setShowForm(id)}
                 />
               ))}
@@ -82,19 +97,30 @@ export function App() {
 // Measurement components
 // ---------------------------------------------------------------------------
 
-function MeasurementCard({ measurement, devices, onEdit }: {
+function MeasurementCard({ measurement, devices, refreshToken, onEdit }: {
   measurement: ReifiedQueryResult<MeasurementFields>[number];
   devices: ReifiedQueryResult<DeviceFields>;
+  refreshToken: number;
   onEdit: (id: number) => void;
 }) {
-  if (!measurement._found) return null;
-  const m = measurement as FoundRecord<MeasurementFields>;
+  const lastForcedRefreshToken = useRef(0);
+  const foundMeasurement = measurement._found
+    ? measurement as FoundRecord<MeasurementFields>
+    : null;
+  const measurementId = foundMeasurement?.id ?? null;
 
   const { latest } = useLoaders(() => {
-    const data = Store.m(MeasurementDatum).queryFor(null, { measurement_id: m.id, limit: 1 });
+    if (!foundMeasurement) return { latest: null };
+
+    const force = refreshToken > lastForcedRefreshToken.current;
+    if (force) lastForcedRefreshToken.current = refreshToken;
+    const data = Store.m(MeasurementDatum).queryFor(null, { measurement_id: foundMeasurement.id, limit: 1 }, force);
     const latest = data._found && data.length > 0 ? data[0] : null;
     return { latest };
-  }, [Store]);
+  }, [Store], [measurementId, refreshToken]);
+
+  if (!foundMeasurement) return null;
+  const m = foundMeasurement;
 
   const device = devices.find((d) => d._found && (d as FoundRecord<DeviceFields>).id === m.device_id);
   const deviceName = device?._found ? (device as FoundRecord<DeviceFields>).name : null;
