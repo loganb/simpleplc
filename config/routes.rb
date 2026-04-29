@@ -9,4 +9,7 @@ Rails.application.routes.draw do
   resources :devices
   resources :measurements
   resources :measurement_data, only: [ :index, :show, :create ]
+  resources :logic_diagrams
+  resources :logic_blocks
+  resources :data, only: [ :index, :show ]
 end

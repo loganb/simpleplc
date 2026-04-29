@@ -1,11 +1,22 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { useLoaders } from './lib/DataLoader2';
-import { Store, Device, HostInterface, Measurement, MeasurementDatum } from './store';
-import type { DeviceFields, HostInterfaceFields, MeasurementFields, MeasurementDatumFields } from './store';
+import { Store, Device, HostInterface, Measurement, MeasurementDatum, LogicDiagram, LogicBlock } from './store';
+import type {
+  DeviceFields,
+  HostInterfaceFields,
+  LogicBlockFields,
+  LogicDiagramFields,
+  MeasurementFields,
+  MeasurementDatumFields,
+} from './store';
 import type { FoundRecord, ReifiedQueryResult, Txn } from './lib/RestfulModelStore';
+import { nextStratumForExpressions } from './logicDiagram';
 
 export function App() {
   const [showForm, setShowForm] = useState<number | 'new' | null>(null);
+  const [showDiagramForm, setShowDiagramForm] = useState(false);
+  const [showBlockForm, setShowBlockForm] = useState<number | 'new' | null>(null);
+  const [selectedDiagramId, setSelectedDiagramId] = useState<number | null>(null);
   const [refreshToken, setRefreshToken] = useState(0);
   const lastForcedRefreshToken = useRef(0);
 
@@ -19,13 +30,15 @@ export function App() {
     };
   }, []);
 
-  const { devices, interfaces, measurements } = useLoaders(() => {
+  const { devices, interfaces, measurements, logicDiagrams, logicBlocks } = useLoaders(() => {
     const force = refreshToken > lastForcedRefreshToken.current;
     if (force) lastForcedRefreshToken.current = refreshToken;
     const devices = Store.m(Device).queryFor(null, {}, force);
     const interfaces = Store.m(HostInterface).queryFor(null, {}, force);
     const measurements = Store.m(Measurement).queryFor(null, {}, force);
-    return { devices, interfaces, measurements };
+    const logicDiagrams = Store.m(LogicDiagram).queryFor(null, {}, force);
+    const logicBlocks = Store.m(LogicBlock).queryFor(null, {}, force);
+    return { devices, interfaces, measurements, logicDiagrams, logicBlocks };
   }, [Store], [refreshToken]);
 
   return (
@@ -88,9 +101,467 @@ export function App() {
             </div>
           )}
         </section>
+
+        <LogicDiagramsSection
+          diagrams={logicDiagrams}
+          blocks={logicBlocks}
+          measurements={measurements}
+          selectedDiagramId={selectedDiagramId}
+          onSelectDiagram={setSelectedDiagramId}
+          showDiagramForm={showDiagramForm}
+          onShowDiagramForm={setShowDiagramForm}
+          showBlockForm={showBlockForm}
+          onShowBlockForm={setShowBlockForm}
+        />
       </main>
     </div>
   );
+}
+
+// ---------------------------------------------------------------------------
+// Logic diagram components
+// ---------------------------------------------------------------------------
+
+function LogicDiagramsSection({
+  diagrams,
+  blocks,
+  measurements,
+  selectedDiagramId,
+  onSelectDiagram,
+  showDiagramForm,
+  onShowDiagramForm,
+  showBlockForm,
+  onShowBlockForm,
+}: {
+  diagrams: ReifiedQueryResult<LogicDiagramFields>;
+  blocks: ReifiedQueryResult<LogicBlockFields>;
+  measurements: ReifiedQueryResult<MeasurementFields>;
+  selectedDiagramId: number | null;
+  onSelectDiagram: (id: number | null) => void;
+  showDiagramForm: boolean;
+  onShowDiagramForm: (show: boolean) => void;
+  showBlockForm: number | 'new' | null;
+  onShowBlockForm: (id: number | 'new' | null) => void;
+}) {
+  const foundDiagrams = diagrams._loaded
+    ? diagrams.filter((d) => d._found) as FoundRecord<LogicDiagramFields>[]
+    : [];
+  const currentDiagram = foundDiagrams.find((d) => d.id === selectedDiagramId) ?? foundDiagrams[0] ?? null;
+  const currentBlocks = blocks._loaded && currentDiagram
+    ? blocks.filter((b) => b._found && (b as FoundRecord<LogicBlockFields>).logic_diagram_id === currentDiagram.id) as FoundRecord<LogicBlockFields>[]
+    : [];
+  const foundMeasurements = measurements._loaded
+    ? measurements.filter((m) => m._found) as FoundRecord<MeasurementFields>[]
+    : [];
+  const blocksByStratum = new Map<number, FoundRecord<LogicBlockFields>[]>();
+  currentBlocks.forEach((block) => {
+    const group = blocksByStratum.get(block.stratum) ?? [];
+    group.push(block);
+    blocksByStratum.set(block.stratum, group);
+  });
+  const strata = [...blocksByStratum.keys()].sort((a, b) => a - b);
+
+  return (
+    <section>
+      <div class="flex items-center justify-between mb-4">
+        <div class="flex items-center gap-3">
+          <h2 class="text-lg font-semibold">Logic Diagrams</h2>
+          {foundDiagrams.length > 0 && (
+            <select
+              class="rounded border border-border bg-surface px-2 py-1.5 text-sm"
+              value={String(currentDiagram?.id ?? '')}
+              onChange={(e) => {
+                const value = (e.target as HTMLSelectElement).value;
+                onSelectDiagram(value ? parseInt(value, 10) : null);
+                onShowBlockForm(null);
+              }}
+            >
+              {foundDiagrams.map((diagram) => (
+                <option key={diagram.id} value={String(diagram.id)}>{diagram.name}</option>
+              ))}
+            </select>
+          )}
+        </div>
+        <div class="flex gap-2">
+          <button
+            class="rounded border border-border px-3 py-1.5 text-sm font-medium text-text-muted hover:text-text"
+            onClick={() => onShowDiagramForm(true)}
+          >
+            New Diagram
+          </button>
+          <button
+            class="rounded bg-active px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+            disabled={!currentDiagram}
+            onClick={() => onShowBlockForm('new')}
+          >
+            + New Block
+          </button>
+        </div>
+      </div>
+
+      {showDiagramForm && <LogicDiagramForm onClose={() => onShowDiagramForm(false)} />}
+
+      {!diagrams._loaded ? (
+        <p class="text-text-muted">Loading logic diagrams...</p>
+      ) : foundDiagrams.length === 0 ? (
+        <p class="text-text-muted">No logic diagrams configured yet.</p>
+      ) : currentDiagram ? (
+        <div class="space-y-4">
+          {showBlockForm !== null && (
+            <LogicBlockForm
+              diagram={currentDiagram}
+              editId={showBlockForm === 'new' ? null : showBlockForm}
+              blocks={currentBlocks}
+              onClose={() => onShowBlockForm(null)}
+            />
+          )}
+
+          <div class="overflow-x-auto pb-2">
+            <div class="flex min-w-max gap-4">
+              <div class="w-64 shrink-0">
+                <ColumnHeader title="Measurements" />
+                <div class="space-y-2">
+                  {foundMeasurements.map((measurement) => (
+                    <div key={measurement.id} class="rounded-lg border border-border bg-surface p-3">
+                      <div class="text-sm font-semibold">{measurement.name}</div>
+                      <div class="mt-1 text-xs font-mono text-text-muted">{measurement.name}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {strata.map((stratum) => (
+                <div key={stratum} class="w-72 shrink-0">
+                  <ColumnHeader title={`Stratum ${stratum}`} />
+                  <div class="space-y-2">
+                    {blocksByStratum.get(stratum)!.map((block) => (
+                      <LogicBlockCard
+                        key={block.id}
+                        block={block}
+                        onEdit={(id) => onShowBlockForm(id)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              ))}
+
+              <div class="w-64 shrink-0">
+                <ColumnHeader title="Outputs" />
+                <div class="rounded-lg border border-dashed border-border bg-surface-alt p-4 text-sm text-text-muted">
+                  Computed outputs land here later.
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function ColumnHeader({ title }: { title: string }) {
+  return <h3 class="mb-2 text-xs font-semibold uppercase text-text-muted">{title}</h3>;
+}
+
+function LogicBlockCard({ block, onEdit }: {
+  block: FoundRecord<LogicBlockFields>;
+  onEdit: (id: number) => void;
+}) {
+  const state = block.latest_state ?? {};
+
+  return (
+    <div class="rounded-lg border border-border bg-surface p-4 space-y-3">
+      <div class="flex items-start justify-between gap-3">
+        <div>
+          <h3 class="text-sm font-semibold">{block.name}</h3>
+          <p class="text-xs text-text-muted">{block.block_type}</p>
+        </div>
+        <button
+          class="text-xs text-text-muted hover:text-text"
+          onClick={() => onEdit(block.id)}
+        >
+          Edit
+        </button>
+      </div>
+
+      <div class="flex items-center justify-between rounded bg-surface-alt px-2 py-1.5">
+        <span class="text-xs text-text-muted">Output</span>
+        <span class="font-mono text-sm font-semibold">
+          {block.output === null ? 'No data' : block.output ? 'true' : 'false'}
+        </span>
+      </div>
+
+      <div class="space-y-1 text-xs text-text-muted">
+        <p class="font-mono">{block.name}</p>
+        {block.block_type === 'hysteresis' ? (
+          <>
+            <p><span class="font-medium">value</span>: {formatComputedValue(block.value)}</p>
+            <p><span class="font-medium">low_limit</span>: {formatComputedValue(block.low_limit)}</p>
+            <p><span class="font-medium">high_limit</span>: {formatComputedValue(block.high_limit)}</p>
+          </>
+        ) : (
+          <>
+            <p><span class="font-medium">set</span>: {formatComputedValue(block.set)}</p>
+            <p><span class="font-medium">reset</span>: {formatComputedValue(block.reset)}</p>
+          </>
+        )}
+        {Object.entries(block.input_expressions).map(([name, expression]) => (
+          <p key={name} class="truncate"><span class="font-medium">{name}</span>: {expression}</p>
+        ))}
+        {Object.keys(state).length > 0 && (
+          <p class="font-mono">state {JSON.stringify(state)}</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function formatComputedValue(value: number | boolean | null) {
+  if (value === null) return 'No data';
+  if (typeof value === 'boolean') return value ? 'true' : 'false';
+  return Number.isInteger(value) ? value.toFixed(0) : value.toFixed(2);
+}
+
+function LogicDiagramForm({ onClose }: { onClose: () => void }) {
+  const [name, setName] = useState('');
+  const [saveTxn, setSaveTxn] = useState<Txn | undefined>();
+  const [error, setError] = useState<string | null>(null);
+  const { txnResult, saving } = useTxnStatus(saveTxn);
+
+  useEffect(() => {
+    if (!txnResult) return;
+    if (txnResult.status === 'succeeded') onClose();
+    else setError('Save failed');
+  }, [txnResult, onClose]);
+
+  const handleSave = () => {
+    setError(null);
+    setSaveTxn(Store.m(LogicDiagram).create({ name }));
+  };
+
+  return (
+    <div class="rounded-lg border border-border bg-surface-alt p-4 mb-4 space-y-3">
+      <h3 class="text-sm font-semibold">New Logic Diagram</h3>
+      {error && <p class="text-sm text-error">{error}</p>}
+      <label class="block">
+        <span class="text-xs text-text-muted">Name</span>
+        <input
+          class="mt-1 block w-full rounded border border-border bg-surface px-2 py-1.5 text-sm"
+          value={name}
+          onInput={(e) => setName((e.target as HTMLInputElement).value)}
+        />
+      </label>
+      <FormButtons saving={saving} disabled={!name} onSave={handleSave} onCancel={onClose} />
+    </div>
+  );
+}
+
+function LogicBlockForm({ diagram, editId, blocks, onClose }: {
+  diagram: FoundRecord<LogicDiagramFields>;
+  editId: number | null;
+  blocks: FoundRecord<LogicBlockFields>[];
+  onClose: () => void;
+}) {
+  const existing = editId !== null ? Store.m(LogicBlock).fetch(editId) : null;
+  const found = existing?._found ? existing as FoundRecord<LogicBlockFields> : null;
+  const defaultExpressions = found?.input_expressions ?? { value: '', low_limit: '', high_limit: '' };
+
+  const [name, setName] = useState(found?.name ?? '');
+  const [blockType, setBlockType] = useState<LogicBlockFields['block_type']>(found?.block_type ?? 'hysteresis');
+  const [mode, setMode] = useState(String(found?.config?.mode ?? 'active_high'));
+  const [dominance, setDominance] = useState(String(found?.config?.dominance ?? 'reset'));
+  const [expressionsText, setExpressionsText] = useState(expressionsToText(defaultExpressions));
+  const [saveTxn, setSaveTxn] = useState<Txn | undefined>();
+  const [error, setError] = useState<string | null>(null);
+  const { txnResult, saving } = useTxnStatus(saveTxn);
+
+  useEffect(() => {
+    if (!txnResult) return;
+    if (txnResult.status === 'succeeded') onClose();
+    else setError('Save failed');
+  }, [txnResult, onClose]);
+
+  const handleTypeChange = (nextType: LogicBlockFields['block_type']) => {
+    setBlockType(nextType);
+    if (!found) {
+      setExpressionsText(expressionsToText(defaultExpressionsForType(nextType)));
+      setMode(nextType === 'hysteresis' ? 'active_high' : 'latch_high');
+    }
+  };
+
+  const handleSave = () => {
+    let input_expressions: Record<string, string>;
+    try {
+      input_expressions = textToExpressions(expressionsText);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Invalid expressions');
+      return;
+    }
+
+    const existingBlocks = blocks
+      .filter((block) => editId === null || block.id !== editId)
+      .map((block) => ({ id: block.id, name: block.name, input_expressions: block.input_expressions }));
+    const stratum = nextStratumForExpressions(existingBlocks, input_expressions);
+    const config: Record<string, unknown> = blockType === 'hysteresis'
+      ? { mode }
+      : { mode, dominance };
+
+    setError(null);
+    const fields = {
+      logic_diagram_id: diagram.id,
+      name,
+      block_type: blockType,
+      stratum,
+      input_expressions,
+      config,
+    };
+    setSaveTxn(editId !== null
+      ? Store.m(LogicBlock).patch(editId, fields)
+      : Store.m(LogicBlock).create(fields));
+  };
+
+  const handleDelete = () => {
+    if (editId === null) return;
+    Store.m(LogicBlock).destroy(editId);
+    onClose();
+  };
+
+  return (
+    <div class="rounded-lg border border-border bg-surface-alt p-4 mb-4 space-y-3">
+      <h3 class="text-sm font-semibold">{editId !== null ? 'Edit' : 'New'} Logic Block</h3>
+      {error && <p class="text-sm text-error">{error}</p>}
+      <div class="grid gap-3 md:grid-cols-2">
+        <label class="block">
+          <span class="text-xs text-text-muted">Name</span>
+          <input
+            class="mt-1 block w-full rounded border border-border bg-surface px-2 py-1.5 text-sm"
+            value={name}
+            onInput={(e) => setName((e.target as HTMLInputElement).value)}
+          />
+        </label>
+        <label class="block">
+          <span class="text-xs text-text-muted">Type</span>
+          <select
+            class="mt-1 block w-full rounded border border-border bg-surface px-2 py-1.5 text-sm"
+            value={blockType}
+            onChange={(e) => handleTypeChange((e.target as HTMLSelectElement).value as LogicBlockFields['block_type'])}
+          >
+            <option value="hysteresis">Hysteresis</option>
+            <option value="latch">Latch</option>
+          </select>
+        </label>
+        <label class="block">
+          <span class="text-xs text-text-muted">Mode</span>
+          <select
+            class="mt-1 block w-full rounded border border-border bg-surface px-2 py-1.5 text-sm"
+            value={mode}
+            onChange={(e) => setMode((e.target as HTMLSelectElement).value)}
+          >
+            {blockType === 'hysteresis' ? (
+              <>
+                <option value="active_high">Active High</option>
+                <option value="active_low">Active Low</option>
+              </>
+            ) : (
+              <>
+                <option value="latch_high">Latch High</option>
+                <option value="latch_low">Latch Low</option>
+              </>
+            )}
+          </select>
+        </label>
+        {blockType === 'latch' && (
+          <label class="block">
+            <span class="text-xs text-text-muted">Dominance</span>
+            <select
+              class="mt-1 block w-full rounded border border-border bg-surface px-2 py-1.5 text-sm"
+              value={dominance}
+              onChange={(e) => setDominance((e.target as HTMLSelectElement).value)}
+            >
+              <option value="reset">Reset</option>
+              <option value="set">Set</option>
+            </select>
+          </label>
+        )}
+      </div>
+      <label class="block">
+        <span class="text-xs text-text-muted">Input Expressions</span>
+        <textarea
+          class="mt-1 block min-h-28 w-full rounded border border-border bg-surface px-2 py-1.5 font-mono text-sm"
+          value={expressionsText}
+          onInput={(e) => setExpressionsText((e.target as HTMLTextAreaElement).value)}
+        />
+      </label>
+      <div class="flex gap-2">
+        <FormButtons saving={saving} disabled={!name} onSave={handleSave} onCancel={onClose} />
+        {editId !== null && (
+          <button
+            class="ml-auto rounded border border-error px-3 py-1.5 text-sm font-medium text-error hover:bg-error-bg"
+            onClick={handleDelete}
+          >
+            Delete
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function FormButtons({ saving, disabled, onSave, onCancel }: {
+  saving: boolean;
+  disabled: boolean;
+  onSave: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <>
+      <button
+        class="rounded bg-active px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+        onClick={onSave}
+        disabled={saving || disabled}
+      >
+        {saving ? 'Saving...' : 'Save'}
+      </button>
+      <button
+        class="rounded border border-border px-3 py-1.5 text-sm font-medium text-text-muted hover:text-text"
+        onClick={onCancel}
+      >
+        Cancel
+      </button>
+    </>
+  );
+}
+
+function defaultExpressionsForType(blockType: LogicBlockFields['block_type']) {
+  return blockType === 'hysteresis'
+    ? { value: '', low_limit: '', high_limit: '' }
+    : { set: '', reset: '' };
+}
+
+function expressionsToText(expressions: Record<string, string>) {
+  return Object.entries(expressions).map(([key, value]) => `${key} = ${value}`).join('\n');
+}
+
+function textToExpressions(text: string) {
+  const expressions: Record<string, string> = {};
+  for (const line of text.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const match = trimmed.match(/^([a-zA-Z_]\w*)\s*=\s*(.+)$/);
+    if (!match) throw new Error(`Invalid expression line: ${trimmed}`);
+    expressions[match[1]] = match[2];
+  }
+  return expressions;
+}
+
+function useTxnStatus(txn: Txn | undefined) {
+  return useLoaders(() => {
+    const txnResult = txn ? Store.txn_status(txn) : undefined;
+    return {
+      txnResult,
+      saving: !!txn && !txnResult,
+    };
+  }, [Store], [txn]);
 }
 
 // ---------------------------------------------------------------------------
@@ -175,7 +646,15 @@ function MeasurementForm({ editId, devices, onClose }: {
   const [sourcePath, setSourcePath] = useState(found?.source_path ?? '');
   const [updatePeriod, setUpdatePeriod] = useState(String(found?.update_period ?? 60));
   const [units, setUnits] = useState(found?.units ?? '');
-  const [saving, setSaving] = useState(false);
+  const [saveTxn, setSaveTxn] = useState<Txn | undefined>();
+  const [error, setError] = useState<string | null>(null);
+  const { txnResult, saving } = useTxnStatus(saveTxn);
+
+  useEffect(() => {
+    if (!txnResult) return;
+    if (txnResult.status === 'succeeded') onClose();
+    else setError('Save failed');
+  }, [txnResult, onClose]);
 
   const handleSave = () => {
     const fields = {
@@ -186,24 +665,12 @@ function MeasurementForm({ editId, devices, onClose }: {
       update_period: parseInt(updatePeriod, 10),
       units: units || null,
     };
-    setSaving(true);
-    let txn: Txn;
+    setError(null);
     if (editId !== null) {
-      txn = Store.m(Measurement).patch(editId, fields);
+      setSaveTxn(Store.m(Measurement).patch(editId, fields));
     } else {
-      txn = Store.m(Measurement).create(fields);
+      setSaveTxn(Store.m(Measurement).create(fields));
     }
-    // Poll for completion
-    const check = () => {
-      const result = Store.txn_status(txn);
-      if (result) {
-        setSaving(false);
-        if (result.status === 'succeeded') onClose();
-      } else {
-        setTimeout(check, 100);
-      }
-    };
-    check();
   };
 
   const handleDelete = () => {
@@ -217,6 +684,7 @@ function MeasurementForm({ editId, devices, onClose }: {
   return (
     <div class="rounded-lg border border-border bg-surface-alt p-4 mb-4 space-y-3">
       <h3 class="text-sm font-semibold">{editId !== null ? 'Edit' : 'New'} Measurement</h3>
+      {error && <p class="text-sm text-error">{error}</p>}
 
       <div class="grid gap-3 md:grid-cols-2">
         <label class="block">

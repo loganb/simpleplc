@@ -10,7 +10,19 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_04_24_223249) do
+ActiveRecord::Schema[8.1].define(version: 2026_04_28_000004) do
+  create_table "data", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.json "input_values", default: {}, null: false
+    t.datetime "recorded_at", null: false
+    t.integer "source_id", null: false
+    t.string "source_type", null: false
+    t.json "state", default: {}, null: false
+    t.datetime "updated_at", null: false
+    t.float "value"
+    t.index ["source_type", "source_id", "recorded_at"], name: "index_data_on_source_type_and_source_id_and_recorded_at"
+  end
+
   create_table "devices", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.json "current_state"
@@ -30,6 +42,25 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_24_223249) do
     t.string "parity", default: "none", null: false
     t.string "port", null: false
     t.integer "stop_bits", default: 1, null: false
+    t.datetime "updated_at", null: false
+  end
+
+  create_table "logic_blocks", force: :cascade do |t|
+    t.json "config", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.json "input_expressions", default: {}, null: false
+    t.integer "logic_diagram_id", null: false
+    t.string "name", null: false
+    t.integer "stratum", default: 1, null: false
+    t.string "type", null: false
+    t.datetime "updated_at", null: false
+    t.index ["logic_diagram_id", "stratum"], name: "index_logic_blocks_on_logic_diagram_id_and_stratum"
+    t.index ["logic_diagram_id"], name: "index_logic_blocks_on_logic_diagram_id"
+  end
+
+  create_table "logic_diagrams", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "name", null: false
     t.datetime "updated_at", null: false
   end
 
@@ -54,6 +85,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_24_223249) do
   end
 
   add_foreign_key "devices", "host_interfaces"
+  add_foreign_key "logic_blocks", "logic_diagrams"
   add_foreign_key "measurement_data", "measurements"
   add_foreign_key "measurements", "devices"
 end

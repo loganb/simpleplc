@@ -22,6 +22,7 @@ HVAC PLC controller application — a web interface for monitoring and controlli
 - **REST API** exposes devices, host_interfaces, measurements, and measurement_data with the RestfulApiController pattern (flat JSON wire format compatible with RestfulModelStore).
 - **Measurements** — named values with a source device + JSON path (e.g. `temperatures[4]`), update period, optional units. `measurement_data` table stores timestamped float readings.
 - **Frontend dashboard** shows device cards with live data + measurement cards with latest values + CRUD form for measurements. It refreshes live queries every 5 minutes and uses bounded frontend store cache epochs to avoid unbounded long-session cache growth.
+- **Planned LogicDiagram feature** — a LogicDiagram will map global Measurements through stateful LogicBlocks (initially hysteresis and latch) and eventually Outputs. The frontend editor will compute topological strata for left-to-right columns, while the backend should validate dependency order and evaluate blocks by ascending stratum. Outputs are visual-only for the first pass. Each LogicBlock computation should create a Datum row with output value, retained state, and computed input expression values for later graphing/debugging. See `claude/logic-diagram.md`.
 
 ## Key Entry Points
 
@@ -39,3 +40,6 @@ HVAC PLC controller application — a web interface for monitoring and controlli
 - `devices` — Modbus devices (belongs_to host_interface, driver, modbus_address, current_state JSON)
 - `measurements` — named values (name, source_type, device_id, source_path, update_period, units)
 - `measurement_data` — time-series readings (measurement_id, value float nullable, recorded_at)
+- planned `logic_diagrams` — named control-logic diagrams
+- planned `logic_blocks` — diagram-owned stateful/function blocks with expression inputs, config, state, and frontend-computed stratum
+- planned `data`/`datum` — polymorphic historical computations containing output value, retained state JSON, and input expression result JSON. Initial source type is LogicBlock; later sources may include Measurements and Outputs.

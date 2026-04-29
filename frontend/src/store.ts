@@ -86,4 +86,71 @@ export const MeasurementDatum: ModelDefinition<MeasurementDatumFields> = {
   singleton: false,
 };
 
+export interface LogicDiagramFields {
+  id: number;
+  name: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export const LogicDiagram: ModelDefinition<LogicDiagramFields> = {
+  name: 'logic_diagram',
+  inflections: { plural: 'logic_diagrams', title: 'LogicDiagram' },
+  singleton: false,
+};
+
+export interface BaseLogicBlockFields {
+  id: number;
+  logic_diagram_id: number;
+  name: string;
+  stratum: number;
+  input_expressions: Record<string, string>;
+  config: Record<string, unknown>;
+  latest_datum_id: number | null;
+  latest_value: number | null;
+  latest_state: Record<string, unknown> | null;
+  output: boolean | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface HysteresisLogicBlockFields extends BaseLogicBlockFields {
+  type: 'HysteresisLogicBlock';
+  block_type: 'hysteresis';
+  value: number | null;
+  low_limit: number | null;
+  high_limit: number | null;
+}
+
+export interface LatchLogicBlockFields extends BaseLogicBlockFields {
+  type: 'LatchLogicBlock';
+  block_type: 'latch';
+  set: boolean | null;
+  reset: boolean | null;
+}
+
+export type LogicBlockFields = HysteresisLogicBlockFields | LatchLogicBlockFields;
+
+export const LogicBlock: ModelDefinition<LogicBlockFields> = {
+  name: 'logic_block',
+  inflections: { plural: 'logic_blocks', title: 'LogicBlock' },
+  singleton: false,
+};
+
+export interface DatumFields {
+  id: number;
+  source_type: string;
+  source_id: number;
+  value: number | null;
+  state: Record<string, unknown>;
+  input_values: Record<string, unknown>;
+  recorded_at: string;
+}
+
+export const Datum: ModelDefinition<DatumFields> = {
+  name: 'datum',
+  inflections: { plural: 'data', title: 'Datum' },
+  singleton: false,
+};
+
 export { AxiosClient, Store };

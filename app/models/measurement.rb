@@ -4,6 +4,11 @@ class Measurement < ApplicationRecord
   has_many :measurement_data, dependent: :destroy
 
   validates :name, presence: true
+  validates :name, uniqueness: true
+  validates :name, format: {
+    with: /\A[A-Za-z_]\w*\z/,
+    message: "must be an expression-safe identifier"
+  }
   validates :update_period, presence: true,
     numericality: { only_integer: true, greater_than: 0 }
   validates :source_type, inclusion: { in: %w[device] }
