@@ -3,6 +3,7 @@ require "rails_helper"
 RSpec.describe Datum, type: :model do
   it "stores polymorphic computation history for a logic block" do
     diagram = LogicDiagram.create!(name: "Boiler")
+    trace = Trace.create!(logic_diagram: diagram)
     block = HysteresisLogicBlock.create!(
       logic_diagram: diagram,
       name: "Ready",
@@ -12,6 +13,7 @@ RSpec.describe Datum, type: :model do
     )
 
     datum = described_class.create!(
+      trace: trace,
       source: block,
       value: 1.0,
       state: { "output" => true },

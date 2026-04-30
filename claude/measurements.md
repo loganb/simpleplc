@@ -4,12 +4,12 @@
 
 A **Measurement** is a named value extracted from a device's `current_state.data` via a JSON path string (e.g. `temperatures[4]`). It has:
 - `name` — user-facing label
-- `source_type` — currently always `"device"`, future: `"expression"` for computed values
-- `device_id` — FK to devices (required when source_type=device)
+- `device_id` — optional FK to devices for acquisition measurements
 - `source_path` — JSON path into `current_state.data`
-- `update_period` — seconds between readings
 - `units` — optional string (e.g. "°C", "PSI")
 - `measurement_data` — has_many timestamped float values (NULL = no reading)
+
+Measurements are owned by a LogicDiagram. Measurement sampling from the poller has been removed; Trace creation is now the intended path for evaluating diagram values.
 
 ## Implementation
 
@@ -22,10 +22,10 @@ A **Measurement** is a named value extracted from a device's `current_state.data
 ### Frontend
 - Store: `Measurement` and `MeasurementDatum` model definitions in store.ts
 - Dashboard: Measurement cards showing name, latest value, units, source info
-- CRUD form: create/edit/delete measurements with device dropdown, source path input, update period, units
+- CRUD form: create/edit/delete measurements with device dropdown, source path input, mode, simulation value, and units
 
 ## Future Work
-- **Poller integration** — actually write measurement_data on each poll cycle by evaluating source_path against device current_state
-- **Computed measurements** — source_type="expression" with mathematical expressions combining other measurements
+- **Trace-driven acquisition** — decide whether creating traces should sample device current_state directly or use a separate acquisition history.
+- **Computed measurements** — revisit whether computed inputs should be Measurements, LogicBlocks, or another diagram-owned source type.
 - **Data retention** — purge/downsample old measurement_data
 - **Charts** — recharts integration to visualize measurement_data history

@@ -57,12 +57,15 @@ export const HostInterface: ModelDefinition<HostInterfaceFields> = {
 
 export interface MeasurementFields {
   id: number;
+  logic_diagram_id: number;
   name: string;
-  source_type: string;
+  mode: 'acquisition' | 'simulation';
   device_id: number | null;
   source_path: string | null;
-  update_period: number;
   units: string | null;
+  simulation_value: number | null;
+  latest_datum_id: number | null;
+  latest_value: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -89,6 +92,7 @@ export const MeasurementDatum: ModelDefinition<MeasurementDatumFields> = {
 export interface LogicDiagramFields {
   id: number;
   name: string;
+  update_period: number;
   created_at: string;
   updated_at: string;
 }
@@ -139,6 +143,7 @@ export const LogicBlock: ModelDefinition<LogicBlockFields> = {
 
 export interface DatumFields {
   id: number;
+  trace_id: number;
   source_type: string;
   source_id: number;
   value: number | null;
@@ -150,6 +155,20 @@ export interface DatumFields {
 export const Datum: ModelDefinition<DatumFields> = {
   name: 'datum',
   inflections: { plural: 'data', title: 'Datum' },
+  singleton: false,
+};
+
+export interface TraceFields {
+  id: number;
+  logic_diagram_id: number;
+  recorded_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export const Trace: ModelDefinition<TraceFields> = {
+  name: 'trace',
+  inflections: { plural: 'traces', title: 'Trace' },
   singleton: false,
 };
 

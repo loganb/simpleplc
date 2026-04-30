@@ -17,8 +17,10 @@ RSpec.describe "Logic blocks API", type: :request do
 
     expect(response).to have_http_status(:created)
 
+    trace = Trace.create!(logic_diagram: diagram)
     block = LogicBlock.find(response.parsed_body.fetch("id"))
     block.data.create!(
+      trace: trace,
       value: 1.0,
       state: { "output" => true },
       input_values: { "value" => 145.0, "low_limit" => 130.0, "high_limit" => 140.0 },

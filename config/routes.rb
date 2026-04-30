@@ -11,5 +11,6 @@ Rails.application.routes.draw do
   resources :measurement_data, only: [ :index, :show, :create ]
   resources :logic_diagrams
   resources :logic_blocks
+  resources :traces
   resources :data, only: [ :index, :show ]
 end

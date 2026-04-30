@@ -73,7 +73,7 @@ class LogicBlock < ApplicationRecord
     return if all_names.empty?
 
     blocks_by_name = logic_diagram ? logic_diagram.logic_blocks.where(name: all_names).index_by(&:name) : {}
-    measurements_by_name = Measurement.where(name: all_names).index_by(&:name)
+    measurements_by_name = logic_diagram ? logic_diagram.measurements.where(name: all_names).index_by(&:name) : {}
 
     all_names.each do |name|
       referenced_block = blocks_by_name[name]

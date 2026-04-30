@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_04_28_000004) do
+ActiveRecord::Schema[8.1].define(version: 2026_04_30_000003) do
   create_table "data", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.json "input_values", default: {}, null: false
@@ -18,9 +18,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_28_000004) do
     t.integer "source_id", null: false
     t.string "source_type", null: false
     t.json "state", default: {}, null: false
+    t.integer "trace_id", null: false
     t.datetime "updated_at", null: false
     t.float "value"
     t.index ["source_type", "source_id", "recorded_at"], name: "index_data_on_source_type_and_source_id_and_recorded_at"
+    t.index ["trace_id", "source_type", "source_id"], name: "index_data_on_trace_id_and_source_type_and_source_id"
+    t.index ["trace_id"], name: "index_data_on_trace_id"
   end
 
   create_table "devices", force: :cascade do |t|
@@ -61,6 +64,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_28_000004) do
   create_table "logic_diagrams", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.string "name", null: false
+    t.integer "update_period", default: 60, null: false
     t.datetime "updated_at", null: false
   end
 
@@ -75,17 +79,32 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_28_000004) do
   create_table "measurements", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.integer "device_id"
+    t.integer "logic_diagram_id", null: false
+    t.string "mode", default: "acquisition", null: false
     t.string "name", null: false
+    t.float "simulation_value"
     t.string "source_path"
-    t.string "source_type", default: "device", null: false
     t.string "units"
-    t.integer "update_period", default: 60, null: false
     t.datetime "updated_at", null: false
     t.index ["device_id"], name: "index_measurements_on_device_id"
+    t.index ["logic_diagram_id", "name"], name: "index_measurements_on_logic_diagram_id_and_name", unique: true
+    t.index ["logic_diagram_id"], name: "index_measurements_on_logic_diagram_id"
   end
 
+  create_table "traces", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.integer "logic_diagram_id", null: false
+    t.datetime "recorded_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["logic_diagram_id", "created_at"], name: "index_traces_on_logic_diagram_id_and_created_at"
+    t.index ["logic_diagram_id"], name: "index_traces_on_logic_diagram_id"
+  end
+
+  add_foreign_key "data", "traces"
   add_foreign_key "devices", "host_interfaces"
   add_foreign_key "logic_blocks", "logic_diagrams"
   add_foreign_key "measurement_data", "measurements"
   add_foreign_key "measurements", "devices"
+  add_foreign_key "measurements", "logic_diagrams"
+  add_foreign_key "traces", "logic_diagrams"
 end

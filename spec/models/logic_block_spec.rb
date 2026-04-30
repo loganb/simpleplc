@@ -6,7 +6,7 @@ RSpec.describe LogicBlock, type: :model do
   def measurement
     host = HostInterface.create!(port: "/dev/ttyUSB0")
     device = Device.create!(name: "Temp board", host_interface: host, driver: "n4dsc08", modbus_address: 1)
-    Measurement.create!(name: "DHW_Temp", source_type: "device", device: device, source_path: "temperatures[0]", update_period: 60)
+    Measurement.create!(logic_diagram: diagram, name: "DHW_Temp", device: device, source_path: "temperatures[0]")
   end
 
   it "accepts a valid hysteresis block" do
@@ -43,6 +43,7 @@ RSpec.describe LogicBlock, type: :model do
       config: { "mode" => "active_high" }
     )
     block.data.create!(
+      trace: Trace.create!(logic_diagram: diagram),
       value: 1.0,
       state: { "output" => true },
       input_values: { "value" => 145.0, "low_limit" => 130.0, "high_limit" => 140.0 },
@@ -99,6 +100,7 @@ RSpec.describe LogicBlock, type: :model do
       config: { "mode" => "latch_high", "dominance" => "reset" }
     )
     block.data.create!(
+      trace: Trace.create!(logic_diagram: diagram),
       value: 1.0,
       state: { "output" => true },
       input_values: { "set" => true, "reset" => false },

@@ -3,6 +3,7 @@ require "rails_helper"
 RSpec.describe "Data API", type: :request do
   it "queries polymorphic datum history" do
     diagram = LogicDiagram.create!(name: "Boiler")
+    trace = Trace.create!(logic_diagram: diagram)
     block = HysteresisLogicBlock.create!(
       logic_diagram: diagram,
       name: "Ready",
@@ -11,6 +12,7 @@ RSpec.describe "Data API", type: :request do
       config: {}
     )
     datum = block.data.create!(
+      trace: trace,
       value: 1.0,
       state: { "output" => true },
       input_values: { "value" => 1.0 },
@@ -22,6 +24,7 @@ RSpec.describe "Data API", type: :request do
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body.fetch("query")).to eq([ datum.id ])
     expect(response.parsed_body.fetch("data").first).to include(
+      "trace_id" => trace.id,
       "source_type" => "LogicBlock",
       "source_id" => block.id,
       "value" => 1.0

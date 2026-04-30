@@ -1,19 +1,18 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { useLoaders } from './lib/DataLoader2';
-import { Store, Device, HostInterface, Measurement, MeasurementDatum, LogicDiagram, LogicBlock } from './store';
+import { Store, Device, HostInterface, Measurement, LogicDiagram, LogicBlock, Trace } from './store';
 import type {
   DeviceFields,
   HostInterfaceFields,
   LogicBlockFields,
   LogicDiagramFields,
   MeasurementFields,
-  MeasurementDatumFields,
 } from './store';
 import type { FoundRecord, ReifiedQueryResult, Txn } from './lib/RestfulModelStore';
 import { nextStratumForExpressions } from './logicDiagram';
 
 export function App() {
-  const [showForm, setShowForm] = useState<number | 'new' | null>(null);
+  const [showMeasurementForm, setShowMeasurementForm] = useState<number | 'new' | null>(null);
   const [showDiagramForm, setShowDiagramForm] = useState(false);
   const [showBlockForm, setShowBlockForm] = useState<number | 'new' | null>(null);
   const [selectedDiagramId, setSelectedDiagramId] = useState<number | null>(null);
@@ -63,55 +62,20 @@ export function App() {
           )}
         </section>
 
-        {/* Measurements */}
-        <section>
-          <div class="flex items-center justify-between mb-4">
-            <h2 class="text-lg font-semibold">Measurements</h2>
-            <button
-              class="rounded bg-active px-3 py-1.5 text-sm font-medium text-white hover:opacity-90"
-              onClick={() => setShowForm('new')}
-            >
-              + New Measurement
-            </button>
-          </div>
-
-          {showForm !== null && (
-            <MeasurementForm
-              editId={showForm === 'new' ? null : showForm}
-              devices={devices}
-              onClose={() => setShowForm(null)}
-            />
-          )}
-
-          {!measurements._loaded ? (
-            <p class="text-text-muted">Loading measurements...</p>
-          ) : measurements.length === 0 ? (
-            <p class="text-text-muted">No measurements configured yet.</p>
-          ) : (
-            <div class="grid gap-4 md:grid-cols-3">
-              {measurements.map((m) => (
-                <MeasurementCard
-                  key={m.id as number}
-                  measurement={m}
-                  devices={devices}
-                  refreshToken={refreshToken}
-                  onEdit={(id) => setShowForm(id)}
-                />
-              ))}
-            </div>
-          )}
-        </section>
-
         <LogicDiagramsSection
           diagrams={logicDiagrams}
           blocks={logicBlocks}
           measurements={measurements}
+          devices={devices}
           selectedDiagramId={selectedDiagramId}
           onSelectDiagram={setSelectedDiagramId}
           showDiagramForm={showDiagramForm}
           onShowDiagramForm={setShowDiagramForm}
+          showMeasurementForm={showMeasurementForm}
+          onShowMeasurementForm={setShowMeasurementForm}
           showBlockForm={showBlockForm}
           onShowBlockForm={setShowBlockForm}
+          onRefresh={() => setRefreshToken((token) => token + 1)}
         />
       </main>
     </div>
@@ -126,23 +90,35 @@ function LogicDiagramsSection({
   diagrams,
   blocks,
   measurements,
+  devices,
   selectedDiagramId,
   onSelectDiagram,
   showDiagramForm,
   onShowDiagramForm,
+  showMeasurementForm,
+  onShowMeasurementForm,
   showBlockForm,
   onShowBlockForm,
+  onRefresh,
 }: {
   diagrams: ReifiedQueryResult<LogicDiagramFields>;
   blocks: ReifiedQueryResult<LogicBlockFields>;
   measurements: ReifiedQueryResult<MeasurementFields>;
+  devices: ReifiedQueryResult<DeviceFields>;
   selectedDiagramId: number | null;
   onSelectDiagram: (id: number | null) => void;
   showDiagramForm: boolean;
   onShowDiagramForm: (show: boolean) => void;
+  showMeasurementForm: number | 'new' | null;
+  onShowMeasurementForm: (id: number | 'new' | null) => void;
   showBlockForm: number | 'new' | null;
   onShowBlockForm: (id: number | 'new' | null) => void;
+  onRefresh: () => void;
 }) {
+  const [traceTxn, setTraceTxn] = useState<Txn | undefined>();
+  const [traceError, setTraceError] = useState<string | null>(null);
+  const handledTraceSeq = useRef<number | null>(null);
+  const { txnResult: traceTxnResult, saving: computing } = useTxnStatus(traceTxn);
   const foundDiagrams = diagrams._loaded
     ? diagrams.filter((d) => d._found) as FoundRecord<LogicDiagramFields>[]
     : [];
@@ -151,7 +127,9 @@ function LogicDiagramsSection({
     ? blocks.filter((b) => b._found && (b as FoundRecord<LogicBlockFields>).logic_diagram_id === currentDiagram.id) as FoundRecord<LogicBlockFields>[]
     : [];
   const foundMeasurements = measurements._loaded
-    ? measurements.filter((m) => m._found) as FoundRecord<MeasurementFields>[]
+    ? measurements.filter((m) => (
+      m._found && currentDiagram && (m as FoundRecord<MeasurementFields>).logic_diagram_id === currentDiagram.id
+    )) as FoundRecord<MeasurementFields>[]
     : [];
   const blocksByStratum = new Map<number, FoundRecord<LogicBlockFields>[]>();
   currentBlocks.forEach((block) => {
@@ -160,6 +138,24 @@ function LogicDiagramsSection({
     blocksByStratum.set(block.stratum, group);
   });
   const strata = [...blocksByStratum.keys()].sort((a, b) => a - b);
+
+  useEffect(() => {
+    if (!traceTxnResult) return;
+    if (handledTraceSeq.current === traceTxnResult.seq) return;
+    handledTraceSeq.current = traceTxnResult.seq;
+    if (traceTxnResult.status === 'succeeded') {
+      setTraceError(null);
+      onRefresh();
+    } else {
+      setTraceError('Compute failed');
+    }
+  }, [traceTxnResult, onRefresh]);
+
+  const computeNow = () => {
+    if (!currentDiagram) return;
+    setTraceError(null);
+    setTraceTxn(Store.m(Trace).create({ logic_diagram_id: currentDiagram.id }));
+  };
 
   return (
     <section>
@@ -190,6 +186,13 @@ function LogicDiagramsSection({
             New Diagram
           </button>
           <button
+            class="rounded border border-border px-3 py-1.5 text-sm font-medium text-text-muted hover:text-text disabled:opacity-50"
+            disabled={!currentDiagram || computing}
+            onClick={computeNow}
+          >
+            {computing ? 'Computing...' : 'Compute Now'}
+          </button>
+          <button
             class="rounded bg-active px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
             disabled={!currentDiagram}
             onClick={() => onShowBlockForm('new')}
@@ -200,6 +203,7 @@ function LogicDiagramsSection({
       </div>
 
       {showDiagramForm && <LogicDiagramForm onClose={() => onShowDiagramForm(false)} />}
+      {traceError && <p class="mb-3 text-sm text-error">{traceError}</p>}
 
       {!diagrams._loaded ? (
         <p class="text-text-muted">Loading logic diagrams...</p>
@@ -216,16 +220,39 @@ function LogicDiagramsSection({
             />
           )}
 
+          {showMeasurementForm !== null && currentDiagram && (
+            <MeasurementForm
+              diagram={currentDiagram}
+              editId={showMeasurementForm === 'new' ? null : showMeasurementForm}
+              devices={devices}
+              onClose={() => onShowMeasurementForm(null)}
+            />
+          )}
+
           <div class="overflow-x-auto pb-2">
             <div class="flex min-w-max gap-4">
               <div class="w-64 shrink-0">
-                <ColumnHeader title="Measurements" />
+                <div class="mb-2 flex items-center justify-between">
+                  <ColumnHeader title="Measurements" />
+                  <button
+                    class="rounded bg-active px-2 py-1 text-xs font-medium text-white hover:opacity-90"
+                    onClick={() => onShowMeasurementForm('new')}
+                  >
+                    + New
+                  </button>
+                </div>
                 <div class="space-y-2">
-                  {foundMeasurements.map((measurement) => (
-                    <div key={measurement.id} class="rounded-lg border border-border bg-surface p-3">
-                      <div class="text-sm font-semibold">{measurement.name}</div>
-                      <div class="mt-1 text-xs font-mono text-text-muted">{measurement.name}</div>
+                  {foundMeasurements.length === 0 ? (
+                    <div class="rounded-lg border border-dashed border-border bg-surface-alt p-4 text-sm text-text-muted">
+                      No measurements in this diagram.
                     </div>
+                  ) : foundMeasurements.map((measurement) => (
+                    <MeasurementCard
+                      key={measurement.id}
+                      measurement={measurement}
+                      devices={devices}
+                      onEdit={(id) => onShowMeasurementForm(id)}
+                    />
                   ))}
                 </div>
               </div>
@@ -324,6 +351,7 @@ function formatComputedValue(value: number | boolean | null) {
 
 function LogicDiagramForm({ onClose }: { onClose: () => void }) {
   const [name, setName] = useState('');
+  const [updatePeriod, setUpdatePeriod] = useState('60');
   const [saveTxn, setSaveTxn] = useState<Txn | undefined>();
   const [error, setError] = useState<string | null>(null);
   const { txnResult, saving } = useTxnStatus(saveTxn);
@@ -336,7 +364,7 @@ function LogicDiagramForm({ onClose }: { onClose: () => void }) {
 
   const handleSave = () => {
     setError(null);
-    setSaveTxn(Store.m(LogicDiagram).create({ name }));
+    setSaveTxn(Store.m(LogicDiagram).create({ name, update_period: parseInt(updatePeriod, 10) }));
   };
 
   return (
@@ -349,6 +377,16 @@ function LogicDiagramForm({ onClose }: { onClose: () => void }) {
           class="mt-1 block w-full rounded border border-border bg-surface px-2 py-1.5 text-sm"
           value={name}
           onInput={(e) => setName((e.target as HTMLInputElement).value)}
+        />
+      </label>
+      <label class="block">
+        <span class="text-xs text-text-muted">Update Period (seconds)</span>
+        <input
+          type="number"
+          min="1"
+          class="mt-1 block w-full rounded border border-border bg-surface px-2 py-1.5 text-sm"
+          value={updatePeriod}
+          onInput={(e) => setUpdatePeriod((e.target as HTMLInputElement).value)}
         />
       </label>
       <FormButtons saving={saving} disabled={!name} onSave={handleSave} onCancel={onClose} />
@@ -568,38 +606,61 @@ function useTxnStatus(txn: Txn | undefined) {
 // Measurement components
 // ---------------------------------------------------------------------------
 
-function MeasurementCard({ measurement, devices, refreshToken, onEdit }: {
-  measurement: ReifiedQueryResult<MeasurementFields>[number];
+function MeasurementCard({ measurement, devices, onEdit }: {
+  measurement: FoundRecord<MeasurementFields>;
   devices: ReifiedQueryResult<DeviceFields>;
-  refreshToken: number;
   onEdit: (id: number) => void;
 }) {
-  const lastForcedRefreshToken = useRef(0);
-  const foundMeasurement = measurement._found
-    ? measurement as FoundRecord<MeasurementFields>
-    : null;
-  const measurementId = foundMeasurement?.id ?? null;
-
-  const { latest } = useLoaders(() => {
-    if (!foundMeasurement) return { latest: null };
-
-    const force = refreshToken > lastForcedRefreshToken.current;
-    if (force) lastForcedRefreshToken.current = refreshToken;
-    const data = Store.m(MeasurementDatum).queryFor(null, { measurement_id: foundMeasurement.id, limit: 1 }, force);
-    const latest = data._found && data.length > 0 ? data[0] : null;
-    return { latest };
-  }, [Store], [measurementId, refreshToken]);
-
-  if (!foundMeasurement) return null;
-  const m = foundMeasurement;
+  const m = measurement;
+  const [editingValue, setEditingValue] = useState(false);
+  const [simulationDraft, setSimulationDraft] = useState(String(m.simulation_value ?? ''));
+  const [saveTxn, setSaveTxn] = useState<Txn | undefined>();
+  const [error, setError] = useState<string | null>(null);
+  const valueSaveStarted = useRef(false);
+  const { txnResult, saving } = useTxnStatus(saveTxn);
 
   const device = devices.find((d) => d._found && (d as FoundRecord<DeviceFields>).id === m.device_id);
   const deviceName = device?._found ? (device as FoundRecord<DeviceFields>).name : null;
+  const displayValue = m.mode === 'simulation' ? m.simulation_value : m.latest_value;
 
-  const latestDatum = latest?._found ? latest as FoundRecord<MeasurementDatumFields> : null;
+  useEffect(() => {
+    if (!editingValue) setSimulationDraft(String(m.simulation_value ?? ''));
+  }, [editingValue, m.simulation_value]);
+
+  useEffect(() => {
+    if (!txnResult) return;
+    setError(txnResult.status === 'succeeded' ? null : 'Save failed');
+  }, [txnResult]);
+
+  const patchMeasurement = (changes: Partial<MeasurementFields>) => {
+    setError(null);
+    setSaveTxn(Store.m(Measurement).patch(m.id, changes));
+  };
+
+  const toggleMode = () => {
+    const nextMode: MeasurementFields['mode'] = m.mode === 'simulation' ? 'acquisition' : 'simulation';
+    patchMeasurement({ mode: nextMode });
+  };
+
+  const startEditingValue = () => {
+    if (m.mode !== 'simulation') return;
+    valueSaveStarted.current = false;
+    setSimulationDraft(String(m.simulation_value ?? ''));
+    setEditingValue(true);
+  };
+
+  const saveSimulationValue = () => {
+    if (valueSaveStarted.current) return;
+    if (!editingValue) return;
+    valueSaveStarted.current = true;
+    setEditingValue(false);
+    patchMeasurement({
+      simulation_value: simulationDraft.trim() === '' ? null : parseFloat(simulationDraft),
+    });
+  };
 
   return (
-    <div class="rounded-lg border border-border bg-surface p-4 space-y-2">
+    <div class="rounded-lg border border-border bg-surface p-3 space-y-2">
       <div class="flex items-center justify-between">
         <h3 class="text-sm font-semibold">{m.name}</h3>
         <button
@@ -610,28 +671,64 @@ function MeasurementCard({ measurement, devices, refreshToken, onEdit }: {
         </button>
       </div>
 
-      <div class="text-2xl font-mono font-bold">
-        {latestDatum
-          ? latestDatum.value !== null
-            ? <>{latestDatum.value.toFixed(1)}{m.units && <span class="text-sm text-text-muted ml-1">{m.units}</span>}</>
-            : <span class="text-text-muted">—</span>
-          : <span class="text-text-muted text-sm">No data</span>
-        }
-      </div>
+      {editingValue ? (
+        <input
+          autoFocus
+          type="number"
+          step="any"
+          class="w-full rounded border border-border bg-surface px-2 py-1 text-xl font-mono font-bold"
+          value={simulationDraft}
+          onInput={(e) => setSimulationDraft((e.target as HTMLInputElement).value)}
+          onBlur={saveSimulationValue}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              saveSimulationValue();
+            } else if (e.key === 'Escape') {
+              valueSaveStarted.current = true;
+              setSimulationDraft(String(m.simulation_value ?? ''));
+              setEditingValue(false);
+            }
+          }}
+        />
+      ) : (
+        <button
+          class={`block w-full text-left text-xl font-mono font-bold ${m.mode === 'simulation' ? 'cursor-text hover:text-active' : 'cursor-default'}`}
+          onClick={startEditingValue}
+          disabled={m.mode !== 'simulation'}
+        >
+          {displayValue !== null
+            ? <>{displayValue.toFixed(1)}{m.units && <span class="text-xs text-text-muted ml-1">{m.units}</span>}</>
+            : <span class="text-text-muted text-sm">{m.mode === 'simulation' ? 'Set value' : 'No data'}</span>
+          }
+        </button>
+      )}
 
       <div class="text-xs text-text-muted space-y-0.5">
-        {deviceName && <p>Source: {deviceName}</p>}
-        {m.source_path && <p>Path: {m.source_path}</p>}
-        <p>Every {m.update_period}s</p>
-        {latestDatum?.recorded_at && (
-          <p>{new Date(latestDatum.recorded_at).toLocaleTimeString()}</p>
-        )}
+        <label class="flex items-center justify-between gap-2 rounded bg-surface-alt px-2 py-1">
+          <span class={m.mode === 'acquisition' ? 'font-medium text-text' : ''}>Acquisition</span>
+          <input
+            type="checkbox"
+            class="peer sr-only"
+            checked={m.mode === 'simulation'}
+            disabled={saving}
+            onChange={toggleMode}
+          />
+          <span class="relative h-5 w-9 shrink-0 rounded-full bg-border transition-colors after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:shadow after:transition-transform peer-checked:bg-active peer-checked:after:translate-x-4 peer-disabled:opacity-50" />
+          <span class={m.mode === 'simulation' ? 'font-medium text-text' : ''}>Simulation</span>
+        </label>
+        {m.mode === 'acquisition' && deviceName && <p>Source: {deviceName}</p>}
+        {m.mode === 'acquisition' && m.source_path && <p>Path: {m.source_path}</p>}
+        {saving && <p>Saving...</p>}
+        {error && <p class="text-error">{error}</p>}
+        <p class="font-mono">{m.name}</p>
       </div>
     </div>
   );
 }
 
-function MeasurementForm({ editId, devices, onClose }: {
+function MeasurementForm({ diagram, editId, devices, onClose }: {
+  diagram: FoundRecord<LogicDiagramFields>;
   editId: number | null;
   devices: ReifiedQueryResult<DeviceFields>;
   onClose: () => void;
@@ -644,7 +741,6 @@ function MeasurementForm({ editId, devices, onClose }: {
   const [name, setName] = useState(found?.name ?? '');
   const [deviceId, setDeviceId] = useState(String(found?.device_id ?? ''));
   const [sourcePath, setSourcePath] = useState(found?.source_path ?? '');
-  const [updatePeriod, setUpdatePeriod] = useState(String(found?.update_period ?? 60));
   const [units, setUnits] = useState(found?.units ?? '');
   const [saveTxn, setSaveTxn] = useState<Txn | undefined>();
   const [error, setError] = useState<string | null>(null);
@@ -658,11 +754,10 @@ function MeasurementForm({ editId, devices, onClose }: {
 
   const handleSave = () => {
     const fields = {
+      logic_diagram_id: diagram.id,
       name,
-      source_type: 'device' as const,
-      device_id: parseInt(deviceId, 10),
+      device_id: deviceId ? parseInt(deviceId, 10) : null,
       source_path: sourcePath || null,
-      update_period: parseInt(updatePeriod, 10),
       units: units || null,
     };
     setError(null);
@@ -721,17 +816,6 @@ function MeasurementForm({ editId, devices, onClose }: {
         </label>
 
         <label class="block">
-          <span class="text-xs text-text-muted">Update Period (seconds)</span>
-          <input
-            type="number"
-            min="1"
-            class="mt-1 block w-full rounded border border-border bg-surface px-2 py-1.5 text-sm"
-            value={updatePeriod}
-            onInput={(e) => setUpdatePeriod((e.target as HTMLInputElement).value)}
-          />
-        </label>
-
-        <label class="block">
           <span class="text-xs text-text-muted">Units</span>
           <input
             class="mt-1 block w-full rounded border border-border bg-surface px-2 py-1.5 text-sm"
@@ -746,7 +830,7 @@ function MeasurementForm({ editId, devices, onClose }: {
         <button
           class="rounded bg-active px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
           onClick={handleSave}
-          disabled={saving || !name || !deviceId}
+          disabled={saving || !name}
         >
           {saving ? 'Saving...' : editId !== null ? 'Update' : 'Create'}
         </button>

@@ -4,13 +4,15 @@ class LogicDiagramApi < RestfulApi
   end
 
   def expound(objects)
-    LogicBlock.where(logic_diagram_id: objects.map(&:id))
+    LogicBlock.where(logic_diagram_id: objects.map(&:id)) +
+      Measurement.where(logic_diagram_id: objects.map(&:id))
   end
 
   def serialize(diagram)
     {
       id:         diagram.id,
       name:       diagram.name,
+      update_period: diagram.update_period,
       created_at: diagram.created_at.iso8601,
       updated_at: diagram.updated_at.iso8601
     }
@@ -21,7 +23,7 @@ class LogicDiagramApi < RestfulApi
   def can_destroy(_obj) = true
 
   def create_params(params)
-    params.require(:logic_diagram).permit(:name)
+    params.require(:logic_diagram).permit(:name, :update_period)
   end
 
   def invalidates(_object)

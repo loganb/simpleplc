@@ -1,6 +1,7 @@
 class DatumApi < RestfulApi
   def by_query(params)
     scope = Datum.all
+    scope = scope.where(trace_id: params[:trace_id]) if params[:trace_id].present?
     scope = scope.where(source_type: params[:source_type]) if params[:source_type].present?
     scope = scope.where(source_id: params[:source_id]) if params[:source_id].present?
     scope = scope.where("recorded_at >= ?", Time.iso8601(params[:since])) if params[:since].present?
@@ -11,6 +12,7 @@ class DatumApi < RestfulApi
   def serialize(datum)
     {
       id:           datum.id,
+      trace_id:     datum.trace_id,
       source_type:  datum.source_type,
       source_id:    datum.source_id,
       value:        datum.value,
