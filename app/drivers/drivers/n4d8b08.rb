@@ -28,6 +28,7 @@ module Drivers
     CHANNEL_COUNT    = 8
     OUTPUT_REG_BASE  = 0x0001  # channels 1–8 at 0x0001–0x0008
     INPUT_REG_BASE   = 0x0081  # channels 1–8 at 0x0081–0x0088
+    RELATIONSHIP_REG = 0x00FD
 
     # FC 06 command values
     CMD_OPEN         = 0x0001
@@ -39,8 +40,15 @@ module Drivers
     CMD_OPEN_ALL     = 0x0007
     CMD_CLOSE_ALL    = 0x0008
 
+    RELATIONSHIP_UNRELATED = 0x0000
+
     def self.display_name  = "N4D8B08 8-Ch RS485 Relay I/O"
     def self.channel_count = CHANNEL_COUNT
+
+    def initialize(device, slave)
+      super
+      slave.holding_registers[RELATIONSHIP_REG] = RELATIONSHIP_UNRELATED
+    end
 
     # Returns current state of all relay outputs and digital inputs.
     #

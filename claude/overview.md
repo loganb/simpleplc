@@ -18,7 +18,7 @@ HVAC PLC controller application — a web interface for monitoring and controlli
 
 ## Current State
 
-- **Modbus polling** working — three devices (DS18B20 temp board, NTC temp board, relay I/O board) polled and state stored in `devices.current_state` JSON column.
+- **Modbus polling** working — three devices (DS18B20 temp board, NTC temp board, relay I/O board) polled and state stored in `devices.current_state` JSON column. The N4D8B08 relay I/O driver writes unrelated input/output relationship mode during initialization so physical input highs do not toggle relay outputs.
 - **REST API** exposes devices, host_interfaces, measurements, and measurement_data with the RestfulApiController pattern (flat JSON wire format compatible with RestfulModelStore).
 - **Measurements** — named values owned by LogicDiagrams. Acquisition measurements may read from a device + JSON path (e.g. `temperatures[4]`); simulation measurements use an operator-entered value so diagrams can be designed before hardware is wired. Trace creation is the path for diagram computation.
 - **Frontend dashboard** shows device cards with live data + measurement cards with latest values + CRUD form for measurements. It refreshes live queries every 5 minutes and uses bounded frontend store cache epochs to avoid unbounded long-session cache growth.
