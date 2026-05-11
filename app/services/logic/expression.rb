@@ -9,7 +9,7 @@ module Logic
     PRECEDENCE = {
       "||" => 1,
       "&&" => 2,
-      "==" => 3, "!=" => 3,
+      "==" => 3, "!=" => 3, "===" => 3, "!==" => 3,
       "<" => 4, "<=" => 4, ">" => 4, ">=" => 4,
       "+" => 5, "-" => 5,
       "*" => 6, "/" => 6
@@ -54,13 +54,13 @@ module Logic
         scanner.scan(/\s+/) && next
         if scanner.scan(/\d+(?:\.\d+)?/)
           tokens << Token.new(type: :number, value: scanner.matched.to_f)
-        elsif scanner.scan(/true|false/i)
+        elsif scanner.scan(/(?:true|false)\b/i)
           tokens << Token.new(type: :boolean, value: scanner.matched.downcase == "true")
-        elsif scanner.scan(/nil|null/i)
+        elsif scanner.scan(/(?:nil|null)\b/i)
           tokens << Token.new(type: :nil, value: nil)
         elsif scanner.scan(/[A-Za-z_]\w*/)
           tokens << Token.new(type: :identifier, value: scanner.matched)
-        elsif scanner.scan(/&&|\|\||==|!=|<=|>=|[+\-*\/()!<>]/)
+        elsif scanner.scan(/&&|\|\||===|!==|==|!=|<=|>=|[+\-*\/()!<>]/)
           tokens << Token.new(type: :operator, value: scanner.matched)
         else
           raise Error, "unexpected token near #{scanner.rest.inspect}"
@@ -128,18 +128,24 @@ module Logic
     end
 
     def evaluate_unary(operator, value)
+      return nil if value.nil?
+
       case operator
-      when "!" then !truthy?(value)
+      when "!" then !boolean(value)
       when "-" then -numeric(value)
       end
     end
 
     def evaluate_binary(operator, left, right)
+      return left == right if operator == "==="
+      return left != right if operator == "!=="
+      return nil if left.nil? || right.nil?
+
       case operator
-      when "||" then truthy?(left) || truthy?(right)
-      when "&&" then truthy?(left) && truthy?(right)
-      when "==" then left == right
-      when "!=" then left != right
+      when "||" then boolean(left) || boolean(right)
+      when "&&" then boolean(left) && boolean(right)
+      when "==" then comparable(left) == comparable(right)
+      when "!=" then comparable(left) != comparable(right)
       when "<" then numeric(left) < numeric(right)
       when "<=" then numeric(left) <= numeric(right)
       when ">" then numeric(left) > numeric(right)
@@ -151,15 +157,22 @@ module Logic
       end
     end
 
-    def truthy?(value)
-      value != nil && value != false && value != 0
+    def boolean(value)
+      return value if value == true || value == false
+      return value != 0 if value.is_a?(Numeric)
+      raise Error, "expected boolean value"
     end
 
     def numeric(value)
       return value.to_f if value.is_a?(Numeric)
       return 1.0 if value == true
-      return 0.0 if value == false || value.nil?
+      return 0.0 if value == false
       raise Error, "expected numeric value"
+    end
+
+    def comparable(value)
+      return numeric(value) if value.is_a?(Numeric) || value == true || value == false
+      value
     end
 
     def context

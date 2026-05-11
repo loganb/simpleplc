@@ -53,6 +53,40 @@ RSpec.describe Logic::BlockEvaluator do
     expect(result["state"]).to include("output" => true)
   end
 
+  it "emits null but preserves hysteresis state when an input is null" do
+    block = HysteresisLogicBlock.create!(
+      logic_diagram: diagram,
+      name: "Flow_Lockout",
+      stratum: 1,
+      input_expressions: { "value" => "null", "low_limit" => "0.8", "high_limit" => "1" },
+      config: { "mode" => "active_high" }
+    )
+    Trace.create!(logic_diagram: diagram, recorded_at: 1.minute.ago).tap do |previous_trace|
+      previous_trace.update!(
+        results: Trace.empty_results.merge(
+          "logic_blocks" => {
+            block.id.to_s => {
+              "id" => block.id,
+              "name" => block.name,
+              "type" => block.type,
+              "value" => 1.0,
+              "state" => { "output" => true },
+              "input_values" => {},
+              "recorded_at" => previous_trace.recorded_at.iso8601
+            }
+          }
+        )
+      )
+    end
+    trace = Trace.create!(logic_diagram: diagram)
+
+    result = described_class.evaluate!(block, trace: trace)
+
+    expect(result["value"]).to be_nil
+    expect(result["state"]).to include("output" => true)
+    expect(result["input_values"]).to include("value" => nil)
+  end
+
   it "implements reset-dominant latch-high behavior" do
     block = LatchLogicBlock.create!(
       logic_diagram: diagram,
@@ -70,6 +104,40 @@ RSpec.describe Logic::BlockEvaluator do
     expect(first["value"]).to eq(1.0)
     expect(retained["value"]).to eq(1.0)
     expect(reset["value"]).to eq(0.0)
+  end
+
+  it "emits null but preserves latch state when an input is null" do
+    block = LatchLogicBlock.create!(
+      logic_diagram: diagram,
+      name: "Heat_Lockout",
+      stratum: 1,
+      input_expressions: { "set" => "null", "reset" => "false" },
+      config: { "mode" => "latch_high", "dominance" => "reset" }
+    )
+    Trace.create!(logic_diagram: diagram, recorded_at: 1.minute.ago).tap do |previous_trace|
+      previous_trace.update!(
+        results: Trace.empty_results.merge(
+          "logic_blocks" => {
+            block.id.to_s => {
+              "id" => block.id,
+              "name" => block.name,
+              "type" => block.type,
+              "value" => 1.0,
+              "state" => { "output" => true },
+              "input_values" => {},
+              "recorded_at" => previous_trace.recorded_at.iso8601
+            }
+          }
+        )
+      )
+    end
+    trace = Trace.create!(logic_diagram: diagram)
+
+    result = described_class.evaluate!(block, trace: trace)
+
+    expect(result["value"]).to be_nil
+    expect(result["state"]).to include("output" => true)
+    expect(result["input_values"]).to include("set" => nil, "reset" => false)
   end
 
   it "evaluates measurement and logic block references by name" do

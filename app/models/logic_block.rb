@@ -24,7 +24,10 @@ class LogicBlock < ApplicationRecord
   end
 
   def output
-    latest_result&.dig("state", "output")
+    value = latest_result&.fetch("value", nil)
+    return nil if value.nil?
+
+    value.nonzero? ? true : false
   end
 
   def required_input_names
@@ -36,7 +39,9 @@ class LogicBlock < ApplicationRecord
   end
 
   def truthy?(value)
-    value != nil && value != false && value != 0
+    return nil if value.nil?
+
+    value != false && value != 0
   end
 
   private

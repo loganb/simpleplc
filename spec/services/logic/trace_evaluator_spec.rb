@@ -103,4 +103,52 @@ RSpec.describe Logic::TraceEvaluator do
       "write_skipped_reason" => "diagram_output_disabled"
     )
   end
+
+  it "stores null expression results in trace JSON while preserving retained block state" do
+    Measurement.create!(logic_diagram: diagram, name: "FutureSensor")
+    block = HysteresisLogicBlock.create!(
+      logic_diagram: diagram,
+      name: "Ready",
+      stratum: 1,
+      input_expressions: { "value" => "FutureSensor", "low_limit" => "0", "high_limit" => "1" },
+      config: {}
+    )
+    Trace.create!(logic_diagram: diagram, recorded_at: 1.minute.ago).tap do |previous_trace|
+      previous_trace.update!(
+        results: Trace.empty_results.merge(
+          "logic_blocks" => {
+            block.id.to_s => {
+              "id" => block.id,
+              "name" => block.name,
+              "type" => block.type,
+              "value" => 1.0,
+              "state" => { "output" => true },
+              "input_values" => {},
+              "recorded_at" => previous_trace.recorded_at.iso8601
+            }
+          }
+        )
+      )
+    end
+    host = HostInterface.create!(port: "/dev/ttyUSB0")
+    device = Device.create!(name: "Relay board", host_interface: host, driver: "Drivers::N4D8B08", modbus_address: 3)
+    output = OutputBlock.create!(
+      logic_diagram: diagram,
+      name: "Boiler_Enable",
+      device: device,
+      channel: 1,
+      input_expression: "Ready",
+      output_enable: true
+    )
+
+    trace = Trace.create!(logic_diagram: diagram)
+
+    block_result = trace.result_for(block)
+    output_result = trace.result_for(output)
+    expect(block_result["value"]).to be_nil
+    expect(block_result["state"]).to include("output" => true)
+    expect(block_result["input_values"]).to include("value" => nil)
+    expect(output_result["input_values"]).to include("input" => nil)
+    expect(output_result["state"]).to include("write_pending" => false)
+  end
 end

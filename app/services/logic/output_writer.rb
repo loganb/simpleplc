@@ -6,6 +6,7 @@ module Logic
       commands = OutputBlock.includes(:device, :logic_diagram).filter_map do |output_block|
         next unless output_block.logic_diagram.output_enable? && output_block.output_enable?
         next if output_block.latest_result.nil?
+        next if output_block.desired_output.nil?
 
         Command.new(
           output_block: output_block,

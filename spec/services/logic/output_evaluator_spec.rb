@@ -87,4 +87,27 @@ RSpec.describe Logic::OutputEvaluator do
       "write_skipped_reason" => "output_disabled"
     )
   end
+
+  it "records unknown desired output and skips writes when input is null" do
+    trace = Trace.create!(logic_diagram: diagram)
+    output = OutputBlock.create!(
+      logic_diagram: diagram,
+      name: "Boiler_Enable",
+      device: device,
+      channel: 1,
+      input_expression: "null",
+      output_enable: true
+    )
+
+    result = described_class.evaluate!(output, trace: trace)
+
+    expect(result["value"]).to be_nil
+    expect(result["input_values"]).to include("input" => nil)
+    expect(result["state"]).to include(
+      "desired_output" => nil,
+      "effective_output" => nil,
+      "write_pending" => false,
+      "write_skipped_reason" => "output_unknown"
+    )
+  end
 end

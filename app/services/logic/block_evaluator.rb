@@ -18,7 +18,7 @@ module Logic
       previous_state = previous_result&.fetch("state", nil) || {}
       value, state = block.evaluate_logic(input_values, previous_state)
 
-      result_payload(value ? 1.0 : 0.0, state, input_values).tap { block.clear_memery_cache! }
+      result_payload(result_value(value), state, input_values).tap { block.clear_memery_cache! }
     end
 
     private
@@ -41,6 +41,12 @@ module Logic
         "input_values" => input_values,
         "recorded_at" => recorded_at.iso8601
       }
+    end
+
+    def result_value(value)
+      return nil if value.nil?
+
+      value ? 1.0 : 0.0
     end
 
   end

@@ -47,6 +47,14 @@ RSpec.describe Logic::OutputWriter do
     expect(described_class.new.enabled_commands_by_device_id).to be_empty
   end
 
+  it "does not collect commands when the latest desired output is null" do
+    output.update!(input_expression: "null")
+    Trace.create!(logic_diagram: diagram)
+
+    expect(output.reload.latest_result["value"]).to be_nil
+    expect(described_class.new.enabled_commands_by_device_id).to be_empty
+  end
+
   it "maps desired true to open and desired false to close on an existing driver" do
     driver = WriterFakeDriver.new
     writer = described_class.new

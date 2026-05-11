@@ -21,11 +21,16 @@ class OutputBlock < ApplicationRecord
   end
 
   def desired_output
-    latest_result&.fetch("value", nil)&.nonzero? ? true : false if latest_result
+    return nil unless latest_result
+
+    value = latest_result.fetch("value", nil)
+    return nil if value.nil?
+
+    value.nonzero? ? true : false
   end
 
   def effective_output
-    return nil unless logic_diagram.output_enable? && output_enable?
+    return nil unless logic_diagram.output_enable? && output_enable? && !desired_output.nil?
 
     desired_output
   end

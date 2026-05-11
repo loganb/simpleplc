@@ -34,9 +34,13 @@ class LatchLogicBlock < LogicBlock
   end
 
   def evaluate_logic(input_values, previous_state)
+    prior_value = previous_state.key?("output") ? previous_state["output"] : initial_output
+    prior_value = initial_output if prior_value.nil?
+    prior_output = truthy?(prior_value)
+    return [ nil, previous_state.merge("output" => prior_output) ] if input_values.values_at("set", "reset").any?(&:nil?)
+
     set = truthy?(input_values["set"])
     reset = truthy?(input_values["reset"])
-    prior_output = truthy?(previous_state.key?("output") ? previous_state["output"] : initial_output)
 
     output = if dominance == "set" && set
       true
