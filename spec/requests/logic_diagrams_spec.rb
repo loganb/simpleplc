@@ -29,4 +29,51 @@ RSpec.describe "Logic diagrams API", type: :request do
       "simulation_value" => 10.0
     )
   end
+
+  it "deletes a diagram and its dependent records" do
+    diagram = LogicDiagram.create!(name: "Boiler")
+    host = HostInterface.create!(port: "/dev/ttyUSB0")
+    device = Device.create!(
+      name: "Relay board",
+      host_interface: host,
+      driver: "Drivers::N4D8B08",
+      modbus_address: 3
+    )
+
+    Measurement.create!(
+      logic_diagram: diagram,
+      name: "Temp",
+      mode: "simulation",
+      simulation_value: 70.0
+    )
+    HysteresisLogicBlock.create!(
+      logic_diagram: diagram,
+      name: "Heat_Call",
+      stratum: 1,
+      input_expressions: {
+        "value" => "Temp",
+        "low_limit" => "68",
+        "high_limit" => "72"
+      },
+      config: { "mode" => "active_high" }
+    )
+    OutputBlock.create!(
+      logic_diagram: diagram,
+      name: "Boiler_Enable",
+      device: device,
+      channel: 1,
+      input_expression: "Heat_Call"
+    )
+    Trace.create!(logic_diagram: diagram, recorded_at: Time.zone.parse("2026-05-11 10:00:00"))
+
+    expect do
+      delete "/logic_diagrams/#{diagram.id}"
+    end.to change(LogicDiagram, :count).by(-1)
+      .and change(Measurement, :count).by(-1)
+      .and change(LogicBlock, :count).by(-1)
+      .and change(OutputBlock, :count).by(-1)
+      .and change(Trace, :count).by(-1)
+
+    expect(response).to have_http_status(:no_content)
+  end
 end

@@ -34,6 +34,7 @@ function makeStore(responseName = 'cached') {
         things: [{ id: 1, name: responseName }],
       },
     }),
+    delete: vi.fn().mockResolvedValue({ data: {} }),
   };
 
   const store = new RestfulModelStore(axios as never);
@@ -138,5 +139,28 @@ describe('RestfulModelStore cache epochs', () => {
     } finally {
       store.stopCacheEpochTimer();
     }
+  });
+
+  it('records an error transaction when destroy fails', async () => {
+    const { axios, store } = makeStore();
+    axios.delete.mockRejectedValue({
+      response: {
+        data: {
+          errors: { base: ['nope'] },
+        },
+      },
+    });
+    const model = store.m(Thing);
+
+    const txn = model.destroy(1);
+    expect(typeof txn.seq).toBe('number');
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(store.txn_status(txn)).toMatchObject({
+      id: 1,
+      status: 'error',
+      errors: { base: ['nope'] },
+    });
   });
 });

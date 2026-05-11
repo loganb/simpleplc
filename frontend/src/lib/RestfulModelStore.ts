@@ -459,13 +459,7 @@ export default class RestfulModelStore extends EventEmitter {
       const query_string = JSON.stringify({[model.name]: initial_fields});
       const url = "/" + encodeURIComponent(model.singleton ? model.name : model.inflections.plural) + '/new.json?json=' + encodeURIComponent(query_string);
 
-      const request = this.axios.get(url,
-        {
-          headers: {
-            'X-CSRF-Token': document.head.querySelector('meta[name=csrf-token]')!.getAttribute('content')
-          }
-        }
-      );
+      const request = this.axios.get(url);
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       request.then((response: any) => {
@@ -519,7 +513,8 @@ export default class RestfulModelStore extends EventEmitter {
       //We're destroying a record that never existed in the first place
       this.news.delete(id as NewRecordId);
       const txn = {
-        record: Object.assign({}, new_record, {_destroyed: true})
+        record: Object.assign({}, new_record, {_destroyed: true}),
+        seq: this.seq++
       };
       this.txns.set(txn, {
         id: id,
@@ -531,7 +526,8 @@ export default class RestfulModelStore extends EventEmitter {
     }
     const deleting_record = Object.assign({}, model.instances.get(id) || this.emptyLoadingRecord(id || ""), { _loading: true, _destroyed: true });
     const txn = {
-      record: deleting_record
+      record: deleting_record,
+      seq: this.seq++
     };
     model.instances.set(id, deleting_record);
     this.soil();
@@ -539,13 +535,7 @@ export default class RestfulModelStore extends EventEmitter {
 
     const url = "/" + encodeURIComponent(model.singleton ? model.name : model.inflections.plural) + (id ? ('/' + encodeURIComponent(id.toString())) : '') + '.json';
 
-    const request = this.axios.delete(url,
-      {
-        headers: {
-          'X-CSRF-Token': document.head.querySelector('meta[name=csrf-token]')!.getAttribute('content')
-        }
-      }
-    );
+    const request = this.axios.delete(url);
 
     request.then(() => {
       //Update the txn to reflect the id of the new object
@@ -561,11 +551,15 @@ export default class RestfulModelStore extends EventEmitter {
       model.instances.delete(id);
 
       this.soil();
-    }).catch((e) => (console.log("ERROR 2!!",e))); //TODO: Handle errors
-
-    request.catch((e) => (
-      console.log("Something bad happened during the destroy", e)
-    ));
+    }).catch((error) => {
+      this.txns.set(txn, {
+        status: 'error',
+        id: id,
+        errors: error.response && error.response.data && error.response.data.errors,
+        seq: this.seq++
+      });
+      this.soil();
+    });
 
     return txn;
   }

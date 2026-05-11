@@ -129,10 +129,14 @@ function LogicDiagramsSection({
 }) {
   const [traceTxn, setTraceTxn] = useState<Txn | undefined>();
   const [diagramTxn, setDiagramTxn] = useState<Txn | undefined>();
+  const [deleteDiagramTxn, setDeleteDiagramTxn] = useState<Txn | undefined>();
   const [traceError, setTraceError] = useState<string | null>(null);
   const handledTraceSeq = useRef<number | null>(null);
+  const handledDeleteDiagramSeq = useRef<number | null>(null);
   const { txnResult: traceTxnResult, saving: computing } = useTxnStatus(traceTxn);
   const { saving: savingDiagram } = useTxnStatus(diagramTxn);
+  const { txnResult: deleteDiagramTxnResult, saving: deletingDiagram } = useTxnStatus(deleteDiagramTxn);
+  const deleteDiagramError = deleteDiagramTxnResult?.status === 'error' ? 'Delete failed' : null;
   const foundDiagrams = diagrams._loaded
     ? diagrams.filter((d) => d._found) as FoundRecord<LogicDiagramFields>[]
     : [];
@@ -168,10 +172,42 @@ function LogicDiagramsSection({
     }
   }, [traceTxnResult, onRefresh]);
 
+  useEffect(() => {
+    if (!deleteDiagramTxnResult) return;
+    if (handledDeleteDiagramSeq.current === deleteDiagramTxnResult.seq) return;
+    handledDeleteDiagramSeq.current = deleteDiagramTxnResult.seq;
+    if (deleteDiagramTxnResult.status === 'succeeded') {
+      onShowDiagramForm(false);
+      onShowMeasurementForm(null);
+      onShowBlockForm(null);
+      onShowOutputForm(null);
+      onSelectDiagram(null);
+      onRefresh();
+    }
+  }, [
+    deleteDiagramTxnResult,
+    onRefresh,
+    onSelectDiagram,
+    onShowBlockForm,
+    onShowDiagramForm,
+    onShowMeasurementForm,
+    onShowOutputForm,
+  ]);
+
   const computeNow = () => {
     if (!currentDiagram) return;
     setTraceError(null);
     setTraceTxn(Store.m(Trace).create({ logic_diagram_id: currentDiagram.id }));
+  };
+
+  const deleteCurrentDiagram = () => {
+    if (!currentDiagram || deletingDiagram) return;
+    const confirmed = window.confirm(
+      `Delete "${currentDiagram.name}" and all of its measurements, blocks, outputs, and traces?`,
+    );
+    if (!confirmed) return;
+
+    setDeleteDiagramTxn(Store.m(LogicDiagram).destroy(currentDiagram.id));
   };
 
   return (
@@ -219,6 +255,13 @@ function LogicDiagramsSection({
             New Diagram
           </button>
           <button
+            class="rounded border border-error px-3 py-1.5 text-sm font-medium text-error hover:bg-error-bg disabled:opacity-50"
+            disabled={!currentDiagram || deletingDiagram}
+            onClick={deleteCurrentDiagram}
+          >
+            {deletingDiagram ? 'Deleting...' : 'Delete Diagram'}
+          </button>
+          <button
             class="rounded border border-border px-3 py-1.5 text-sm font-medium text-text-muted hover:text-text disabled:opacity-50"
             disabled={!currentDiagram || computing}
             onClick={computeNow}
@@ -244,6 +287,7 @@ function LogicDiagramsSection({
 
       {showDiagramForm && <LogicDiagramForm onClose={() => onShowDiagramForm(false)} />}
       {traceError && <p class="mb-3 text-sm text-error">{traceError}</p>}
+      {deleteDiagramError && <p class="mb-3 text-sm text-error">{deleteDiagramError}</p>}
 
       {!diagrams._loaded ? (
         <p class="text-text-muted">Loading logic diagrams...</p>
