@@ -76,23 +76,11 @@ export const Measurement: ModelDefinition<MeasurementFields> = {
   singleton: false,
 };
 
-export interface MeasurementDatumFields {
-  id: number;
-  measurement_id: number;
-  value: number | null;
-  recorded_at: string;
-}
-
-export const MeasurementDatum: ModelDefinition<MeasurementDatumFields> = {
-  name: 'measurement_datum',
-  inflections: { plural: 'measurement_data', title: 'MeasurementDatum' },
-  singleton: false,
-};
-
 export interface LogicDiagramFields {
   id: number;
   name: string;
   update_period: number;
+  output_enable: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -138,6 +126,30 @@ export type LogicBlockFields = HysteresisLogicBlockFields | LatchLogicBlockField
 export const LogicBlock: ModelDefinition<LogicBlockFields> = {
   name: 'logic_block',
   inflections: { plural: 'logic_blocks', title: 'LogicBlock' },
+  singleton: false,
+};
+
+export interface OutputBlockFields {
+  id: number;
+  logic_diagram_id: number;
+  name: string;
+  device_id: number;
+  channel: number;
+  input_expression: string;
+  output_enable: boolean;
+  latest_datum_id: number | null;
+  latest_value: number | null;
+  latest_state: Record<string, unknown> | null;
+  desired_output: boolean | null;
+  effective_output: boolean | null;
+  write_pending: boolean | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export const OutputBlock: ModelDefinition<OutputBlockFields> = {
+  name: 'output_block',
+  inflections: { plural: 'output_blocks', title: 'OutputBlock' },
   singleton: false,
 };
 

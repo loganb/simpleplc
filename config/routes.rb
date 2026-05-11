@@ -8,9 +8,9 @@ Rails.application.routes.draw do
   resources :host_interfaces
   resources :devices
   resources :measurements
-  resources :measurement_data, only: [ :index, :show, :create ]
   resources :logic_diagrams
   resources :logic_blocks
+  resources :output_blocks
   resources :traces
   resources :data, only: [ :index, :show ]
 end

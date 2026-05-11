@@ -36,4 +36,43 @@ RSpec.describe Measurement, type: :model do
     expect(measurement.trace_value).to be_nil
   end
 
+  it "extracts acquisition values from device current_state data" do
+    host = HostInterface.create!(port: "/dev/ttyUSB0")
+    device = Device.create!(
+      name: "Relay board",
+      host_interface: host,
+      driver: "Drivers::N4D8B08",
+      modbus_address: 3,
+      current_state: {
+        "status" => "ok",
+        "data" => {
+          "inputs" => [ false, true ]
+        }
+      }
+    )
+    first = described_class.create!(logic_diagram: diagram, name: "FirstFloorHeatCall", device: device, source_path: "inputs[0]")
+    second = described_class.create!(logic_diagram: diagram, name: "SecondFloorHeatCall", device: device, source_path: "inputs[1]")
+
+    expect(first.trace_value).to eq(0.0)
+    expect(second.trace_value).to eq(1.0)
+  end
+
+  it "extracts numeric acquisition values from nested source paths" do
+    host = HostInterface.create!(port: "/dev/ttyUSB0")
+    device = Device.create!(
+      name: "Temp board",
+      host_interface: host,
+      driver: "Drivers::N4DSC08",
+      modbus_address: 1,
+      current_state: {
+        "status" => "ok",
+        "data" => {
+          "temperatures" => [ nil, 22.4 ]
+        }
+      }
+    )
+    measurement = described_class.create!(logic_diagram: diagram, name: "SupplyTemp", device: device, source_path: "temperatures[1]")
+
+    expect(measurement.trace_value).to eq(22.4)
+  end
 end

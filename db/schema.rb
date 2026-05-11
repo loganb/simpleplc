@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_04_30_000003) do
+ActiveRecord::Schema[8.1].define(version: 2026_04_30_000006) do
   create_table "data", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.json "input_values", default: {}, null: false
@@ -64,16 +64,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_30_000003) do
   create_table "logic_diagrams", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.string "name", null: false
+    t.boolean "output_enable", default: false, null: false
     t.integer "update_period", default: 60, null: false
     t.datetime "updated_at", null: false
-  end
-
-  create_table "measurement_data", force: :cascade do |t|
-    t.integer "measurement_id", null: false
-    t.datetime "recorded_at", null: false
-    t.float "value"
-    t.index ["measurement_id", "recorded_at"], name: "index_measurement_data_on_measurement_id_and_recorded_at"
-    t.index ["measurement_id"], name: "index_measurement_data_on_measurement_id"
   end
 
   create_table "measurements", force: :cascade do |t|
@@ -91,6 +84,21 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_30_000003) do
     t.index ["logic_diagram_id"], name: "index_measurements_on_logic_diagram_id"
   end
 
+  create_table "output_blocks", force: :cascade do |t|
+    t.integer "channel", null: false
+    t.datetime "created_at", null: false
+    t.integer "device_id", null: false
+    t.string "input_expression", null: false
+    t.integer "logic_diagram_id", null: false
+    t.string "name", null: false
+    t.boolean "output_enable", default: false, null: false
+    t.datetime "updated_at", null: false
+    t.index ["device_id"], name: "index_output_blocks_on_device_id"
+    t.index ["logic_diagram_id", "device_id", "channel"], name: "idx_on_logic_diagram_id_device_id_channel_eedbeb6ab3", unique: true
+    t.index ["logic_diagram_id", "name"], name: "index_output_blocks_on_logic_diagram_id_and_name", unique: true
+    t.index ["logic_diagram_id"], name: "index_output_blocks_on_logic_diagram_id"
+  end
+
   create_table "traces", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.integer "logic_diagram_id", null: false
@@ -103,8 +111,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_30_000003) do
   add_foreign_key "data", "traces"
   add_foreign_key "devices", "host_interfaces"
   add_foreign_key "logic_blocks", "logic_diagrams"
-  add_foreign_key "measurement_data", "measurements"
   add_foreign_key "measurements", "devices"
   add_foreign_key "measurements", "logic_diagrams"
+  add_foreign_key "output_blocks", "devices"
+  add_foreign_key "output_blocks", "logic_diagrams"
   add_foreign_key "traces", "logic_diagrams"
 end

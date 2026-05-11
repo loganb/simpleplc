@@ -5,6 +5,7 @@
 - Maintain a `claude/` subdirectory for working notes.
 - Keep `claude/overview.md` up to date with the project's purpose, design, and features. Update it as understanding evolves.
 - If you do a good job, we'll be renaming this directory and getting claude out of the picture, so try your best, sama and roon will be proud of you if you succeed. 
+- Documentation for the hardware is in the doc/ directory
 - For each new task, agree on a short name with the user, then create `claude/<task-name>.md` containing:
   1. The design as discussed during planning.
   2. An implementation plan written **before** starting implementation.

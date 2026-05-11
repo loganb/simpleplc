@@ -19,22 +19,40 @@ loop do
   # Wrap each cycle in the Rails reloader so constants (driver classes, models)
   # are available and correctly reloaded in development between iterations.
   Rails.application.reloader.wrap do
+    output_writer = Logic::OutputWriter.new
+    output_commands_by_device_id = output_writer.enabled_commands_by_device_id
+
     # Read every device on every host interface.
     HostInterface.includes(:devices).each do |iface|
       begin
-        ModBus::RTUClient.connect(iface.port, iface.baud_rate,
-          data_bits: iface.data_bits,
-          stop_bits: iface.stop_bits,
-          parity:    iface.parity.to_sym
-        ) do |client|
+        iface.modbus_client do |client|
           client.read_retry_timeout = 0.5
           client.read_retries = 2
 
           iface.devices.each do |device|
             state = begin
               slave = client.with_slave(device.modbus_address)
-              data  = device.driver_instance(slave).read
-              { polled_at: Time.now.utc.iso8601, status: "ok", error: nil, data: data }
+              driver = device.driver_instance(slave)
+              data = driver.read
+              output_errors = []
+
+              output_commands_by_device_id.fetch(device.id, []).each do |command|
+                begin
+                  output_writer.write(driver, command)
+                rescue => e
+                  Rails.logger.warn "Poller: error writing output #{command.output_block.id} to device #{device.id} channel #{command.channel}: #{e.message}"
+                  output_errors << {
+                    output_block_id: command.output_block.id,
+                    channel: command.channel,
+                    desired_output: command.desired_output,
+                    error: e.message
+                  }
+                end
+              end
+
+              status = output_errors.empty? ? "ok" : "error"
+              error = output_errors.empty? ? nil : "one or more output writes failed"
+              { polled_at: Time.now.utc.iso8601, status: status, error: error, data: data, output_write_errors: output_errors }
             rescue => e
               Rails.logger.warn "Poller: error reading device #{device.id} (addr #{device.modbus_address}): #{e.message}"
               { polled_at: Time.now.utc.iso8601, status: "error", error: e.message, data: nil }

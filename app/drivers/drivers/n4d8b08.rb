@@ -10,14 +10,14 @@ module Drivers
   #     0x0000 = input off, 0x0001 = input on
   #
   # Write command values (FC 06, written to the channel's output register):
-  #   0x0001  Open relay
-  #   0x0002  Close relay
-  #   0x0003  Toggle (self-locking)
-  #   0x0004  Latch (inter-locking)
-  #   0x0005  Momentary (1 second)
-  #   0x0006  Delay (delay time set separately, 0–255 seconds)
-  #   0x0007  Open all  (write to register 0x0000)
-  #   0x0008  Close all (write to register 0x0000)
+  #   0x0100  Open relay
+  #   0x0200  Close relay
+  #   0x0300  Toggle (self-locking)
+  #   0x0400  Latch (inter-locking)
+  #   0x0500  Momentary (about 1 second)
+  #   0x06NN  Delay open for NN seconds, then close
+  #   0x0700  Open all  (write to register 0x0000)
+  #   0x0800  Close all (write to register 0x0000)
   #
   # Special registers (FC 03/06):
   #   0x00FD  Input/output relationship: 0=unrelated, 1=self-locking (default),
@@ -31,14 +31,14 @@ module Drivers
     RELATIONSHIP_REG = 0x00FD
 
     # FC 06 command values
-    CMD_OPEN         = 0x0001
-    CMD_CLOSE        = 0x0002
-    CMD_TOGGLE       = 0x0003
-    CMD_LATCH        = 0x0004
-    CMD_MOMENTARY    = 0x0005
-    CMD_DELAY        = 0x0006
-    CMD_OPEN_ALL     = 0x0007
-    CMD_CLOSE_ALL    = 0x0008
+    CMD_OPEN         = 0x0100
+    CMD_CLOSE        = 0x0200
+    CMD_TOGGLE       = 0x0300
+    CMD_LATCH        = 0x0400
+    CMD_MOMENTARY    = 0x0500
+    CMD_DELAY        = 0x0600
+    CMD_OPEN_ALL     = 0x0700
+    CMD_CLOSE_ALL    = 0x0800
 
     RELATIONSHIP_UNRELATED = 0x0000
 
@@ -95,8 +95,7 @@ module Drivers
     def delay_open(channel, delay_seconds)
       validate_channel!(channel)
       raise ArgumentError, "delay must be 0–255 seconds" unless (0..255).cover?(delay_seconds)
-      # Delay time is encoded in the high byte of the 16-bit value
-      slave.holding_registers[channel] = (CMD_DELAY) | (delay_seconds << 8)
+      slave.holding_registers[channel] = CMD_DELAY | delay_seconds
     end
 
     # Opens all 8 relay channels.

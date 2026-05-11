@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { useLoaders } from './lib/DataLoader2';
-import { Store, Device, HostInterface, Measurement, LogicDiagram, LogicBlock, Trace } from './store';
+import { Store, Device, HostInterface, Measurement, LogicDiagram, LogicBlock, OutputBlock, Trace } from './store';
 import type {
   DeviceFields,
   HostInterfaceFields,
   LogicBlockFields,
   LogicDiagramFields,
   MeasurementFields,
+  OutputBlockFields,
 } from './store';
 import type { FoundRecord, ReifiedQueryResult, Txn } from './lib/RestfulModelStore';
 import { nextStratumForExpressions } from './logicDiagram';
@@ -15,6 +16,7 @@ export function App() {
   const [showMeasurementForm, setShowMeasurementForm] = useState<number | 'new' | null>(null);
   const [showDiagramForm, setShowDiagramForm] = useState(false);
   const [showBlockForm, setShowBlockForm] = useState<number | 'new' | null>(null);
+  const [showOutputForm, setShowOutputForm] = useState<number | 'new' | null>(null);
   const [selectedDiagramId, setSelectedDiagramId] = useState<number | null>(null);
   const [refreshToken, setRefreshToken] = useState(0);
   const lastForcedRefreshToken = useRef(0);
@@ -29,7 +31,7 @@ export function App() {
     };
   }, []);
 
-  const { devices, interfaces, measurements, logicDiagrams, logicBlocks } = useLoaders(() => {
+  const { devices, interfaces, measurements, logicDiagrams, logicBlocks, outputBlocks } = useLoaders(() => {
     const force = refreshToken > lastForcedRefreshToken.current;
     if (force) lastForcedRefreshToken.current = refreshToken;
     const devices = Store.m(Device).queryFor(null, {}, force);
@@ -37,7 +39,8 @@ export function App() {
     const measurements = Store.m(Measurement).queryFor(null, {}, force);
     const logicDiagrams = Store.m(LogicDiagram).queryFor(null, {}, force);
     const logicBlocks = Store.m(LogicBlock).queryFor(null, {}, force);
-    return { devices, interfaces, measurements, logicDiagrams, logicBlocks };
+    const outputBlocks = Store.m(OutputBlock).queryFor(null, {}, force);
+    return { devices, interfaces, measurements, logicDiagrams, logicBlocks, outputBlocks };
   }, [Store], [refreshToken]);
 
   return (
@@ -65,6 +68,7 @@ export function App() {
         <LogicDiagramsSection
           diagrams={logicDiagrams}
           blocks={logicBlocks}
+          outputBlocks={outputBlocks}
           measurements={measurements}
           devices={devices}
           selectedDiagramId={selectedDiagramId}
@@ -75,6 +79,8 @@ export function App() {
           onShowMeasurementForm={setShowMeasurementForm}
           showBlockForm={showBlockForm}
           onShowBlockForm={setShowBlockForm}
+          showOutputForm={showOutputForm}
+          onShowOutputForm={setShowOutputForm}
           onRefresh={() => setRefreshToken((token) => token + 1)}
         />
       </main>
@@ -89,6 +95,7 @@ export function App() {
 function LogicDiagramsSection({
   diagrams,
   blocks,
+  outputBlocks,
   measurements,
   devices,
   selectedDiagramId,
@@ -99,10 +106,13 @@ function LogicDiagramsSection({
   onShowMeasurementForm,
   showBlockForm,
   onShowBlockForm,
+  showOutputForm,
+  onShowOutputForm,
   onRefresh,
 }: {
   diagrams: ReifiedQueryResult<LogicDiagramFields>;
   blocks: ReifiedQueryResult<LogicBlockFields>;
+  outputBlocks: ReifiedQueryResult<OutputBlockFields>;
   measurements: ReifiedQueryResult<MeasurementFields>;
   devices: ReifiedQueryResult<DeviceFields>;
   selectedDiagramId: number | null;
@@ -113,12 +123,16 @@ function LogicDiagramsSection({
   onShowMeasurementForm: (id: number | 'new' | null) => void;
   showBlockForm: number | 'new' | null;
   onShowBlockForm: (id: number | 'new' | null) => void;
+  showOutputForm: number | 'new' | null;
+  onShowOutputForm: (id: number | 'new' | null) => void;
   onRefresh: () => void;
 }) {
   const [traceTxn, setTraceTxn] = useState<Txn | undefined>();
+  const [diagramTxn, setDiagramTxn] = useState<Txn | undefined>();
   const [traceError, setTraceError] = useState<string | null>(null);
   const handledTraceSeq = useRef<number | null>(null);
   const { txnResult: traceTxnResult, saving: computing } = useTxnStatus(traceTxn);
+  const { saving: savingDiagram } = useTxnStatus(diagramTxn);
   const foundDiagrams = diagrams._loaded
     ? diagrams.filter((d) => d._found) as FoundRecord<LogicDiagramFields>[]
     : [];
@@ -130,6 +144,9 @@ function LogicDiagramsSection({
     ? measurements.filter((m) => (
       m._found && currentDiagram && (m as FoundRecord<MeasurementFields>).logic_diagram_id === currentDiagram.id
     )) as FoundRecord<MeasurementFields>[]
+    : [];
+  const currentOutputs = outputBlocks._loaded && currentDiagram
+    ? outputBlocks.filter((o) => o._found && (o as FoundRecord<OutputBlockFields>).logic_diagram_id === currentDiagram.id) as FoundRecord<OutputBlockFields>[]
     : [];
   const blocksByStratum = new Map<number, FoundRecord<LogicBlockFields>[]>();
   currentBlocks.forEach((block) => {
@@ -170,6 +187,7 @@ function LogicDiagramsSection({
                 const value = (e.target as HTMLSelectElement).value;
                 onSelectDiagram(value ? parseInt(value, 10) : null);
                 onShowBlockForm(null);
+                onShowOutputForm(null);
               }}
             >
               {foundDiagrams.map((diagram) => (
@@ -179,6 +197,21 @@ function LogicDiagramsSection({
           )}
         </div>
         <div class="flex gap-2">
+          {currentDiagram && (
+            <label class="flex items-center gap-2 rounded border border-border px-3 py-1.5 text-sm text-text-muted">
+              <span class={currentDiagram.output_enable ? 'font-medium text-text' : ''}>Outputs</span>
+              <input
+                type="checkbox"
+                class="peer sr-only"
+                checked={currentDiagram.output_enable}
+                disabled={savingDiagram}
+                onChange={() => setDiagramTxn(Store.m(LogicDiagram).patch(currentDiagram.id, {
+                  output_enable: !currentDiagram.output_enable,
+                }))}
+              />
+              <span class="relative h-5 w-9 shrink-0 rounded-full bg-border transition-colors after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:shadow after:transition-transform peer-checked:bg-active peer-checked:after:translate-x-4 peer-disabled:opacity-50" />
+            </label>
+          )}
           <button
             class="rounded border border-border px-3 py-1.5 text-sm font-medium text-text-muted hover:text-text"
             onClick={() => onShowDiagramForm(true)}
@@ -198,6 +231,13 @@ function LogicDiagramsSection({
             onClick={() => onShowBlockForm('new')}
           >
             + New Block
+          </button>
+          <button
+            class="rounded bg-active px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+            disabled={!currentDiagram}
+            onClick={() => onShowOutputForm('new')}
+          >
+            + New Output
           </button>
         </div>
       </div>
@@ -226,6 +266,15 @@ function LogicDiagramsSection({
               editId={showMeasurementForm === 'new' ? null : showMeasurementForm}
               devices={devices}
               onClose={() => onShowMeasurementForm(null)}
+            />
+          )}
+
+          {showOutputForm !== null && currentDiagram && (
+            <OutputBlockForm
+              diagram={currentDiagram}
+              editId={showOutputForm === 'new' ? null : showOutputForm}
+              devices={devices}
+              onClose={() => onShowOutputForm(null)}
             />
           )}
 
@@ -273,9 +322,28 @@ function LogicDiagramsSection({
               ))}
 
               <div class="w-64 shrink-0">
-                <ColumnHeader title="Outputs" />
-                <div class="rounded-lg border border-dashed border-border bg-surface-alt p-4 text-sm text-text-muted">
-                  Computed outputs land here later.
+                <div class="mb-2 flex items-center justify-between">
+                  <ColumnHeader title="Outputs" />
+                  <button
+                    class="rounded bg-active px-2 py-1 text-xs font-medium text-white hover:opacity-90"
+                    onClick={() => onShowOutputForm('new')}
+                  >
+                    + New
+                  </button>
+                </div>
+                <div class="space-y-2">
+                  {currentOutputs.length === 0 ? (
+                    <div class="rounded-lg border border-dashed border-border bg-surface-alt p-4 text-sm text-text-muted">
+                      No outputs in this diagram.
+                    </div>
+                  ) : currentOutputs.map((output) => (
+                    <OutputBlockCard
+                      key={output.id}
+                      output={output}
+                      devices={devices}
+                      onEdit={(id) => onShowOutputForm(id)}
+                    />
+                  ))}
                 </div>
               </div>
             </div>
@@ -851,6 +919,198 @@ function MeasurementForm({ diagram, editId, devices, onClose }: {
       </div>
     </div>
   );
+}
+
+// ---------------------------------------------------------------------------
+// Output components
+// ---------------------------------------------------------------------------
+
+function OutputBlockCard({ output, devices, onEdit }: {
+  output: FoundRecord<OutputBlockFields>;
+  devices: ReifiedQueryResult<DeviceFields>;
+  onEdit: (id: number) => void;
+}) {
+  const [saveTxn, setSaveTxn] = useState<Txn | undefined>();
+  const [error, setError] = useState<string | null>(null);
+  const { txnResult, saving } = useTxnStatus(saveTxn);
+  const device = devices.find((d) => d._found && (d as FoundRecord<DeviceFields>).id === output.device_id);
+  const deviceName = device?._found ? (device as FoundRecord<DeviceFields>).name : 'Unknown device';
+  const state = output.latest_state ?? {};
+  const skippedReason = typeof state.write_skipped_reason === 'string' ? state.write_skipped_reason : null;
+
+  useEffect(() => {
+    if (!txnResult) return;
+    setError(txnResult.status === 'succeeded' ? null : 'Save failed');
+  }, [txnResult]);
+
+  return (
+    <div class="rounded-lg border border-border bg-surface p-3 space-y-2">
+      <div class="flex items-start justify-between gap-3">
+        <div>
+          <h3 class="text-sm font-semibold">{output.name}</h3>
+          <p class="text-xs text-text-muted">{deviceName} ch {output.channel}</p>
+        </div>
+        <button
+          class="text-xs text-text-muted hover:text-text"
+          onClick={() => onEdit(output.id)}
+        >
+          Edit
+        </button>
+      </div>
+
+      <div class="grid grid-cols-2 gap-2 text-xs">
+        <div class="rounded bg-surface-alt px-2 py-1.5">
+          <p class="text-text-muted">Desired</p>
+          <p class="font-mono font-semibold">{formatNullableBool(output.desired_output)}</p>
+        </div>
+        <div class="rounded bg-surface-alt px-2 py-1.5">
+          <p class="text-text-muted">Effective</p>
+          <p class="font-mono font-semibold">{formatNullableBool(output.effective_output)}</p>
+        </div>
+      </div>
+
+      <label class="flex items-center justify-between gap-2 rounded bg-surface-alt px-2 py-1 text-xs text-text-muted">
+        <span class={output.output_enable ? 'font-medium text-text' : ''}>Output Enable</span>
+        <input
+          type="checkbox"
+          class="peer sr-only"
+          checked={output.output_enable}
+          disabled={saving}
+          onChange={() => {
+            setError(null);
+            setSaveTxn(Store.m(OutputBlock).patch(output.id, { output_enable: !output.output_enable }));
+          }}
+        />
+        <span class="relative h-5 w-9 shrink-0 rounded-full bg-border transition-colors after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:shadow after:transition-transform peer-checked:bg-active peer-checked:after:translate-x-4 peer-disabled:opacity-50" />
+      </label>
+
+      <div class="text-xs text-text-muted space-y-0.5">
+        <p class="font-mono truncate">{output.input_expression}</p>
+        {skippedReason && <p>Skipped: {skippedReason}</p>}
+        {output.write_pending && <p>Pending poller write</p>}
+        {saving && <p>Saving...</p>}
+        {error && <p class="text-error">{error}</p>}
+      </div>
+    </div>
+  );
+}
+
+function OutputBlockForm({ diagram, editId, devices, onClose }: {
+  diagram: FoundRecord<LogicDiagramFields>;
+  editId: number | null;
+  devices: ReifiedQueryResult<DeviceFields>;
+  onClose: () => void;
+}) {
+  const existing = editId !== null ? Store.m(OutputBlock).fetch(editId) : null;
+  const found = existing?._found ? existing as FoundRecord<OutputBlockFields> : null;
+
+  const [name, setName] = useState(found?.name ?? '');
+  const [deviceId, setDeviceId] = useState(String(found?.device_id ?? ''));
+  const [channel, setChannel] = useState(String(found?.channel ?? '1'));
+  const [inputExpression, setInputExpression] = useState(found?.input_expression ?? '');
+  const [saveTxn, setSaveTxn] = useState<Txn | undefined>();
+  const [error, setError] = useState<string | null>(null);
+  const { txnResult, saving } = useTxnStatus(saveTxn);
+
+  useEffect(() => {
+    if (!txnResult) return;
+    if (txnResult.status === 'succeeded') onClose();
+    else setError('Save failed');
+  }, [txnResult, onClose]);
+
+  const handleSave = () => {
+    const fields = {
+      logic_diagram_id: diagram.id,
+      name,
+      device_id: deviceId ? parseInt(deviceId, 10) : null,
+      channel: parseInt(channel, 10),
+      input_expression: inputExpression,
+    };
+
+    setError(null);
+    setSaveTxn(editId !== null
+      ? Store.m(OutputBlock).patch(editId, fields)
+      : Store.m(OutputBlock).create(fields));
+  };
+
+  const handleDelete = () => {
+    if (editId === null) return;
+    Store.m(OutputBlock).destroy(editId);
+    onClose();
+  };
+
+  const foundDevices = devices.filter((d) => d._found) as FoundRecord<DeviceFields>[];
+
+  return (
+    <div class="rounded-lg border border-border bg-surface-alt p-4 mb-4 space-y-3">
+      <h3 class="text-sm font-semibold">{editId !== null ? 'Edit' : 'New'} Output</h3>
+      {error && <p class="text-sm text-error">{error}</p>}
+
+      <div class="grid gap-3 md:grid-cols-2">
+        <label class="block">
+          <span class="text-xs text-text-muted">Name</span>
+          <input
+            class="mt-1 block w-full rounded border border-border bg-surface px-2 py-1.5 text-sm"
+            value={name}
+            onInput={(e) => setName((e.target as HTMLInputElement).value)}
+          />
+        </label>
+
+        <label class="block">
+          <span class="text-xs text-text-muted">Device</span>
+          <select
+            class="mt-1 block w-full rounded border border-border bg-surface px-2 py-1.5 text-sm"
+            value={deviceId}
+            onChange={(e) => setDeviceId((e.target as HTMLSelectElement).value)}
+          >
+            <option value="">Select device...</option>
+            {foundDevices.map((d) => (
+              <option key={d.id} value={String(d.id)}>{d.name}</option>
+            ))}
+          </select>
+        </label>
+
+        <label class="block">
+          <span class="text-xs text-text-muted">Channel</span>
+          <input
+            type="number"
+            min="1"
+            class="mt-1 block w-full rounded border border-border bg-surface px-2 py-1.5 text-sm"
+            value={channel}
+            onInput={(e) => setChannel((e.target as HTMLInputElement).value)}
+          />
+        </label>
+
+      </div>
+
+      <label class="block">
+        <span class="text-xs text-text-muted">Input Expression</span>
+        <input
+          class="mt-1 block w-full rounded border border-border bg-surface px-2 py-1.5 text-sm font-mono"
+          placeholder="e.g. Heat_Call && Pump_Ready"
+          value={inputExpression}
+          onInput={(e) => setInputExpression((e.target as HTMLInputElement).value)}
+        />
+      </label>
+
+      <div class="flex gap-2">
+        <FormButtons saving={saving} disabled={!name || !deviceId || !inputExpression} onSave={handleSave} onCancel={onClose} />
+        {editId !== null && (
+          <button
+            class="ml-auto rounded border border-error px-3 py-1.5 text-sm font-medium text-error hover:bg-error-bg"
+            onClick={handleDelete}
+          >
+            Delete
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function formatNullableBool(value: boolean | null) {
+  if (value === null) return 'No data';
+  return value ? 'true' : 'false';
 }
 
 // ---------------------------------------------------------------------------

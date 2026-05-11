@@ -28,13 +28,25 @@ RSpec.describe Logic::TraceEvaluator do
     expect(block_datum.value).to eq(1.0)
   end
 
-  it "uses latest acquisition sample without polling immediately" do
-    measurement = Measurement.create!(logic_diagram: diagram, name: "DHW_Temp")
-    measurement.measurement_data.create!(value: 138.0, recorded_at: 5.minutes.ago)
+  it "snapshots acquisition measurements from device current_state" do
+    host = HostInterface.create!(port: "/dev/ttyUSB0")
+    device = Device.create!(
+      name: "Relay board",
+      host_interface: host,
+      driver: "Drivers::N4D8B08",
+      modbus_address: 3,
+      current_state: {
+        "status" => "ok",
+        "data" => {
+          "inputs" => [ false, true ]
+        }
+      }
+    )
+    measurement = Measurement.create!(logic_diagram: diagram, name: "Heat_Call", device: device, source_path: "inputs[1]")
 
     trace = Trace.create!(logic_diagram: diagram)
 
-    expect(trace.data.find_by!(source: measurement).value).to eq(138.0)
+    expect(trace.data.find_by!(source: measurement).value).to eq(1.0)
   end
 
   it "records nil for acquisition measurements without samples" do
@@ -60,5 +72,32 @@ RSpec.describe Logic::TraceEvaluator do
     trace = Trace.create!(logic_diagram: diagram)
 
     expect(trace.data.find_by!(source: block).input_values).to include("value" => 10.0)
+  end
+
+  it "evaluates outputs after measurements and blocks" do
+    Measurement.create!(logic_diagram: diagram, name: "Heat_Call", mode: "simulation", simulation_value: 1.0)
+    host = HostInterface.create!(port: "/dev/ttyUSB0")
+    device = Device.create!(name: "Relay board", host_interface: host, driver: "Drivers::N4D8B08", modbus_address: 3)
+    output = OutputBlock.create!(
+      logic_diagram: diagram,
+      name: "Boiler_Enable",
+      device: device,
+      channel: 1,
+      input_expression: "Heat_Call",
+      output_enable: false
+    )
+
+    trace = Trace.create!(logic_diagram: diagram)
+
+    measurement_datum = trace.data.find_by!(source_type: "Measurement")
+    output_datum = trace.data.find_by!(source: output)
+    expect(measurement_datum.id).to be < output_datum.id
+    expect(output_datum.value).to eq(1.0)
+    expect(output_datum.input_values).to include("input" => 1.0)
+    expect(output_datum.state).to include(
+      "desired_output" => true,
+      "write_pending" => false,
+      "write_skipped_reason" => "diagram_output_disabled"
+    )
   end
 end

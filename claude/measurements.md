@@ -7,25 +7,21 @@ A **Measurement** is a named value extracted from a device's `current_state.data
 - `device_id` — optional FK to devices for acquisition measurements
 - `source_path` — JSON path into `current_state.data`
 - `units` — optional string (e.g. "°C", "PSI")
-- `measurement_data` — has_many timestamped float values (NULL = no reading)
 
-Measurements are owned by a LogicDiagram. Measurement sampling from the poller has been removed; Trace creation is now the intended path for evaluating diagram values.
+Measurements are owned by a LogicDiagram. Acquisition measurements are sampled directly from the device's latest polled `current_state.data` when a Trace is created. Boolean device values are normalized to `1.0`/`0.0` in trace data.
 
 ## Implementation
 
 ### Backend
-- Models: `Measurement` (app/models/measurement.rb), `MeasurementDatum` (app/models/measurement_datum.rb, table: measurement_data)
-- APIs: `MeasurementApi` (full CRUD), `MeasurementDatumApi` (index/show/create only, supports time windowing via since/until/limit params)
+- Models: `Measurement` (app/models/measurement.rb)
+- APIs: `MeasurementApi` (full CRUD)
 - MeasurementApi expounds associated Devices
-- MeasurementDatumApi by_query requires measurement_id, defaults to limit=100, max 1000
 
 ### Frontend
-- Store: `Measurement` and `MeasurementDatum` model definitions in store.ts
+- Store: `Measurement` model definition in store.ts
 - Dashboard: Measurement cards showing name, latest value, units, source info
 - CRUD form: create/edit/delete measurements with device dropdown, source path input, mode, simulation value, and units
 
 ## Future Work
-- **Trace-driven acquisition** — decide whether creating traces should sample device current_state directly or use a separate acquisition history.
 - **Computed measurements** — revisit whether computed inputs should be Measurements, LogicBlocks, or another diagram-owned source type.
-- **Data retention** — purge/downsample old measurement_data
-- **Charts** — recharts integration to visualize measurement_data history
+- **Charts** — visualize trace-owned `data` history

@@ -13,6 +13,7 @@ module Logic
       ActiveRecord::Base.transaction do
         snapshot_measurements!
         evaluate_blocks!
+        evaluate_outputs!
       end
       trace
     end
@@ -37,6 +38,13 @@ module Logic
       context = EvaluationContext.new(trace: trace)
       diagram.logic_blocks.order(:stratum, :id).each do |block|
         BlockEvaluator.evaluate!(block, trace: trace, context: context)
+      end
+    end
+
+    def evaluate_outputs!
+      context = EvaluationContext.new(trace: trace)
+      diagram.output_blocks.order(:id).each do |output|
+        OutputEvaluator.evaluate!(output, trace: trace, context: context)
       end
     end
   end

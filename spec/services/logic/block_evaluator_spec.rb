@@ -59,9 +59,19 @@ RSpec.describe Logic::BlockEvaluator do
 
   it "evaluates measurement and logic block references by name" do
     host = HostInterface.create!(port: "/dev/ttyUSB0")
-    device = Device.create!(name: "Temp board", host_interface: host, driver: "n4dsc08", modbus_address: 1)
+    device = Device.create!(
+      name: "Temp board",
+      host_interface: host,
+      driver: "n4dsc08",
+      modbus_address: 1,
+      current_state: {
+        "status" => "ok",
+        "data" => {
+          "temperatures" => [ 145.0 ]
+        }
+      }
+    )
     measurement = Measurement.create!(logic_diagram: diagram, name: "BoilerOutletTemp", device: device, source_path: "temperatures[0]")
-    measurement.measurement_data.create!(value: 145.0, recorded_at: Time.zone.parse("2026-04-29 10:00:00"))
     ready = HysteresisLogicBlock.create!(
       logic_diagram: diagram,
       name: "BOT_Ready",

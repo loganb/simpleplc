@@ -1,6 +1,12 @@
 require "rails_helper"
 
 RSpec.describe LogicDiagram, type: :model do
+  it "defaults output_enable to false" do
+    diagram = described_class.create!(name: "Boiler")
+
+    expect(diagram).not_to be_output_enable
+  end
+
   it "requires a name" do
     diagram = described_class.new(name: "")
 

@@ -4,7 +4,7 @@
 
 Measurements become part of a LogicDiagram instead of global application inputs. A Measurement can be an acquisition value backed by device sampling, or a simulation value entered directly by the user so a conceptual diagram can be built and forced through states before hardware exists.
 
-Trace is the explicit CRUD object for "compute this LogicDiagram now." Creating a Trace synchronously snapshots every diagram Measurement into `data`, then evaluates LogicBlocks by `stratum ASC, id ASC`, writing one Datum per block into the same Trace. `measurement_data` remains raw acquisition history; `data` becomes the per-Trace snapshot/computation table for Measurements, LogicBlocks, and eventually Outputs.
+Trace is the explicit CRUD object for "compute this LogicDiagram now." Creating a Trace synchronously snapshots every diagram Measurement into `data`, then evaluates LogicBlocks by `stratum ASC, id ASC`, writing one Datum per block into the same Trace. Acquisition measurements read directly from their device's latest polled `current_state.data`; `data` is the per-Trace snapshot/computation table for Measurements, LogicBlocks, and Outputs.
 
 Expression references remain name-based and expression-safe. Resolution is scoped to the Trace's LogicDiagram and reads values from the current Trace's data so a computation is internally consistent.
 
@@ -34,6 +34,7 @@ User explicitly asked: "PLEASE IMPLEMENT THIS PLAN" on 2026-04-30, after the pla
 
 - Added Trace as the synchronous computation boundary and added trace-owned Datum rows for Measurement snapshots and LogicBlock computations.
 - Measurements now belong to LogicDiagrams, have acquisition/simulation modes, and allow acquisition records without a device/sample.
+- Acquisition measurements now read device `current_state.data` at Trace creation instead of using `measurement_data`; booleans normalize to `1.0`/`0.0`.
 - Expression resolution is diagram scoped and Trace scoped.
 - The frontend now manages Measurements inside the selected LogicDiagram and has a Compute Now button that creates a Trace.
 - Follow-up: moved measurement sampling cadence to LogicDiagram as `update_period` and removed Measurement-level `update_period`.

@@ -1,6 +1,7 @@
 class LogicDiagram < ApplicationRecord
   has_many :logic_blocks, dependent: :destroy
   has_many :measurements, dependent: :destroy
+  has_many :output_blocks, dependent: :destroy
   has_many :traces, dependent: :destroy
 
   validates :name, presence: true
