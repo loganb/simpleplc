@@ -16,7 +16,7 @@ class LogicBlockApi < RestfulApi
   end
 
   def serialize(block)
-    latest = block.latest_datum
+    latest = block.latest_result
     {
       id:                block.id,
       logic_diagram_id:  block.logic_diagram_id,
@@ -26,9 +26,8 @@ class LogicBlockApi < RestfulApi
       stratum:           block.stratum,
       input_expressions: block.input_expressions,
       config:            block.config,
-      latest_datum_id:   latest&.id,
-      latest_value:      latest&.value,
-      latest_state:      latest&.state,
+      latest_value:      latest&.fetch("value", nil),
+      latest_state:      latest&.fetch("state", nil),
       created_at:        block.created_at.iso8601,
       updated_at:        block.updated_at.iso8601
     }.merge(value_fields_for(block))

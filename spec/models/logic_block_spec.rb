@@ -42,13 +42,7 @@ RSpec.describe LogicBlock, type: :model do
       input_expressions: { "value" => "145", "low_limit" => "130", "high_limit" => "140" },
       config: { "mode" => "active_high" }
     )
-    block.data.create!(
-      trace: Trace.create!(logic_diagram: diagram),
-      value: 1.0,
-      state: { "output" => true },
-      input_values: { "value" => 145.0, "low_limit" => 130.0, "high_limit" => 140.0 },
-      recorded_at: Time.zone.parse("2026-04-29 10:00:00")
-    )
+    Trace.create!(logic_diagram: diagram, recorded_at: Time.zone.parse("2026-04-29 10:00:00"))
 
     expect(block.value).to eq(145.0)
     expect(block.low_limit).to eq(130.0)
@@ -99,13 +93,7 @@ RSpec.describe LogicBlock, type: :model do
       input_expressions: { "set" => "true", "reset" => "false" },
       config: { "mode" => "latch_high", "dominance" => "reset" }
     )
-    block.data.create!(
-      trace: Trace.create!(logic_diagram: diagram),
-      value: 1.0,
-      state: { "output" => true },
-      input_values: { "set" => true, "reset" => false },
-      recorded_at: Time.zone.parse("2026-04-29 10:00:00")
-    )
+    Trace.create!(logic_diagram: diagram, recorded_at: Time.zone.parse("2026-04-29 10:00:00"))
 
     expect(block.set).to eq(true)
     expect(block.reset).to eq(false)

@@ -5,14 +5,11 @@ class TraceApi < RestfulApi
     scope.limit(params.fetch(:limit, 100).to_i.clamp(1, 1000))
   end
 
-  def expound(objects)
-    Datum.where(trace_id: objects.map(&:id))
-  end
-
   def serialize(trace)
     {
       id: trace.id,
       logic_diagram_id: trace.logic_diagram_id,
+      results: trace.results,
       recorded_at: trace.recorded_at.iso8601,
       created_at: trace.created_at.iso8601,
       updated_at: trace.updated_at.iso8601
@@ -27,6 +24,6 @@ class TraceApi < RestfulApi
   end
 
   def invalidates(_object)
-    { Trace => :queries, Datum => :queries, LogicBlock => :records, Measurement => :records }
+    { Trace => :queries, LogicBlock => :records, Measurement => :records, OutputBlock => :records }
   end
 end

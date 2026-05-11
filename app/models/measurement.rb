@@ -4,8 +4,6 @@ class Measurement < ApplicationRecord
   belongs_to :logic_diagram
   belongs_to :device, optional: true
 
-  has_many :data, as: :source, class_name: "Datum", dependent: :destroy
-
   validates :name, presence: true
   validates :name, uniqueness: { scope: :logic_diagram_id }
   validates :name, format: {
@@ -23,8 +21,12 @@ class Measurement < ApplicationRecord
     mode == "acquisition"
   end
 
-  def latest_trace_datum
-    data.order(recorded_at: :desc, id: :desc).first
+  def latest_result
+    logic_diagram.latest_trace&.result_for(self)
+  end
+
+  def latest_value
+    latest_result&.fetch("value", nil)
   end
 
   def trace_value

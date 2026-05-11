@@ -24,14 +24,8 @@ RSpec.describe Logic::OutputWriter do
   end
 
   it "collects enabled output commands from latest output data" do
-    trace = Trace.create!(logic_diagram: diagram)
-    output.data.create!(
-      trace: trace,
-      value: 1.0,
-      state: { desired_output: true },
-      input_values: { input: true },
-      recorded_at: trace.recorded_at
-    )
+    output
+    Trace.create!(logic_diagram: diagram)
 
     commands = described_class.new.enabled_commands_by_device_id.fetch(device.id)
 
@@ -42,14 +36,8 @@ RSpec.describe Logic::OutputWriter do
   end
 
   it "does not collect commands when diagram or output is disabled" do
-    trace = Trace.create!(logic_diagram: diagram)
-    output.data.create!(
-      trace: trace,
-      value: 1.0,
-      state: { desired_output: true },
-      input_values: { input: true },
-      recorded_at: trace.recorded_at
-    )
+    output
+    Trace.create!(logic_diagram: diagram)
 
     output.update!(output_enable: false)
     expect(described_class.new.enabled_commands_by_device_id).to be_empty

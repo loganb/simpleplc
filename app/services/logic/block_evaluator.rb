@@ -15,24 +15,33 @@ module Logic
       input_values = block.input_expressions.to_h.transform_values do |expression|
         Expression.evaluate(expression, context: context)
       end
-      previous_state = previous_datum&.state || {}
+      previous_state = previous_result&.fetch("state", nil) || {}
       value, state = block.evaluate_logic(input_values, previous_state)
 
-      block.data.create!(
-        trace: trace,
-        value: value ? 1.0 : 0.0,
-        state: state,
-        input_values: input_values,
-        recorded_at: recorded_at
-      ).tap { block.clear_memery_cache! }
+      result_payload(value ? 1.0 : 0.0, state, input_values).tap { block.clear_memery_cache! }
     end
 
     private
 
     attr_reader :block, :trace, :recorded_at, :context
 
-    def previous_datum
-      block.data.where.not(trace_id: trace.id).order(recorded_at: :desc, id: :desc).first
+    def previous_result
+      trace.logic_diagram.traces.where.not(id: trace.id).order(recorded_at: :desc, id: :desc).find do |previous_trace|
+        previous_trace.result_for(block)
+      end&.result_for(block)
     end
+
+    def result_payload(value, state, input_values)
+      {
+        "id" => block.id,
+        "name" => block.name,
+        "type" => block.type,
+        "value" => value,
+        "state" => state,
+        "input_values" => input_values,
+        "recorded_at" => recorded_at.iso8601
+      }
+    end
+
   end
 end

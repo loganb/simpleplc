@@ -6,7 +6,6 @@ class LogicBlock < ApplicationRecord
   end
 
   belongs_to :logic_diagram
-  has_many :data, as: :source, class_name: "Datum", dependent: :destroy
 
   validates :name, presence: true
   validates :name, uniqueness: { scope: :logic_diagram_id }
@@ -20,12 +19,12 @@ class LogicBlock < ApplicationRecord
   validate :required_inputs_are_present
   validate :referenced_logic_blocks_are_upstream
 
-  memoize def latest_datum
-    data.order(recorded_at: :desc, id: :desc).first
+  memoize def latest_result
+    logic_diagram.latest_trace&.result_for(self)
   end
 
   def output
-    latest_datum&.state&.[]("output")
+    latest_result&.dig("state", "output")
   end
 
   def required_input_names
@@ -43,7 +42,7 @@ class LogicBlock < ApplicationRecord
   private
 
   def latest_input_value(input_name)
-    latest_datum&.input_values&.[](input_name)
+    latest_result&.dig("input_values", input_name)
   end
 
   def required_inputs_are_present

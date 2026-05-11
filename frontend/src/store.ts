@@ -64,7 +64,6 @@ export interface MeasurementFields {
   source_path: string | null;
   units: string | null;
   simulation_value: number | null;
-  latest_datum_id: number | null;
   latest_value: number | null;
   created_at: string;
   updated_at: string;
@@ -98,7 +97,6 @@ export interface BaseLogicBlockFields {
   stratum: number;
   input_expressions: Record<string, string>;
   config: Record<string, unknown>;
-  latest_datum_id: number | null;
   latest_value: number | null;
   latest_state: Record<string, unknown> | null;
   output: boolean | null;
@@ -137,7 +135,6 @@ export interface OutputBlockFields {
   channel: number;
   input_expression: string;
   output_enable: boolean;
-  latest_datum_id: number | null;
   latest_value: number | null;
   latest_state: Record<string, unknown> | null;
   desired_output: boolean | null;
@@ -153,29 +150,28 @@ export const OutputBlock: ModelDefinition<OutputBlockFields> = {
   singleton: false,
 };
 
-export interface DatumFields {
+export interface TraceFields {
   id: number;
-  trace_id: number;
-  source_type: string;
-  source_id: number;
+  logic_diagram_id: number;
+  results: {
+    schema_version: number;
+    measurements: Record<string, TraceResult>;
+    logic_blocks: Record<string, TraceResult>;
+    output_blocks: Record<string, TraceResult>;
+  };
+  recorded_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TraceResult {
+  id: number;
+  name: string;
+  type?: string;
   value: number | null;
   state: Record<string, unknown>;
   input_values: Record<string, unknown>;
   recorded_at: string;
-}
-
-export const Datum: ModelDefinition<DatumFields> = {
-  name: 'datum',
-  inflections: { plural: 'data', title: 'Datum' },
-  singleton: false,
-};
-
-export interface TraceFields {
-  id: number;
-  logic_diagram_id: number;
-  recorded_at: string;
-  created_at: string;
-  updated_at: string;
 }
 
 export const Trace: ModelDefinition<TraceFields> = {

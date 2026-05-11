@@ -8,7 +8,7 @@ async function settleIo() {
 }
 
 describe('PLC store model definitions', () => {
-  it('creates traces through the RestfulModelStore wire format and stores expounded data', async () => {
+  it('creates traces through the RestfulModelStore wire format and stores results', async () => {
     globalThis.window = {
       setInterval,
       clearInterval,
@@ -16,7 +16,7 @@ describe('PLC store model definitions', () => {
     globalThis.requestAnimationFrame = ((callback: FrameRequestCallback) => {
       return setTimeout(() => callback(Date.now()), 0) as unknown as number;
     }) as typeof requestAnimationFrame;
-    const { Datum, Trace } = await import('./store');
+    const { Trace } = await import('./store');
     const axios = {
       post: vi.fn().mockResolvedValue({
         data: {
@@ -24,31 +24,37 @@ describe('PLC store model definitions', () => {
           traces: [{
             id: 7,
             logic_diagram_id: 3,
+            results: {
+              schema_version: 1,
+              measurements: {
+                5: {
+                  id: 5,
+                  name: 'Temp',
+                  value: 42,
+                  state: {},
+                  input_values: {},
+                  recorded_at: '2026-04-30T10:00:00Z',
+                },
+              },
+              logic_blocks: {},
+              output_blocks: {},
+            },
             recorded_at: '2026-04-30T10:00:00Z',
             created_at: '2026-04-30T10:00:00Z',
             updated_at: '2026-04-30T10:00:00Z',
-          }],
-          data: [{
-            id: 11,
-            trace_id: 7,
-            source_type: 'Measurement',
-            source_id: 5,
-            value: 42,
-            state: {},
-            input_values: {},
-            recorded_at: '2026-04-30T10:00:00Z',
           }],
         },
       }),
     };
     const store = new RestfulModelStore(axios as never);
     store.m(Trace);
-    const dataModel = store.m(Datum);
 
     store.m(Trace).create({ logic_diagram_id: 3 });
     await settleIo();
 
     expect(axios.post).toHaveBeenCalledWith('/traces.json', { trace: { logic_diagram_id: 3 } }, {});
-    expect(dataModel.fetch(11)._found).toBe(true);
+    const trace = store.m(Trace).fetch(7);
+    expect(trace._found).toBe(true);
+    expect(trace.results.measurements[5].value).toBe(42);
   });
 });

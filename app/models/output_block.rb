@@ -3,7 +3,6 @@ class OutputBlock < ApplicationRecord
 
   belongs_to :logic_diagram
   belongs_to :device
-  has_many :data, as: :source, class_name: "Datum", dependent: :destroy
 
   validates :name, presence: true
   validates :name, uniqueness: { scope: :logic_diagram_id }
@@ -17,12 +16,12 @@ class OutputBlock < ApplicationRecord
   validate :referenced_names_exist
   validate :device_supports_binary_output_channel
 
-  memoize def latest_datum
-    data.order(recorded_at: :desc, id: :desc).first
+  memoize def latest_result
+    logic_diagram.latest_trace&.result_for(self)
   end
 
   def desired_output
-    latest_datum&.value&.nonzero? ? true : false if latest_datum
+    latest_result&.fetch("value", nil)&.nonzero? ? true : false if latest_result
   end
 
   def effective_output

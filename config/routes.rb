@@ -12,5 +12,4 @@ Rails.application.routes.draw do
   resources :logic_blocks
   resources :output_blocks
   resources :traces
-  resources :data, only: [ :index, :show ]
 end

@@ -10,22 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_04_30_000006) do
-  create_table "data", force: :cascade do |t|
-    t.datetime "created_at", null: false
-    t.json "input_values", default: {}, null: false
-    t.datetime "recorded_at", null: false
-    t.integer "source_id", null: false
-    t.string "source_type", null: false
-    t.json "state", default: {}, null: false
-    t.integer "trace_id", null: false
-    t.datetime "updated_at", null: false
-    t.float "value"
-    t.index ["source_type", "source_id", "recorded_at"], name: "index_data_on_source_type_and_source_id_and_recorded_at"
-    t.index ["trace_id", "source_type", "source_id"], name: "index_data_on_trace_id_and_source_type_and_source_id"
-    t.index ["trace_id"], name: "index_data_on_trace_id"
-  end
-
+ActiveRecord::Schema[8.1].define(version: 2026_05_11_000000) do
   create_table "devices", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.json "current_state"
@@ -103,12 +88,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_30_000006) do
     t.datetime "created_at", null: false
     t.integer "logic_diagram_id", null: false
     t.datetime "recorded_at", null: false
+    t.json "results", default: {}, null: false
     t.datetime "updated_at", null: false
     t.index ["logic_diagram_id", "created_at"], name: "index_traces_on_logic_diagram_id_and_created_at"
     t.index ["logic_diagram_id"], name: "index_traces_on_logic_diagram_id"
   end
 
-  add_foreign_key "data", "traces"
   add_foreign_key "devices", "host_interfaces"
   add_foreign_key "logic_blocks", "logic_diagrams"
   add_foreign_key "measurements", "devices"

@@ -16,10 +16,10 @@ RSpec.describe Logic::OutputEvaluator do
       output_enable: true
     )
 
-    datum = described_class.evaluate!(output, trace: trace)
+    result = described_class.evaluate!(output, trace: trace)
 
-    expect(datum.value).to eq(1.0)
-    expect(datum.state).to include(
+    expect(result["value"]).to eq(1.0)
+    expect(result["state"]).to include(
       "desired_output" => true,
       "effective_output" => true,
       "diagram_output_enable" => true,
@@ -39,10 +39,10 @@ RSpec.describe Logic::OutputEvaluator do
       output_enable: true
     )
 
-    datum = described_class.evaluate!(output, trace: trace)
+    result = described_class.evaluate!(output, trace: trace)
 
-    expect(datum.value).to eq(0.0)
-    expect(datum.state).to include("desired_output" => false, "effective_output" => false)
+    expect(result["value"]).to eq(0.0)
+    expect(result["state"]).to include("desired_output" => false, "effective_output" => false)
   end
 
   it "records but skips writes when diagram output_enable is false" do
@@ -57,9 +57,9 @@ RSpec.describe Logic::OutputEvaluator do
       output_enable: true
     )
 
-    datum = described_class.evaluate!(output, trace: trace)
+    result = described_class.evaluate!(output, trace: trace)
 
-    expect(datum.state).to include(
+    expect(result["state"]).to include(
       "desired_output" => true,
       "effective_output" => nil,
       "write_pending" => false,
@@ -78,9 +78,9 @@ RSpec.describe Logic::OutputEvaluator do
       output_enable: false
     )
 
-    datum = described_class.evaluate!(output, trace: trace)
+    result = described_class.evaluate!(output, trace: trace)
 
-    expect(datum.state).to include(
+    expect(result["state"]).to include(
       "desired_output" => true,
       "effective_output" => nil,
       "write_pending" => false,

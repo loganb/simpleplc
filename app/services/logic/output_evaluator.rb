@@ -24,21 +24,22 @@ module Logic
         "write_skipped_reason" => enabled ? nil : skipped_reason
       }
 
-      create_datum(input_value, desired_output, state).tap { output_block.clear_memery_cache! }
+      result_payload(input_value, desired_output, state).tap { output_block.clear_memery_cache! }
     end
 
     private
 
     attr_reader :output_block, :trace, :recorded_at, :context
 
-    def create_datum(input_value, desired_output, state)
-      output_block.data.create!(
-        trace: trace,
-        value: desired_output ? 1.0 : 0.0,
-        state: state,
-        input_values: { "input" => input_value },
-        recorded_at: recorded_at
-      )
+    def result_payload(input_value, desired_output, state)
+      {
+        "id" => output_block.id,
+        "name" => output_block.name,
+        "value" => desired_output ? 1.0 : 0.0,
+        "state" => state,
+        "input_values" => { "input" => input_value },
+        "recorded_at" => recorded_at.iso8601
+      }
     end
 
     def skipped_reason

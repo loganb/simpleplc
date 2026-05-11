@@ -4,8 +4,9 @@ module Logic
       new
     end
 
-    def initialize(logic_diagram: nil, trace: nil)
+    def initialize(logic_diagram: nil, trace: nil, results: nil)
       @trace = trace
+      @results = results
       @logic_diagram = logic_diagram || trace&.logic_diagram
     end
 
@@ -22,13 +23,13 @@ module Logic
 
     private
 
-    attr_reader :logic_diagram, :trace
+    attr_reader :logic_diagram, :trace, :results
 
     def trace_value_for(source)
       if trace
-        trace.data.find_by(source: source)&.value
+        (results || trace.results).to_h.dig(Trace.results_bucket_for(source), source.id.to_s, "value")
       else
-        source.latest_trace_datum&.value
+        source.latest_value
       end
     end
   end

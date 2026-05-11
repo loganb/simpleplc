@@ -5,7 +5,7 @@ module Logic
     def enabled_commands_by_device_id
       commands = OutputBlock.includes(:device, :logic_diagram).filter_map do |output_block|
         next unless output_block.logic_diagram.output_enable? && output_block.output_enable?
-        next if output_block.latest_datum.nil?
+        next if output_block.latest_result.nil?
 
         Command.new(
           output_block: output_block,

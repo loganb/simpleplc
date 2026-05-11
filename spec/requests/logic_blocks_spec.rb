@@ -17,15 +17,8 @@ RSpec.describe "Logic blocks API", type: :request do
 
     expect(response).to have_http_status(:created)
 
-    trace = Trace.create!(logic_diagram: diagram)
     block = LogicBlock.find(response.parsed_body.fetch("id"))
-    block.data.create!(
-      trace: trace,
-      value: 1.0,
-      state: { "output" => true },
-      input_values: { "value" => 145.0, "low_limit" => 130.0, "high_limit" => 140.0 },
-      recorded_at: Time.zone.parse("2026-04-29 10:00:00")
-    )
+    Trace.create!(logic_diagram: diagram, recorded_at: Time.zone.parse("2026-04-29 10:00:00"))
 
     get "/logic_blocks", params: { logic_diagram_id: diagram.id }
 

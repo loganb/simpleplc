@@ -12,7 +12,7 @@ class OutputBlockApi < RestfulApi
   end
 
   def serialize(output)
-    latest = output.latest_datum
+    latest = output.latest_result
     {
       id: output.id,
       logic_diagram_id: output.logic_diagram_id,
@@ -21,9 +21,8 @@ class OutputBlockApi < RestfulApi
       channel: output.channel,
       input_expression: output.input_expression,
       output_enable: output.output_enable,
-      latest_datum_id: latest&.id,
-      latest_value: latest&.value,
-      latest_state: latest&.state,
+      latest_value: latest&.fetch("value", nil),
+      latest_state: latest&.fetch("state", nil),
       desired_output: output.desired_output,
       effective_output: output.effective_output,
       write_pending: output.write_pending?,

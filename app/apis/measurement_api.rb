@@ -21,8 +21,7 @@ class MeasurementApi < RestfulApi
       source_path:   m.source_path,
       units:         m.units,
       simulation_value: m.simulation_value,
-      latest_datum_id: m.latest_trace_datum&.id,
-      latest_value:  m.latest_trace_datum&.value,
+      latest_value:  m.latest_value,
       created_at:    m.created_at.iso8601,
       updated_at:    m.updated_at.iso8601
     }

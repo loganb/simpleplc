@@ -19,15 +19,15 @@ HVAC PLC controller application — a web interface for monitoring and controlli
 ## Current State
 
 - **Modbus polling** working — three devices (DS18B20 temp board, NTC temp board, relay I/O board) polled and state stored in `devices.current_state` JSON column. The N4D8B08 relay I/O driver writes unrelated input/output relationship mode during initialization so physical input highs do not toggle relay outputs.
-- **REST API** exposes devices, host_interfaces, measurements, logic diagrams/blocks, output blocks, traces, and trace data with the RestfulApiController pattern (flat JSON wire format compatible with RestfulModelStore).
+- **REST API** exposes devices, host_interfaces, measurements, logic diagrams/blocks, output blocks, and traces with the RestfulApiController pattern (flat JSON wire format compatible with RestfulModelStore).
 - **Measurements** — named values owned by LogicDiagrams. Acquisition measurements read from a device + JSON path (e.g. `temperatures[4]`) at Trace creation; simulation measurements use an operator-entered value so diagrams can be designed before hardware is wired. Boolean acquisition values normalize to `1.0`/`0.0`.
 - **Frontend dashboard** shows device cards with live data + measurement cards with latest values + CRUD form for measurements. It refreshes live queries every 5 minutes and uses bounded frontend store cache epochs to avoid unbounded long-session cache growth.
-- **LogicDiagram feature** — a LogicDiagram maps diagram-owned Measurements through stateful LogicBlocks (initially hysteresis and latch) into OutputBlocks. The frontend editor computes topological strata for left-to-right block columns, while the backend validates dependency order and evaluates blocks by ascending stratum. Creating a Trace snapshots every Measurement, computes every LogicBlock, then evaluates OutputBlocks into trace `data`. The poller owns physical relay writes: after reading a device, it applies the latest enabled OutputBlock values for that device when both the diagram and output have `output_enable` true. Disabled outputs record desired state but leave hardware unchanged. See `claude/logic-diagram.md`, `claude/measurements-in-logic-diagram-and-simulation.md`, and `claude/output-enable.md`.
+- **LogicDiagram feature** — a LogicDiagram maps diagram-owned Measurements through stateful LogicBlocks (initially hysteresis and latch) into OutputBlocks. The frontend editor computes topological strata for left-to-right block columns, while the backend validates dependency order and evaluates blocks by ascending stratum. Creating a Trace snapshots every Measurement, computes every LogicBlock, then evaluates OutputBlocks into the trace `results` JSON document. Latest UI state and output writing read from the newest Trace for the diagram. The poller owns physical relay writes: after reading a device, it applies the latest enabled OutputBlock values for that device when both the diagram and output have `output_enable` true. Disabled outputs record desired state but leave hardware unchanged. See `claude/logic-diagram.md`, `claude/measurements-in-logic-diagram-and-simulation.md`, `claude/output-enable.md`, and `claude/trace-results-json.md`.
 
 ## Key Entry Points
 
-- `config/routes.rb` — resources for host_interfaces, devices, measurements, logic diagrams/blocks, output blocks, traces, and data.
-- `app/apis/` — RestfulApi subclasses (DeviceApi, HostInterfaceApi, MeasurementApi, LogicDiagramApi, LogicBlockApi, OutputBlockApi, TraceApi, DatumApi).
+- `config/routes.rb` — resources for host_interfaces, devices, measurements, logic diagrams/blocks, output blocks, and traces.
+- `app/apis/` — RestfulApi subclasses (DeviceApi, HostInterfaceApi, MeasurementApi, LogicDiagramApi, LogicBlockApi, OutputBlockApi, TraceApi).
 - `lib/restful_api_controller.rb` — controller mixin providing REST actions.
 - `frontend/src/App.tsx` — main Preact dashboard component.
 - `frontend/src/store.ts` — RestfulModelStore instance + model definitions.
@@ -42,5 +42,4 @@ HVAC PLC controller application — a web interface for monitoring and controlli
 - `logic_diagrams` — named control-logic diagrams with an update period
 - `logic_blocks` — diagram-owned stateful/function blocks with expression inputs, config, state, and frontend-computed stratum
 - `output_blocks` — diagram-owned binary output commands with an input expression, device/channel destination, and per-output enable gate
-- `traces` — explicit computation runs for a LogicDiagram
-- `data`/`datum` — Trace-owned polymorphic snapshots/computations containing value, retained state JSON, and input expression result JSON. Current source types are Measurement, LogicBlock, and OutputBlock.
+- `traces` — explicit computation runs for a LogicDiagram, with `results` JSON storing schema-versioned measurement, logic block, and output block result buckets keyed by source ID.

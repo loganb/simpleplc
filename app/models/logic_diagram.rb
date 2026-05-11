@@ -7,4 +7,8 @@ class LogicDiagram < ApplicationRecord
   validates :name, presence: true
   validates :update_period, presence: true,
     numericality: { only_integer: true, greater_than: 0 }
+
+  def latest_trace
+    traces.order(recorded_at: :desc, id: :desc).first
+  end
 end

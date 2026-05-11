@@ -20,21 +20,7 @@ RSpec.describe "Output blocks API", type: :request do
     expect(response).to have_http_status(:created)
 
     output = OutputBlock.find(response.parsed_body.fetch("id"))
-    trace = Trace.create!(logic_diagram: diagram)
-    output.data.create!(
-      trace: trace,
-      value: 1.0,
-      state: {
-        desired_output: true,
-        effective_output: nil,
-        diagram_output_enable: false,
-        output_enable: true,
-        write_pending: false,
-        write_skipped_reason: "diagram_output_disabled"
-      },
-      input_values: { input: true },
-      recorded_at: Time.zone.parse("2026-04-29 10:00:00")
-    )
+    Trace.create!(logic_diagram: diagram, recorded_at: Time.zone.parse("2026-04-29 10:00:00"))
 
     get "/output_blocks", params: { logic_diagram_id: diagram.id }
 

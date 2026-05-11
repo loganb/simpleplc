@@ -20,12 +20,17 @@ RSpec.describe Logic::TraceEvaluator do
 
     trace = Trace.create!(logic_diagram: diagram)
 
-    measurement_datum = trace.data.find_by!(source_type: "Measurement")
-    block_datum = trace.data.find_by!(source: block)
-    expect(measurement_datum.value).to eq(145.0)
-    expect(measurement_datum.id).to be < block_datum.id
-    expect(block_datum.input_values).to include("value" => 145.0)
-    expect(block_datum.value).to eq(1.0)
+    measurement_result = trace.result_for(Measurement.find_by!(name: "BoilerOutletTemp"))
+    block_result = trace.result_for(block)
+    expect(measurement_result["value"]).to eq(145.0)
+    expect(block_result["input_values"]).to include("value" => 145.0)
+    expect(block_result["value"]).to eq(1.0)
+    expect(trace.results).to include(
+      "schema_version" => 1,
+      "measurements" => include(Measurement.find_by!(name: "BoilerOutletTemp").id.to_s),
+      "logic_blocks" => include(block.id.to_s),
+      "output_blocks" => {}
+    )
   end
 
   it "snapshots acquisition measurements from device current_state" do
@@ -46,7 +51,7 @@ RSpec.describe Logic::TraceEvaluator do
 
     trace = Trace.create!(logic_diagram: diagram)
 
-    expect(trace.data.find_by!(source: measurement).value).to eq(1.0)
+    expect(trace.result_for(measurement)["value"]).to eq(1.0)
   end
 
   it "records nil for acquisition measurements without samples" do
@@ -54,7 +59,7 @@ RSpec.describe Logic::TraceEvaluator do
 
     trace = Trace.create!(logic_diagram: diagram)
 
-    expect(trace.data.find_by!(source: measurement).value).to be_nil
+    expect(trace.result_for(measurement)["value"]).to be_nil
   end
 
   it "keeps references scoped to a diagram" do
@@ -71,7 +76,7 @@ RSpec.describe Logic::TraceEvaluator do
 
     trace = Trace.create!(logic_diagram: diagram)
 
-    expect(trace.data.find_by!(source: block).input_values).to include("value" => 10.0)
+    expect(trace.result_for(block)["input_values"]).to include("value" => 10.0)
   end
 
   it "evaluates outputs after measurements and blocks" do
@@ -89,12 +94,10 @@ RSpec.describe Logic::TraceEvaluator do
 
     trace = Trace.create!(logic_diagram: diagram)
 
-    measurement_datum = trace.data.find_by!(source_type: "Measurement")
-    output_datum = trace.data.find_by!(source: output)
-    expect(measurement_datum.id).to be < output_datum.id
-    expect(output_datum.value).to eq(1.0)
-    expect(output_datum.input_values).to include("input" => 1.0)
-    expect(output_datum.state).to include(
+    output_result = trace.result_for(output)
+    expect(output_result["value"]).to eq(1.0)
+    expect(output_result["input_values"]).to include("input" => 1.0)
+    expect(output_result["state"]).to include(
       "desired_output" => true,
       "write_pending" => false,
       "write_skipped_reason" => "diagram_output_disabled"
