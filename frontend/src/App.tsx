@@ -9,7 +9,7 @@ import type {
   MeasurementFields,
   OutputBlockFields,
 } from './store';
-import type { FoundRecord, ReifiedQueryResult, Txn } from './lib/RestfulModelStore';
+import type { ExistingRecord, ReifiedQueryResult, Txn } from './lib/RestfulModelStore';
 import { nextStratumForExpressions } from './logicDiagram';
 
 export function App() {
@@ -138,21 +138,21 @@ function LogicDiagramsSection({
   const { txnResult: deleteDiagramTxnResult, saving: deletingDiagram } = useTxnStatus(deleteDiagramTxn);
   const deleteDiagramError = deleteDiagramTxnResult?.status === 'error' ? 'Delete failed' : null;
   const foundDiagrams = diagrams._loaded
-    ? diagrams.filter((d) => d._found) as FoundRecord<LogicDiagramFields>[]
+    ? diagrams.filter((d) => d._found) as ExistingRecord<LogicDiagramFields>[]
     : [];
   const currentDiagram = foundDiagrams.find((d) => d.id === selectedDiagramId) ?? foundDiagrams[0] ?? null;
   const currentBlocks = blocks._loaded && currentDiagram
-    ? blocks.filter((b) => b._found && (b as FoundRecord<LogicBlockFields>).logic_diagram_id === currentDiagram.id) as FoundRecord<LogicBlockFields>[]
+    ? blocks.filter((b) => b._found && (b as ExistingRecord<LogicBlockFields>).logic_diagram_id === currentDiagram.id) as ExistingRecord<LogicBlockFields>[]
     : [];
   const foundMeasurements = measurements._loaded
     ? measurements.filter((m) => (
-      m._found && currentDiagram && (m as FoundRecord<MeasurementFields>).logic_diagram_id === currentDiagram.id
-    )) as FoundRecord<MeasurementFields>[]
+      m._found && currentDiagram && (m as ExistingRecord<MeasurementFields>).logic_diagram_id === currentDiagram.id
+    )) as ExistingRecord<MeasurementFields>[]
     : [];
   const currentOutputs = outputBlocks._loaded && currentDiagram
-    ? outputBlocks.filter((o) => o._found && (o as FoundRecord<OutputBlockFields>).logic_diagram_id === currentDiagram.id) as FoundRecord<OutputBlockFields>[]
+    ? outputBlocks.filter((o) => o._found && (o as ExistingRecord<OutputBlockFields>).logic_diagram_id === currentDiagram.id) as ExistingRecord<OutputBlockFields>[]
     : [];
-  const blocksByStratum = new Map<number, FoundRecord<LogicBlockFields>[]>();
+  const blocksByStratum = new Map<number, ExistingRecord<LogicBlockFields>[]>();
   currentBlocks.forEach((block) => {
     const group = blocksByStratum.get(block.stratum) ?? [];
     group.push(block);
@@ -403,7 +403,7 @@ function ColumnHeader({ title }: { title: string }) {
 }
 
 function LogicBlockCard({ block, onEdit }: {
-  block: FoundRecord<LogicBlockFields>;
+  block: ExistingRecord<LogicBlockFields>;
   onEdit: (id: number) => void;
 }) {
   const state = block.latest_state ?? {};
@@ -507,13 +507,13 @@ function LogicDiagramForm({ onClose }: { onClose: () => void }) {
 }
 
 function LogicBlockForm({ diagram, editId, blocks, onClose }: {
-  diagram: FoundRecord<LogicDiagramFields>;
+  diagram: ExistingRecord<LogicDiagramFields>;
   editId: number | null;
-  blocks: FoundRecord<LogicBlockFields>[];
+  blocks: ExistingRecord<LogicBlockFields>[];
   onClose: () => void;
 }) {
   const existing = editId !== null ? Store.m(LogicBlock).fetch(editId) : null;
-  const found = existing?._found ? existing as FoundRecord<LogicBlockFields> : null;
+  const found = existing?._found ? existing as ExistingRecord<LogicBlockFields> : null;
   const defaultExpressions = found?.input_expressions ?? { value: '', low_limit: '', high_limit: '' };
 
   const [name, setName] = useState(found?.name ?? '');
@@ -682,7 +682,7 @@ function FormButtons({ saving, disabled, onSave, onCancel }: {
   );
 }
 
-function defaultExpressionsForType(blockType: LogicBlockFields['block_type']) {
+function defaultExpressionsForType(blockType: LogicBlockFields['block_type']): Record<string, string> {
   return blockType === 'hysteresis'
     ? { value: '', low_limit: '', high_limit: '' }
     : { set: '', reset: '' };
@@ -719,7 +719,7 @@ function useTxnStatus(txn: Txn | undefined) {
 // ---------------------------------------------------------------------------
 
 function MeasurementCard({ measurement, devices, onEdit }: {
-  measurement: FoundRecord<MeasurementFields>;
+  measurement: ExistingRecord<MeasurementFields>;
   devices: ReifiedQueryResult<DeviceFields>;
   onEdit: (id: number) => void;
 }) {
@@ -731,8 +731,8 @@ function MeasurementCard({ measurement, devices, onEdit }: {
   const valueSaveStarted = useRef(false);
   const { txnResult, saving } = useTxnStatus(saveTxn);
 
-  const device = devices.find((d) => d._found && (d as FoundRecord<DeviceFields>).id === m.device_id);
-  const deviceName = device?._found ? (device as FoundRecord<DeviceFields>).name : null;
+  const device = devices.find((d) => d._found && (d as ExistingRecord<DeviceFields>).id === m.device_id);
+  const deviceName = device?._found ? (device as ExistingRecord<DeviceFields>).name : null;
   const displayValue = m.mode === 'simulation' ? m.simulation_value : m.latest_value;
 
   useEffect(() => {
@@ -840,7 +840,7 @@ function MeasurementCard({ measurement, devices, onEdit }: {
 }
 
 function MeasurementForm({ diagram, editId, devices, onClose }: {
-  diagram: FoundRecord<LogicDiagramFields>;
+  diagram: ExistingRecord<LogicDiagramFields>;
   editId: number | null;
   devices: ReifiedQueryResult<DeviceFields>;
   onClose: () => void;
@@ -848,7 +848,7 @@ function MeasurementForm({ diagram, editId, devices, onClose }: {
   const existing = editId !== null
     ? Store.m(Measurement).fetch(editId)
     : null;
-  const found = existing?._found ? existing as FoundRecord<MeasurementFields> : null;
+  const found = existing?._found ? existing as ExistingRecord<MeasurementFields> : null;
 
   const [name, setName] = useState(found?.name ?? '');
   const [deviceId, setDeviceId] = useState(String(found?.device_id ?? ''));
@@ -886,7 +886,7 @@ function MeasurementForm({ diagram, editId, devices, onClose }: {
     onClose();
   };
 
-  const foundDevices = devices.filter((d) => d._found) as FoundRecord<DeviceFields>[];
+  const foundDevices = devices.filter((d) => d._found) as ExistingRecord<DeviceFields>[];
 
   return (
     <div class="rounded-lg border border-border bg-surface-alt p-4 mb-4 space-y-3">
@@ -970,15 +970,15 @@ function MeasurementForm({ diagram, editId, devices, onClose }: {
 // ---------------------------------------------------------------------------
 
 function OutputBlockCard({ output, devices, onEdit }: {
-  output: FoundRecord<OutputBlockFields>;
+  output: ExistingRecord<OutputBlockFields>;
   devices: ReifiedQueryResult<DeviceFields>;
   onEdit: (id: number) => void;
 }) {
   const [saveTxn, setSaveTxn] = useState<Txn | undefined>();
   const [error, setError] = useState<string | null>(null);
   const { txnResult, saving } = useTxnStatus(saveTxn);
-  const device = devices.find((d) => d._found && (d as FoundRecord<DeviceFields>).id === output.device_id);
-  const deviceName = device?._found ? (device as FoundRecord<DeviceFields>).name : 'Unknown device';
+  const device = devices.find((d) => d._found && (d as ExistingRecord<DeviceFields>).id === output.device_id);
+  const deviceName = device?._found ? (device as ExistingRecord<DeviceFields>).name : 'Unknown device';
   const state = output.latest_state ?? {};
   const skippedReason = typeof state.write_skipped_reason === 'string' ? state.write_skipped_reason : null;
 
@@ -1040,13 +1040,13 @@ function OutputBlockCard({ output, devices, onEdit }: {
 }
 
 function OutputBlockForm({ diagram, editId, devices, onClose }: {
-  diagram: FoundRecord<LogicDiagramFields>;
+  diagram: ExistingRecord<LogicDiagramFields>;
   editId: number | null;
   devices: ReifiedQueryResult<DeviceFields>;
   onClose: () => void;
 }) {
   const existing = editId !== null ? Store.m(OutputBlock).fetch(editId) : null;
-  const found = existing?._found ? existing as FoundRecord<OutputBlockFields> : null;
+  const found = existing?._found ? existing as ExistingRecord<OutputBlockFields> : null;
 
   const [name, setName] = useState(found?.name ?? '');
   const [deviceId, setDeviceId] = useState(String(found?.device_id ?? ''));
@@ -1063,10 +1063,11 @@ function OutputBlockForm({ diagram, editId, devices, onClose }: {
   }, [txnResult, onClose]);
 
   const handleSave = () => {
+    if (!deviceId) return;
     const fields = {
       logic_diagram_id: diagram.id,
       name,
-      device_id: deviceId ? parseInt(deviceId, 10) : null,
+      device_id: parseInt(deviceId, 10),
       channel: parseInt(channel, 10),
       input_expression: inputExpression,
     };
@@ -1083,7 +1084,7 @@ function OutputBlockForm({ diagram, editId, devices, onClose }: {
     onClose();
   };
 
-  const foundDevices = devices.filter((d) => d._found) as FoundRecord<DeviceFields>[];
+  const foundDevices = devices.filter((d) => d._found) as ExistingRecord<DeviceFields>[];
 
   return (
     <div class="rounded-lg border border-border bg-surface-alt p-4 mb-4 space-y-3">
@@ -1166,10 +1167,10 @@ function DeviceCard({ device, interfaces }: {
   interfaces: ReifiedQueryResult<HostInterfaceFields>;
 }) {
   if (!device._found) return null;
-  const d = device as FoundRecord<DeviceFields>;
+  const d = device as ExistingRecord<DeviceFields>;
   const state = d.current_state;
-  const iface = interfaces.find((i) => i._found && (i as FoundRecord<HostInterfaceFields>).id === d.host_interface_id);
-  const ifaceFound = iface?._found ? iface as FoundRecord<HostInterfaceFields> : null;
+  const iface = interfaces.find((i) => i._found && (i as ExistingRecord<HostInterfaceFields>).id === d.host_interface_id);
+  const ifaceFound = iface?._found ? iface as ExistingRecord<HostInterfaceFields> : null;
 
   return (
     <div class="rounded-lg border border-border bg-surface p-4 space-y-3">

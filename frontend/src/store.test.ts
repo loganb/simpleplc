@@ -55,6 +55,7 @@ describe('PLC store model definitions', () => {
     expect(axios.post).toHaveBeenCalledWith('/traces.json', { trace: { logic_diagram_id: 3 } }, {});
     const trace = store.m(Trace).fetch(7);
     expect(trace._found).toBe(true);
+    if (!trace._found) throw new Error('trace should be found');
     expect(trace.results.measurements[5].value).toBe(42);
   });
 });

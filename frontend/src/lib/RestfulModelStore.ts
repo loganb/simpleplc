@@ -4,8 +4,9 @@ import RateLimiter from './RateLimiter';
 import * as Collections from 'typescript-collections'
 import { AxiosInstance } from 'axios';
 
+export type ServerRecordId = number | string;
 export type NewRecordId = { seq: number};
-export type RecordId<T = number|string> = NewRecordId|T;
+export type RecordId<T extends ServerRecordId = ServerRecordId> = NewRecordId | T;
 
 export interface Txn {
   readonly record?: object,
@@ -30,32 +31,31 @@ interface RecordFlags {
   readonly lock_version?: number,
   readonly id: RecordId
 }
-export type Identifiable = {id: RecordId};
+export type Identifiable = {id: ServerRecordId};
+
 /*
  * ExtantRecord<T> is guaranteed to have an 'id', but isn't necessarily found yet
  *
  */
-export type ExtantRecord<T extends Identifiable> = RecordFlags & {id: RecordId<T['id']>}; //Guaranteed to have an Id, some placeholder loading records don't guarantee this
+export type ExtantRecord<T extends Identifiable> = RecordFlags & {id: RecordId<T['id']>}; //Guaranteed to have an id, but it may be a local placeholder
 
 /*
  * A record that isn't found, so it has no data
  */
-type NotFoundRecord<T extends Identifiable> = (ExtantRecord<T> & {_found: false});
+type NotFoundRecord<T extends Identifiable> = T extends unknown ? (ExtantRecord<T> & {_found: false}) : never;
 /*
  * A record that is found, so it is guaranteed to have its fields
  *
  */
-export type FoundRecord<T extends Identifiable> = (ExtantRecord<T> & {_found: true}) & Omit<T,'id'>;
+export type FoundRecord<T extends Identifiable> = T extends unknown ? ((ExtantRecord<T> & {_found: true}) & Omit<T,'id'>) : never;
 export type ModelRecord<T extends Identifiable> = NotFoundRecord<T> | FoundRecord<T>;
-export type LoadingRecord<T extends Identifiable> = RecordFlags & {_loading: true, _found: false} & Pick<T,'id'>;
-export type ExistingRecord<T extends Identifiable> = FoundRecord<T> & { _new: false | undefined } & Pick<T, 'id'>;
-
-export type IdType<FIELDS extends Identifiable> = ModelRecord<FIELDS>['id'];
+export type LoadingRecord<T extends Identifiable> = RecordFlags & {_loading: true, _found: false, id: T['id']};
+export type ExistingRecord<T extends Identifiable> = FoundRecord<T> & { _new: false | undefined, id: T['id'] };
 
 /*
  * On New Records, the id column is an opaque object, and all fields are optional. 
  */
-export type NewRecord<T> = RecordFlags & Partial<Omit<T,'id'>> & {id: NewRecordId, _new: true}; //These are returned from new()
+export type NewRecord<T extends Identifiable> = Omit<RecordFlags, 'id'> & Partial<Omit<T,'id'>> & {id: NewRecordId, _new: true}; //These are returned from new()
 // Type for what is patchable by the patch method
 export type PatchRecord<T> = Partial<Omit<T,'id'>>;
 
@@ -188,18 +188,22 @@ class BaseModel<T extends Identifiable> {
 class Model<T extends Identifiable> extends BaseModel<T> {
   public readonly singleton = false;
 
-  public fetch(id: RecordId, force = false) : ModelRecord<T> {
-    return this.store.fetch(this, id as RecordId, force);
+  public fetch(id: T['id'], force?: boolean) : ModelRecord<T>;
+  public fetch(id: NewRecordId, force?: boolean) : ModelRecord<T> | NewRecord<T>;
+  public fetch(id: RecordId<T['id']>, force = false) : ModelRecord<T> | NewRecord<T> {
+    return typeof id === 'object'
+      ? this.store.fetch(this, id, force)
+      : this.store.fetch(this, id as T['id'], force);
   }
 
-  public fetchMany(ids: RecordId[], force = false) : ReifiedQueryResult<T> {
+  public fetchMany(ids: T['id'][], force = false) : ReifiedQueryResult<T> {
     return this.store.fetchMulti(this,ids,force);
   }
 
   public queryFor(name: string | null, arg: Record<string, unknown> | null, force = false) : ReifiedQueryResult<T> {
     return this.store.queryFor(this, name, arg, force);
   };
-  public destroy(id: RecordId) : Txn {
+  public destroy(id: RecordId<T['id']>) : Txn {
     return this.store.destroy(this, id);
   }
 
@@ -207,7 +211,7 @@ class Model<T extends Identifiable> extends BaseModel<T> {
     return this.store.create(this, record);
   }
 
-  public patch(id: RecordId, changes: Partial<T>) : Txn {
+  public patch(id: RecordId<T['id']>, changes: Partial<T>) : Txn {
     return this.store.patch(this, id, changes);
   }
 
@@ -221,7 +225,7 @@ class SingletonModel<T extends Identifiable> extends BaseModel<T> {
   public readonly singleton = true;
 
   fetch(force = false) : ModelRecord<T> {
-    return this.store.fetch(this, this.name, force);
+    return this.store.fetch(this, this.name as T['id'], force) as ModelRecord<T>;
   }
 
   destroy() : Txn {
@@ -255,7 +259,7 @@ export default class RestfulModelStore extends EventEmitter {
   axios: AxiosInstance;
   models: {[modelName: string]: Model<Identifiable>|SingletonModel<Identifiable>};
   txns: WeakMap<Txn,TxnResult>;
-  news: WeakMap<NewRecordId, Identifiable>;
+  news: WeakMap<NewRecordId, NewRecord<Identifiable> | ServerRecordId>;
   seq: number;
   is_dirty: boolean = false;
 
@@ -331,8 +335,8 @@ export default class RestfulModelStore extends EventEmitter {
       (models[definition.name] = new SingletonModel<T>(this,definition))
   }
 
-  fetchMulti<T extends Identifiable>(model: Model<T>, ids: RecordId[], force: boolean = false) {
-    const records = ids.map((id) => ( this.fetch(model, id, force)));
+  fetchMulti<T extends Identifiable>(model: Model<T>, ids: T['id'][], force: boolean = false) {
+    const records = ids.map((id) => (this.fetch(model, id, force) as ModelRecord<T>));
     const results: ReifiedQueryResult<T> = Object.assign(
       records,
       {
@@ -344,19 +348,21 @@ export default class RestfulModelStore extends EventEmitter {
   }
 
   // Returns a model for the given id
-  fetch<T extends Identifiable>(model: Model<T> | SingletonModel<T>, id: RecordId, force: boolean = false) : NotFoundRecord<T> | FoundRecord<T> {
+  fetch<T extends Identifiable>(model: Model<T> | SingletonModel<T>, id: T['id'], force?: boolean) : ModelRecord<T>;
+  fetch<T extends Identifiable>(model: Model<T> | SingletonModel<T>, id: NewRecordId, force?: boolean) : ModelRecord<T> | NewRecord<T>;
+  fetch<T extends Identifiable>(model: Model<T> | SingletonModel<T>, id: RecordId<T['id']>, force: boolean = false) : ModelRecord<T> | NewRecord<T> {
     if((typeof(id) === 'undefined' || id == null) && !model.singleton) {
       throw new Error("Whoops!");
     }
     //See if we get a hit in the unsaved set, followed by the cache, otherwise kick off a load cycle
     let exists = true;
-    const record = this.fetchNewRecord(model, id) || model.instances.get(id) || {
+    const record = this.fetchNewRecord(model, id) || model.instances.get(id) as ModelRecord<T> | undefined || {
       _loading: true,
       _loaded:  exists = false,
       _found:   false,
       _seq:     this.seq++,
-      id: id
-    };
+      id: id as T['id']
+    } as NotFoundRecord<T>;
     if(!exists || (record && record._loaded && force)) {
       //Always return a blank object
       model.instances.set(id, record);
@@ -365,7 +371,7 @@ export default class RestfulModelStore extends EventEmitter {
         io_type: 'fetch',
         model: model,
         run_time: 0, //The distant past, so means "right now"
-        record: record,
+        record: record as ExtantRecord<Identifiable>,
       });
       this.schedule_queue_processing();
     }
@@ -383,7 +389,10 @@ export default class RestfulModelStore extends EventEmitter {
    *
    * Error handling: TBD
    */
-  create<T extends Identifiable>(model: Model<T>|SingletonModel<T>, record: Partial<T>) {
+  create<T extends Identifiable>(
+    model: Model<T>|SingletonModel<T>,
+    record: Partial<Omit<T, 'id'>> & { id?: RecordId<T['id']> }
+  ) {
     const {id, ...record_params} = record;
     const new_record = {...record_params, ...{
       _loading: true,
@@ -415,7 +424,7 @@ export default class RestfulModelStore extends EventEmitter {
 
       //This is the case where a record was created with new() and we need to redirect that placeholder key to the live record
       if(id) {
-        this.news.set(id as NewRecordId, response.data.id);        
+        this.news.set(id as unknown as NewRecordId, response.data.id);        
       }
 
       //Will force a reload of queries
@@ -507,7 +516,7 @@ export default class RestfulModelStore extends EventEmitter {
     return txn_result;
   }
 
-  destroy<T extends Identifiable>(model: Model<T>|SingletonModel<T>, id: T['id']) : Txn {
+  destroy<T extends Identifiable>(model: Model<T>|SingletonModel<T>, id: RecordId<T['id']>) : Txn {
     const new_record = this.news.get(id as NewRecordId);
     if(new_record) {
       //We're destroying a record that never existed in the first place
@@ -524,7 +533,7 @@ export default class RestfulModelStore extends EventEmitter {
       this.soil();
       return txn;
     }
-    const deleting_record = Object.assign({}, model.instances.get(id) || this.emptyLoadingRecord(id || ""), { _loading: true, _destroyed: true });
+    const deleting_record = Object.assign({}, model.instances.get(id) || this.emptyLoadingRecord(id as T['id']), { _loading: true, _destroyed: true });
     const txn = {
       record: deleting_record,
       seq: this.seq++
@@ -570,7 +579,7 @@ export default class RestfulModelStore extends EventEmitter {
    * Returns the fetched version of the object. It will be stale or empty.
    *
    */
-  patch<T extends Identifiable>(model: Model<T>|SingletonModel<T>, id: RecordId | null, changes: Partial<T>) : Txn {
+  patch<T extends Identifiable>(model: Model<T>|SingletonModel<T>, id: RecordId<T['id']> | null, changes: Partial<T>) : Txn {
     //Do a create instead if this is a model created from new()
     const new_record = this.news.get(id as NewRecordId);
     if(typeof(new_record) === 'object') {
@@ -649,7 +658,7 @@ export default class RestfulModelStore extends EventEmitter {
     }
 
     const ret = Object.assign(
-      unresolvedResult.map((id) => (this.fetch(model, id))),
+      unresolvedResult.map((id) => (this.fetch(model, id as T['id']) as ModelRecord<T>)),
       {
         _loading: unresolvedResult._loading || doLoad,
         _loaded: unresolvedResult._loaded,
@@ -701,12 +710,12 @@ export default class RestfulModelStore extends EventEmitter {
     return q;
   }
 
-  private fetchNewRecord<T extends Identifiable>(model: Model<T>|SingletonModel<T>, id: RecordId|null) : ExtantRecord<T> | undefined {
+  private fetchNewRecord<T extends Identifiable>(model: Model<T>|SingletonModel<T>, id: RecordId<T['id']>|null) : NewRecord<T> | ModelRecord<T> | undefined {
     const nr = this.news.get(id as NewRecordId);
     if(typeof(nr) == "object") { //It's a record that hasn't been saved yet
       return nr as NewRecord<T>;
     } else if(nr) { //It's the 'id' of the new object, now saved
-      return this.fetch(model, nr)
+      return this.fetch(model, nr as T['id'])
     }
   }
 

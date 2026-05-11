@@ -22,6 +22,7 @@ The delete control should apply to the currently selected diagram and live near 
 - Successful deletion closes open logic-diagram child forms, clears the selected diagram, and triggers a frontend refresh.
 - Added request coverage that `DELETE /logic_diagrams/:id` removes dependent measurements, logic blocks, output blocks, and traces.
 - Delete transactions now carry a pending `seq`, matching create/patch, so `useTxnStatus()` can wake up when destroy completes.
+- Tightened RestfulModelStore id types so `FoundRecord` can represent found local placeholder records, while `ExistingRecord` represents records with real server ids. `App.tsx` uses `ExistingRecord` where query/fetch-backed records pass ids around. Verified with `tsc --noEmit`.
 
 ## Follow-Up Notes
 
