@@ -67,9 +67,7 @@ class SubTree<TT extends UXTreeDefinition> extends EventEmitter implements URLTr
     if (urldata && urldata.length > 0) {
       const config = urldata.shift();
       const encodedActiveTree = urldata.shift();
-      const activeTree = encodedActiveTree
-        ? JSON.parse(decodeURIComponent(encodedActiveTree)) as string
-        : undefined;
+      const activeTree = encodedActiveTree ? decodeURIComponent(encodedActiveTree) : undefined;
       if (config) {
         const parsed = JSON.parse(decodeURIComponent(config)) as Record<string, unknown>;
         for (const key in parsed) {
@@ -140,7 +138,7 @@ class SubTree<TT extends UXTreeDefinition> extends EventEmitter implements URLTr
     if (active) {
       const childFragment = this.subtrees.get(active)?.toURIFragment() ?? "";
       return '/' + encodeURIComponent(JSON.stringify(data))
-           + '/' + encodeURIComponent(JSON.stringify(active))
+           + '/' + encodeURIComponent(active)
            + childFragment;
     }
     return '/' + encodeURIComponent(JSON.stringify(data));

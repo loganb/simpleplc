@@ -5,8 +5,23 @@ class DeviceApi < RestfulApi
     scope
   end
 
+  def can_create(params) = true
+  def can_update(device, params) = true
+  def can_destroy(device) = true
+
+  def create_params(params)
+    params.require(:device).permit(:name, :host_interface_id, :modbus_address, :driver)
+  end
+
   def expound(objects)
     HostInterface.where(id: objects.map(&:host_interface_id).uniq)
+  end
+
+  def invalidates(device)
+    {
+      Device => :queries,
+      HostInterface => :queries
+    }
   end
 
   def serialize(device)
