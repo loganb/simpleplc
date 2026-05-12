@@ -5,8 +5,8 @@ class CreateLogicBlocks < ActiveRecord::Migration[8.1]
       t.string :name, null: false
       t.string :block_type, null: false
       t.integer :stratum, null: false, default: 1
-      t.json :input_expressions, null: false, default: {}
-      t.json :config, null: false, default: {}
+      t.jsonb :input_expressions, null: false, default: {}
+      t.jsonb :config, null: false, default: {}
 
       t.timestamps
     end

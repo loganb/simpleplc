@@ -11,11 +11,14 @@
 # It's strongly recommended that you check this file into your version control system.
 
 ActiveRecord::Schema[8.1].define(version: 2026_05_11_000000) do
+  # These are extensions that must be enabled in order to support this database
+  enable_extension "pg_catalog.plpgsql"
+
   create_table "devices", force: :cascade do |t|
     t.datetime "created_at", null: false
-    t.json "current_state"
+    t.jsonb "current_state"
     t.string "driver", null: false
-    t.integer "host_interface_id", null: false
+    t.bigint "host_interface_id", null: false
     t.datetime "last_polled_at"
     t.integer "modbus_address", null: false
     t.string "name"
@@ -34,10 +37,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_11_000000) do
   end
 
   create_table "logic_blocks", force: :cascade do |t|
-    t.json "config", default: {}, null: false
+    t.jsonb "config", default: {}, null: false
     t.datetime "created_at", null: false
-    t.json "input_expressions", default: {}, null: false
-    t.integer "logic_diagram_id", null: false
+    t.jsonb "input_expressions", default: {}, null: false
+    t.bigint "logic_diagram_id", null: false
     t.string "name", null: false
     t.integer "stratum", default: 1, null: false
     t.string "type", null: false
@@ -56,8 +59,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_11_000000) do
 
   create_table "measurements", force: :cascade do |t|
     t.datetime "created_at", null: false
-    t.integer "device_id"
-    t.integer "logic_diagram_id", null: false
+    t.bigint "device_id"
+    t.bigint "logic_diagram_id", null: false
     t.string "mode", default: "acquisition", null: false
     t.string "name", null: false
     t.float "simulation_value"
@@ -72,9 +75,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_11_000000) do
   create_table "output_blocks", force: :cascade do |t|
     t.integer "channel", null: false
     t.datetime "created_at", null: false
-    t.integer "device_id", null: false
+    t.bigint "device_id", null: false
     t.string "input_expression", null: false
-    t.integer "logic_diagram_id", null: false
+    t.bigint "logic_diagram_id", null: false
     t.string "name", null: false
     t.boolean "output_enable", default: false, null: false
     t.datetime "updated_at", null: false
@@ -86,9 +89,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_11_000000) do
 
   create_table "traces", force: :cascade do |t|
     t.datetime "created_at", null: false
-    t.integer "logic_diagram_id", null: false
+    t.bigint "logic_diagram_id", null: false
     t.datetime "recorded_at", null: false
-    t.json "results", default: {}, null: false
+    t.jsonb "results", default: {}, null: false
     t.datetime "updated_at", null: false
     t.index ["logic_diagram_id", "created_at"], name: "index_traces_on_logic_diagram_id_and_created_at"
     t.index ["logic_diagram_id"], name: "index_traces_on_logic_diagram_id"

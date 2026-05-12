@@ -1,14 +1,14 @@
 class StoreTraceResultsAsJson < ActiveRecord::Migration[8.1]
   def change
-    add_column :traces, :results, :json, null: false, default: {}
+    add_column :traces, :results, :jsonb, null: false, default: {}
 
     drop_table :data do |t|
       t.datetime "created_at", null: false
-      t.json "input_values", default: {}, null: false
+      t.jsonb "input_values", default: {}, null: false
       t.datetime "recorded_at", null: false
       t.integer "source_id", null: false
       t.string "source_type", null: false
-      t.json "state", default: {}, null: false
+      t.jsonb "state", default: {}, null: false
       t.integer "trace_id", null: false
       t.datetime "updated_at", null: false
       t.float "value"

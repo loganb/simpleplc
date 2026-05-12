@@ -4,8 +4,8 @@ class CreateData < ActiveRecord::Migration[8.1]
       t.string :source_type, null: false
       t.integer :source_id, null: false
       t.float :value
-      t.json :state, null: false, default: {}
-      t.json :input_values, null: false, default: {}
+      t.jsonb :state, null: false, default: {}
+      t.jsonb :input_values, null: false, default: {}
       t.datetime :recorded_at, null: false
 
       t.timestamps
