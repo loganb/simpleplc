@@ -1,6 +1,6 @@
 import * as esbuild from 'esbuild';
 import { spawn } from 'node:child_process';
-import { cp, mkdir, rm } from 'node:fs/promises';
+import { cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { watch } from 'node:fs';
 import { sassPlugin } from 'esbuild-sass-plugin';
 
@@ -71,4 +71,16 @@ if (isWatch) {
       code === 0 ? resolve() : reject(new Error(`tailwindcss exited with code ${code}`)),
     );
   });
+
+  // Production is served same-origin by Rails (see claude/deployment.md), so
+  // point the frontend at a relative API base instead of dev's localhost:3000.
+  const indexPath = `${OUT_DIR}/index.html`;
+  const index = await readFile(indexPath, 'utf8');
+  await writeFile(
+    indexPath,
+    index.replace(
+      '<script type="module" src="/app.js"></script>',
+      '<script>window.PLC_API_BASE = "";</script>\n    <script type="module" src="/app.js"></script>',
+    ),
+  );
 }

@@ -1,0 +1,61 @@
+#!/usr/bin/env ruby
+# Deploys this app to the production git worktree at /opt/plc_controller/current
+# and restarts the systemd-managed production services. Run from the dev
+# checkout after testing changes; see claude/deployment.md for the design.
+#
+# Usage:
+#   bin/deploy              # deploy origin/main
+#   bin/deploy <sha-or-ref>  # deploy a specific commit
+
+require "fileutils"
+
+DEV_ROOT = File.expand_path("..", __dir__)
+DEPLOY_ROOT = "/opt/plc_controller/current"
+MISE = "#{Dir.home}/.local/bin/mise"
+PRODUCTION_ENV_FILE = "/etc/plc_controller/production.env"
+
+target = ARGV[0] || "origin/main"
+
+def system!(*args)
+  system(*args, exception: true)
+end
+
+# systemd loads /etc/plc_controller/production.env via EnvironmentFile, but an
+# interactive shell running this script doesn't have those vars — read them
+# here so `bin/rails db:prepare` below can actually reach the production DB.
+production_env = File.readlines(PRODUCTION_ENV_FILE).each_with_object({}) do |line, env|
+  line = line.strip
+  next if line.empty? || line.start_with?("#")
+  key, value = line.split("=", 2)
+  env[key] = value
+end
+
+FileUtils.chdir(DEV_ROOT) do
+  puts "== Fetching =="
+  system!("git", "fetch", "origin")
+end
+
+FileUtils.chdir(DEPLOY_ROOT) do
+  puts "\n== Checking out #{target} =="
+  system!("git", "checkout", "--detach", target)
+
+  puts "\n== Installing toolchain =="
+  system!(MISE, "install")
+
+  puts "\n== Installing gems =="
+  system!(MISE, "exec", "--", "bundle", "install")
+
+  puts "\n== Building frontend =="
+  system!(MISE, "exec", "--", "npm", "--prefix", "frontend", "ci")
+  system!(MISE, "exec", "--", "npm", "--prefix", "frontend", "run", "build")
+  FileUtils.rm_f(Dir.glob("public/{app.js,app.css,index.css,index.html}"))
+  FileUtils.cp_r(Dir.glob("frontend/dist/*"), "public/")
+
+  puts "\n== Preparing database =="
+  system!(production_env.merge("RAILS_ENV" => "production"), MISE, "exec", "--", "bin/rails", "db:prepare")
+end
+
+puts "\n== Restarting services =="
+system!("sudo", "systemctl", "restart", "plc_controller.target")
+
+puts "\nDeployed #{target}"

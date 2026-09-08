@@ -43,6 +43,9 @@ gem "ccutrer-serialport"
 gem "memery"
 
 group :development, :test do
+  # Loads PGHOST/PGPORT/PGUSER/PGPASSWORD etc. from .env
+  gem "dotenv-rails"
+
   # See https://guides.rubyonrails.org/debugging_rails_applications.html#debugging-with-the-debug-gem
   gem "debug", platforms: %i[ mri windows ], require: "debug/prelude"
 
