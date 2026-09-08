@@ -11,10 +11,10 @@ HVAC PLC controller application — a web interface for monitoring and controlli
   - `frontend/public/` is the static template source (hand-written `index.html`, future favicons/manifests). Checked into git.
   - `frontend/dist/` is the build output (gitignored). `build.mjs` copies `public/` → `dist/` and writes `app.js`, `app.css`, `index.css` alongside.
   - Two CSS pipelines write into `dist/`: (1) the Tailwind CLI subprocess processes `src/index.css` → `dist/index.css`; (2) esbuild bundles `.css`/`.scss` imports from the TSX module graph (entry `src/widgets.scss` plus any component-colocated styles) → `dist/app.css`. SCSS handled by `esbuild-sass-plugin`. Tailwind's `@apply` is only available inside `src/index.css` — component SCSS uses Tailwind utility classes via `className` instead.
-- **Database**: PostgreSQL 18 via Postgres.app for local development. Production config keeps the Solid stack — Solid Queue, Solid Cache, Solid Cable — on separate PostgreSQL databases, so Redis is still not needed.
-- **Real-time**: ActionCable backed by Solid Cable for WebSocket support.
-- **Deployment**: Docker + Kamal, with Thruster for HTTP caching/compression.
-- **Tooling**: Ruby 4.0.2, Node 22, managed via mise.
+- **Database**: PostgreSQL 18 (installed via the PGDG apt repo on the Pi; a single instance serves both dev and prod, separated by database name). Production config keeps the Solid stack — Solid Queue, Solid Cache, Solid Cable — on separate PostgreSQL databases, so Redis is still not needed. Solid Queue runs in-Puma (`SOLID_QUEUE_IN_PUMA=true`) since the app doesn't otherwise use ActiveJob/ActionCable.
+- **Real-time**: ActionCable backed by Solid Cable for WebSocket support (not actually exercised yet — no channels/routes defined).
+- **Deployment**: dev and production both run on the same Raspberry Pi (the actual HVAC controller hardware). Production runs from a `git worktree` at `/opt/plc_controller/current`, deployed via `bin/deploy`, and is supervised by native systemd (`plc_controller-web`, `plc_controller-poller`, grouped under `plc_controller.target`) — no Docker/Kamal. Puma serves the built frontend directly (same-origin, no nginx). Full design and rationale in `claude/deployment.md`.
+- **Tooling**: Ruby 4.0.2, Node 22, managed via mise (same toolchain for dev and prod on the Pi).
 
 ## Current State
 
