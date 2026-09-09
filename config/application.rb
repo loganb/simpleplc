@@ -14,11 +14,7 @@ module PlcController
     # Please, add to the `ignore` list any other `lib` subdirectories that do
     # not contain `.rb` files, or that should not be reloaded or eager loaded.
     # Common ones are `templates`, `generators`, or `middleware`, for example.
-    #
-    # poller.rb is a script (run via `bin/rails runner lib/poller.rb`), not an
-    # autoloadable class file — its top-level `loop do` would otherwise run
-    # during eager loading and hang application boot indefinitely.
-    config.autoload_lib(ignore: %w[assets tasks poller.rb])
+    config.autoload_lib(ignore: %w[assets tasks])
 
     # Configuration for the application, engines, and railties goes here.
     #

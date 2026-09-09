@@ -1,0 +1,5 @@
+#!/usr/bin/env ruby
+# Device state polling daemon — see claude/deployment.md.
+require_relative "../config/environment"
+
+Poller.new.run
