@@ -68,6 +68,14 @@ summarized below since that path isn't durable).
   separate process — the app doesn't actually use ActiveJob/ActionCable today
   (no `ApplicationJob` subclasses, no ActionCable route), so a dedicated jobs
   process would be pure overhead.
+- The poller is `Poller` (`app/services/poller.rb`), an ordinary autoloadable
+  class, invoked by the thin entrypoint `bin/poller`. It used to be
+  `lib/poller.rb`, a script with top-level executable code (a `loop do`)
+  that needed a one-off exclusion from `config.autoload_lib` to keep eager
+  loading from running it during boot — first hit as a hung Puma on this
+  Pi's first real production boot, since dev never eager-loads. Moving the
+  logic into a class removed the need for that exception: `app/` classes only
+  define code, so eager loading them is always safe.
 
 ### Deploy mechanism
 - Production runs from a `git worktree` at `/opt/plc_controller/current`,
@@ -87,11 +95,16 @@ summarized below since that path isn't durable).
 ## Future Work (deferred, not yet implemented)
 
 - **Serial bus locking**: a `flock`-based lock keyed by serial device path,
-  acquired by `lib/poller.rb` before opening a port, so a second poller
-  pointed at the same device fails loudly instead of colliding with the one
-  already driving it. Not needed today since dev and prod use physically
-  separate hardware and only one poller (prod) runs at a time, but becomes
-  necessary if that ever changes.
+  acquired in `Poller#run_cycle` (`app/services/poller.rb`) before opening a
+  port, so a second poller pointed at the same device fails loudly instead of
+  colliding with the one already driving it. Not needed today since dev and
+  prod use physically separate hardware and only one poller (prod) runs at a
+  time, but becomes necessary if that ever changes.
 - **Postgres backups**: nightly `pg_dump` + systemd timer for the production
   database, given it holds hand-authored `logic_diagrams`/`logic_blocks`/
   `output_blocks` config that would be painful to recreate from scratch.
+- **Poller specs**: `Poller` (`app/services/poller.rb`) was previously a
+  top-level script and effectively untestable; now that it's an ordinary
+  class with `run_cycle`/`poll_device` as separate methods, it can have real
+  specs (e.g. mocking `HostInterface`/`modbus_client` to cover the per-device
+  error handling and output-writing paths). No coverage exists yet.
