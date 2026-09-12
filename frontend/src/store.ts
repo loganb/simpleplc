@@ -48,10 +48,27 @@ export interface HostInterfaceFields {
   data_bits: number;
   stop_bits: number;
   parity: string;
+  /** Operator intent: should the poller open this bus at all. Writable from here. */
+  enabled: boolean;
   /** Whether `port` currently resolves on the host — false means the bus is missing. */
   port_present: boolean;
   /** Device node `port` resolves to, e.g. "/dev/ttyUSB0". Null when missing. */
   resolved_device: string | null;
+  /**
+   * `enabled` folded together with the poller's report and how fresh it is.
+   * Read-only: only the poller can say a port is held open.
+   *
+   * - `online` — the poller is holding the port open right now
+   * - `offline` — the poller is reporting and is not holding the port
+   * - `releasing` — disabled, but the poller still has the port
+   * - `disabled` — disabled and the port is free
+   * - `unknown` — no recent report; the poller is down or has never seen this bus
+   */
+  connection_state: 'online' | 'offline' | 'releasing' | 'disabled' | 'unknown';
+  /** Why the port isn't open, when it isn't. Null otherwise. */
+  connection_error: string | null;
+  /** When the poller last reported on this bus. Null before it ever has. */
+  poller_reported_at: string | null;
 }
 
 export const HostInterface: ModelDefinition<HostInterfaceFields> = {

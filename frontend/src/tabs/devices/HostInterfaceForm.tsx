@@ -22,6 +22,7 @@ export function HostInterfaceForm({ editId, prefill, onClose, onRefresh }: {
   const [dataBits, setDataBits] = useState(String(found?.data_bits ?? 8));
   const [stopBits, setStopBits] = useState(String(found?.stop_bits ?? 1));
   const [parity, setParity] = useState(found?.parity ?? 'none');
+  const [enabled, setEnabled] = useState(found?.enabled ?? true);
   const [saveTxn, setSaveTxn] = useState<Txn | undefined>();
   const [error, setError] = useState<string | null>(null);
   const { txnResult, saving } = useTxnStatus(saveTxn);
@@ -44,6 +45,7 @@ export function HostInterfaceForm({ editId, prefill, onClose, onRefresh }: {
       data_bits: parseInt(dataBits, 10),
       stop_bits: parseInt(stopBits, 10),
       parity,
+      enabled,
     };
     setError(null);
     setSaveTxn(editId !== null
@@ -133,6 +135,17 @@ export function HostInterfaceForm({ editId, prefill, onClose, onRefresh }: {
           </select>
         </label>
       </div>
+      <label class="flex items-center gap-2">
+        <input
+          type="checkbox"
+          checked={enabled}
+          onChange={(e) => setEnabled((e.target as HTMLInputElement).checked)}
+        />
+        <span class="text-xs text-text-muted">
+          Enabled — the poller opens this port and holds it. Uncheck to free the bus for other
+          software; the poller lets go within a poll cycle.
+        </span>
+      </label>
       <div class="flex gap-2">
         <FormButtons saving={saving} disabled={!port || !name} onSave={handleSave} onCancel={onClose} />
         {editId !== null && (

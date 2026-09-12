@@ -103,8 +103,8 @@ summarized below since that path isn't durable).
 - **Postgres backups**: nightly `pg_dump` + systemd timer for the production
   database, given it holds hand-authored `logic_diagrams`/`logic_blocks`/
   `output_blocks` config that would be painful to recreate from scratch.
-- **Poller specs**: `Poller` (`app/services/poller.rb`) was previously a
-  top-level script and effectively untestable; now that it's an ordinary
-  class with `run_cycle`/`poll_device` as separate methods, it can have real
-  specs (e.g. mocking `HostInterface`/`modbus_client` to cover the per-device
-  error handling and output-writing paths). No coverage exists yet.
+- ~~**Poller specs**~~ — done. `spec/services/poller_spec.rb` and
+  `spec/services/poller/connection_spec.rb` were added alongside
+  `claude/interface-online-state.md`, which made the poller stateful enough that
+  going without coverage stopped being defensible. Fakes for the Modbus client
+  and a driver live in `spec/support/fake_modbus.rb`.

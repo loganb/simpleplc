@@ -11,19 +11,37 @@ export function DeviceStateCard({ device, interfaces }: {
   const iface = interfaces.find((i) => i._found && (i as ExistingRecord<HostInterfaceFields>).id === d.host_interface_id);
   const ifaceFound = iface?._found ? iface as ExistingRecord<HostInterfaceFields> : null;
 
+  // Nothing is polling a bus that isn't online, so these readings are frozen at
+  // whenever it last worked. They're kept — the last good value is the most
+  // useful thing to look at when diagnosing why a bus went away — but they must
+  // not be presented as current.
+  const stale = ifaceFound !== null && ifaceFound.connection_state !== 'online';
+
   return (
     <div class="rounded-lg border border-border bg-surface p-4 space-y-3">
       <div class="flex items-center justify-between">
         <h2 class="text-sm font-semibold">{d.name}</h2>
-        <StatusBadge status={state?.status ?? null} />
+        <div class="flex items-center gap-2">
+          {stale && (
+            <span
+              class="inline-block rounded-full bg-surface-alt px-2 py-0.5 text-xs font-medium text-text-muted"
+              title={`Bus "${ifaceFound!.name}" is ${ifaceFound!.connection_state}. These values are not being updated.`}
+            >
+              Stale
+            </span>
+          )}
+          <StatusBadge status={state?.status ?? null} />
+        </div>
       </div>
 
       <div class="flex items-center gap-2 text-xs text-text-muted">
         <span>Addr {d.modbus_address}</span>
-        {ifaceFound && <span>on {ifaceFound.port}</span>}
+        {ifaceFound && <span>on {ifaceFound.name}</span>}
       </div>
 
-      {state?.data && <DeviceData data={state.data} />}
+      <div class={stale ? 'opacity-50' : undefined}>
+        {state?.data && <DeviceData data={state.data} />}
+      </div>
 
       {state?.polled_at && (
         <p class="text-xs text-text-muted">

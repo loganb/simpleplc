@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_11_000000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_12_000000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -28,10 +28,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_11_000000) do
 
   create_table "host_interfaces", force: :cascade do |t|
     t.integer "baud_rate", default: 9600, null: false
+    t.string "connection_error"
     t.datetime "created_at", null: false
     t.integer "data_bits", default: 8, null: false
+    t.boolean "enabled", default: true, null: false
     t.string "name", null: false
+    t.boolean "online", default: false, null: false
     t.string "parity", default: "none", null: false
+    t.datetime "poller_reported_at"
     t.string "port", null: false
     t.integer "stop_bits", default: 1, null: false
     t.datetime "updated_at", null: false

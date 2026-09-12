@@ -6,6 +6,7 @@ import type { DeviceFields, HostInterfaceFields, HostPortFields } from '../../st
 import type { DevicesUXState } from '../../uxTree';
 import { DeviceStateCard } from '../dashboard/DeviceStateCard';
 import { DeviceForm } from './DeviceForm';
+import { HostInterfaceCard } from './HostInterfaceCard';
 import { HostInterfaceForm } from './HostInterfaceForm';
 import { HostPortScanner } from './HostPortScanner';
 
@@ -99,28 +100,12 @@ export function DevicesTab({ devices, interfaces, ux, onRefresh }: {
         ) : (
           <div class="grid gap-3 lg:grid-cols-2">
             {foundInterfaces.map((iface) => (
-              <button
+              <HostInterfaceCard
                 key={iface.id}
-                class="rounded-lg border border-border bg-surface p-4 text-left hover:border-active"
-                onClick={() => ux.set('showHostInterfaceForm', iface.id)}
-              >
-                <div class="flex items-center justify-between gap-3">
-                  <h3 class="text-sm font-semibold">{iface.name}</h3>
-                  <div class="flex items-center gap-2">
-                    {!iface.port_present && (
-                      <span class="rounded border border-error px-1.5 py-0.5 text-xs text-error">
-                        Missing
-                      </span>
-                    )}
-                    <span class="text-xs text-text-muted">Edit</span>
-                  </div>
-                </div>
-                <p class="mt-2 break-all font-mono text-xs text-text-muted">{iface.port}</p>
-                <p class="mt-1 text-xs text-text-muted">
-                  {iface.baud_rate} baud, {iface.data_bits}{iface.parity.charAt(0).toUpperCase()}{iface.stop_bits}
-                  {iface.resolved_device && ` · ${iface.resolved_device}`}
-                </p>
-              </button>
+                iface={iface}
+                onEdit={() => ux.set('showHostInterfaceForm', iface.id)}
+                onRefresh={refreshAfterInterfaceChange}
+              />
             ))}
           </div>
         )}

@@ -1,6 +1,11 @@
 class HostInterface < ApplicationRecord
   PARITIES = %w[none even odd].freeze
 
+  # How long the poller's report is believed. Must stay comfortably above
+  # Poller::POLL_INTERVAL so a healthy bus never reads as stale between cycles;
+  # a spec asserts the relationship rather than trusting this comment.
+  STALE_AFTER = 35.seconds
+
   has_many :devices, dependent: :destroy
 
   validates :name, presence: true
@@ -29,6 +34,51 @@ class HostInterface < ApplicationRecord
     nil
   end
 
+  # The single state the UI renders, folding operator intent (`enabled`) together
+  # with the poller's report (`online`) and how recently that report arrived.
+  #
+  #   "online"    — the poller is holding the port open right now
+  #   "offline"   — the poller is reporting and is not holding the port
+  #   "releasing" — the operator turned the bus off and the poller still has the
+  #                 port; it will let go within a cycle
+  #   "disabled"  — the operator turned the bus off and the port is free
+  #   "unknown"   — nobody is reporting; the poller is down, wedged, or has never
+  #                 run since this bus was configured
+  #
+  # "releasing" exists because disabling is a request, not an act: the web
+  # process never touches the serial port. Anything waiting for the bus — an
+  # operator with minicom, or eventually a device scan — needs to know the
+  # difference between "asked for" and "handed over".
+  #
+  # Staleness gates both directions, not just `online`: a poller that dies
+  # holding a port would otherwise leave `online` true forever, and a bus that
+  # no poller has ever seen is not the same thing as one a poller decided not
+  # to open.
+  def connection_state
+    reporting = poller_reported_at.present? && poller_reported_at >= STALE_AFTER.ago
+
+    unless enabled
+      # A poller that stopped reporting is a poller that no longer holds
+      # anything: the kernel closed its ports when the process died.
+      return online && reporting ? "releasing" : "disabled"
+    end
+
+    return "unknown" unless reporting
+
+    online ? "online" : "offline"
+  end
+
+  # Records what the poller observed about the port. Writes columns directly:
+  # this runs every cycle and must not touch updated_at, fire callbacks, or
+  # collide with an operator editing the row from the web process.
+  def report_connection(online:, error: nil)
+    update_columns(online: online, connection_error: error, poller_reported_at: Time.current)
+  end
+
+  # With a block, opens a client, yields it, and closes it (rmodbus's own
+  # contract). Without one, returns a client the caller is responsible for
+  # closing — which is what the poller does, since it holds ports open across
+  # cycles. See claude/interface-online-state.md.
   def modbus_client(&block)
     ModBus::RTUClient.connect(port, baud_rate,
       data_bits: data_bits,
