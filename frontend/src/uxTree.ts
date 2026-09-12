@@ -11,6 +11,10 @@ export type DevicesUXTree = {
   data: {
     showHostInterfaceForm: number | 'new' | null;
     showDeviceForm: number | 'new' | null;
+    /** Whether the discovered-ports panel is expanded. */
+    showPortScan: boolean;
+    /** HostPort id whose details prefill the new-interface form, if any. */
+    prefillPortId: string | null;
   };
 };
 

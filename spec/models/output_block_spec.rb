@@ -2,7 +2,7 @@ require "rails_helper"
 
 RSpec.describe OutputBlock, type: :model do
   let(:diagram) { LogicDiagram.create!(name: "Boiler") }
-  let(:host) { HostInterface.create!(port: "/dev/ttyUSB0") }
+  let(:host) { HostInterface.create!(name: "Test Bus", port: "/dev/ttyUSB0") }
   let(:device) { Device.create!(name: "Relay board", host_interface: host, driver: "Drivers::N4D8B08", modbus_address: 3) }
 
   it "accepts a valid binary output block" do

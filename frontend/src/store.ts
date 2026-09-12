@@ -42,16 +42,58 @@ export const Device: ModelDefinition<DeviceFields> = {
 
 export interface HostInterfaceFields {
   id: number;
+  name: string;
   port: string;
   baud_rate: number;
   data_bits: number;
   stop_bits: number;
   parity: string;
+  /** Whether `port` currently resolves on the host — false means the bus is missing. */
+  port_present: boolean;
+  /** Device node `port` resolves to, e.g. "/dev/ttyUSB0". Null when missing. */
+  resolved_device: string | null;
 }
 
 export const HostInterface: ModelDefinition<HostInterfaceFields> = {
   name: 'host_interface',
   inflections: { plural: 'host_interfaces', title: 'HostInterface' },
+  singleton: false,
+};
+
+/**
+ * A serial port discovered on the host. Read-only: the backend re-scans on
+ * every request, so these are never created or edited from here.
+ *
+ * `id` is an opaque base64url token produced by the server from `stable_path`.
+ * Treat it as opaque — never parse or construct one client-side.
+ */
+export interface HostPortFields {
+  id: string;
+  /** sysfs name, e.g. "ttyUSB0". Display only — assigned in enumeration order. */
+  tty: string;
+  device: string;
+  by_id: string | null;
+  by_path: string | null;
+  /** The path to configure on a HostInterface: by_id || by_path || device. */
+  stable_path: string;
+  /** Which source stable_path came from; the three differ in what they survive. */
+  identity_basis: 'by_id' | 'by_path' | 'device';
+  label: string;
+  kernel_driver: string | null;
+  usb_vendor_id: string | null;
+  usb_product_id: string | null;
+  usb_manufacturer: string | null;
+  usb_product: string | null;
+  usb_serial: string | null;
+  /** True when the kernel uses this tty as a console — selecting it is a bad idea. */
+  console: boolean;
+  /** Id of the HostInterface already using this port, or null if unclaimed. */
+  host_interface_id: number | null;
+}
+
+export const HostPort: ModelDefinition<HostPortFields> = {
+  name: 'host_port',
+  inflections: { plural: 'host_ports', title: 'HostPort' },
   singleton: false,
 };
 

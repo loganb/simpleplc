@@ -141,7 +141,7 @@ RSpec.describe Logic::BlockEvaluator do
   end
 
   it "evaluates measurement and logic block references by name" do
-    host = HostInterface.create!(port: "/dev/ttyUSB0")
+    host = HostInterface.create!(name: "Test Bus", port: "/dev/ttyUSB0")
     device = Device.create!(
       name: "Temp board",
       host_interface: host,

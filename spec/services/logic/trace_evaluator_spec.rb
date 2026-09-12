@@ -34,7 +34,7 @@ RSpec.describe Logic::TraceEvaluator do
   end
 
   it "snapshots acquisition measurements from device current_state" do
-    host = HostInterface.create!(port: "/dev/ttyUSB0")
+    host = HostInterface.create!(name: "Test Bus", port: "/dev/ttyUSB0")
     device = Device.create!(
       name: "Relay board",
       host_interface: host,
@@ -81,7 +81,7 @@ RSpec.describe Logic::TraceEvaluator do
 
   it "evaluates outputs after measurements and blocks" do
     Measurement.create!(logic_diagram: diagram, name: "Heat_Call", mode: "simulation", simulation_value: 1.0)
-    host = HostInterface.create!(port: "/dev/ttyUSB0")
+    host = HostInterface.create!(name: "Test Bus", port: "/dev/ttyUSB0")
     device = Device.create!(name: "Relay board", host_interface: host, driver: "Drivers::N4D8B08", modbus_address: 3)
     output = OutputBlock.create!(
       logic_diagram: diagram,
@@ -130,7 +130,7 @@ RSpec.describe Logic::TraceEvaluator do
         )
       )
     end
-    host = HostInterface.create!(port: "/dev/ttyUSB0")
+    host = HostInterface.create!(name: "Test Bus", port: "/dev/ttyUSB0")
     device = Device.create!(name: "Relay board", host_interface: host, driver: "Drivers::N4D8B08", modbus_address: 3)
     output = OutputBlock.create!(
       logic_diagram: diagram,

@@ -49,4 +49,27 @@ describe('App UX tree', () => {
     expect(replaceState).toHaveBeenLastCalledWith({}, '', '#/%7B%7D/logic');
   });
 
+  it('round-trips port scan state, including an opaque base64url HostPort id', () => {
+    // HostPort ids are server-encoded base64url. They ride in the URL as the
+    // prefill pointer, so they have to survive a hash write/read cycle intact.
+    const portId = 'L2Rldi9zZXJpYWwvYnktaWQvdXNiLUZURElfRlQyMzBYX0Jhc2ljX1VBUlRfRDMwRTdGM0YtaWYwMC1wb3J0MA';
+    const { replaceState } = installHashDom();
+
+    const tree = new TreeStore<AppUXTree>();
+    const root = tree.subtree();
+    root.setActiveSubtree('devices');
+    root.subtree('devices').set('showPortScan', true);
+    root.subtree('devices').set('prefillPortId', portId);
+    root.subtree('devices').set('showHostInterfaceForm', 'new');
+
+    const calls = replaceState.mock.calls;
+    const hash = calls[calls.length - 1][2] as string;
+    installHashDom(hash);
+    const restored = new TreeStore<AppUXTree>().subtree();
+
+    expect(restored.getActiveSubtree()).toBe('devices');
+    expect(restored.subtree('devices').get('showPortScan')).toBe(true);
+    expect(restored.subtree('devices').get('prefillPortId')).toBe(portId);
+    expect(restored.subtree('devices').get('showHostInterfaceForm')).toBe('new');
+  });
 });

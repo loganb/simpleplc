@@ -2,7 +2,7 @@ require "rails_helper"
 
 RSpec.describe Logic::OutputEvaluator do
   let(:diagram) { LogicDiagram.create!(name: "Boiler", output_enable: true) }
-  let(:host) { HostInterface.create!(port: "/dev/ttyUSB0") }
+  let(:host) { HostInterface.create!(name: "Test Bus", port: "/dev/ttyUSB0") }
   let(:device) { Device.create!(name: "Relay board", host_interface: host, driver: "Drivers::N4D8B08", modbus_address: 3) }
 
   it "records truthy desired output when both enables are true" do

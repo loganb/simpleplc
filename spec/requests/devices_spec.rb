@@ -4,6 +4,7 @@ RSpec.describe "Devices API", type: :request do
   it "creates and updates host interfaces and devices for the Devices tab" do
     post "/host_interfaces", params: {
       host_interface: {
+        name: "Relay Bus",
         port: "/dev/ttyUSB9",
         baud_rate: 19_200,
         data_bits: 8,
@@ -14,6 +15,14 @@ RSpec.describe "Devices API", type: :request do
 
     expect(response).to have_http_status(:created)
     host_id = response.parsed_body.fetch("id")
+    expect(response.parsed_body.fetch("host_interfaces").first).to include(
+      "name" => "Relay Bus",
+      "port" => "/dev/ttyUSB9",
+      # /dev/ttyUSB9 does not exist in the test environment, so the bus reports
+      # as missing — this is what drives the "missing" badge in the UI.
+      "port_present" => false,
+      "resolved_device" => nil
+    )
 
     post "/devices", params: {
       device: {

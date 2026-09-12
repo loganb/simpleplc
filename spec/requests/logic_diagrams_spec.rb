@@ -32,7 +32,7 @@ RSpec.describe "Logic diagrams API", type: :request do
 
   it "deletes a diagram and its dependent records" do
     diagram = LogicDiagram.create!(name: "Boiler")
-    host = HostInterface.create!(port: "/dev/ttyUSB0")
+    host = HostInterface.create!(name: "Test Bus", port: "/dev/ttyUSB0")
     device = Device.create!(
       name: "Relay board",
       host_interface: host,

@@ -37,7 +37,7 @@ RSpec.describe Measurement, type: :model do
   end
 
   it "extracts acquisition values from device current_state data" do
-    host = HostInterface.create!(port: "/dev/ttyUSB0")
+    host = HostInterface.create!(name: "Test Bus", port: "/dev/ttyUSB0")
     device = Device.create!(
       name: "Relay board",
       host_interface: host,
@@ -58,7 +58,7 @@ RSpec.describe Measurement, type: :model do
   end
 
   it "extracts numeric acquisition values from nested source paths" do
-    host = HostInterface.create!(port: "/dev/ttyUSB0")
+    host = HostInterface.create!(name: "Test Bus", port: "/dev/ttyUSB0")
     device = Device.create!(
       name: "Temp board",
       host_interface: host,

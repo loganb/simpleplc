@@ -1,10 +1,13 @@
+import { useState } from 'preact/hooks';
 import { useLoaders } from '../../lib/DataLoader2';
 import type { ExistingRecord, ReifiedQueryResult } from '../../lib/RestfulModelStore';
-import type { DeviceFields, HostInterfaceFields } from '../../store';
+import { HostPort, Store } from '../../store';
+import type { DeviceFields, HostInterfaceFields, HostPortFields } from '../../store';
 import type { DevicesUXState } from '../../uxTree';
 import { DeviceStateCard } from '../dashboard/DeviceStateCard';
 import { DeviceForm } from './DeviceForm';
 import { HostInterfaceForm } from './HostInterfaceForm';
+import { HostPortScanner } from './HostPortScanner';
 
 export function DevicesTab({ devices, interfaces, ux, onRefresh }: {
   devices: ReifiedQueryResult<DeviceFields>;
@@ -12,10 +15,38 @@ export function DevicesTab({ devices, interfaces, ux, onRefresh }: {
   ux: DevicesUXState;
   onRefresh: () => void;
 }) {
-  const { showHostInterfaceForm, showDeviceForm } = useLoaders(() => ({
+  // Scans are forced separately from the app-wide refresh so "Rescan" re-reads
+  // the host even though nothing in the database changed.
+  const [scanToken, setScanToken] = useState(0);
+
+  const { showHostInterfaceForm, showDeviceForm, showPortScan, prefillPortId, ports } = useLoaders(() => ({
     showHostInterfaceForm: ux.get('showHostInterfaceForm') ?? null,
     showDeviceForm: ux.get('showDeviceForm') ?? null,
-  }), [ux], [ux]);
+    showPortScan: ux.get('showPortScan') ?? false,
+    prefillPortId: ux.get('prefillPortId') ?? null,
+    ports: Store.m(HostPort).queryFor(null, {}, scanToken > 0),
+  }), [ux, Store], [ux, scanToken]);
+
+  const prefillRecord = prefillPortId !== null ? Store.m(HostPort).fetch(prefillPortId) : null;
+  const prefillPort = prefillRecord?._found
+    ? prefillRecord as ExistingRecord<HostPortFields>
+    : null;
+
+  const usePort = (port: ExistingRecord<HostPortFields>) => {
+    ux.set('prefillPortId', port.id);
+    ux.set('showHostInterfaceForm', 'new');
+  };
+
+  const closeInterfaceForm = () => {
+    ux.set('showHostInterfaceForm', null);
+    ux.set('prefillPortId', null);
+  };
+
+  const refreshAfterInterfaceChange = () => {
+    // A new or deleted interface changes which ports read as claimed.
+    setScanToken((token) => token + 1);
+    onRefresh();
+  };
 
   const foundInterfaces = interfaces._loaded
     ? interfaces.filter((i) => i._found) as ExistingRecord<HostInterfaceFields>[]
@@ -30,25 +61,41 @@ export function DevicesTab({ devices, interfaces, ux, onRefresh }: {
         <div class="flex items-center justify-between gap-4">
           <h2 class="text-lg font-semibold">Host Interfaces</h2>
           <button
-            class="rounded bg-active px-3 py-1.5 text-sm font-medium text-white hover:opacity-90"
-            onClick={() => ux.set('showHostInterfaceForm', 'new')}
+            class="rounded border border-border px-3 py-1.5 text-sm font-medium text-text-muted hover:text-text"
+            onClick={() => {
+              ux.set('prefillPortId', null);
+              ux.set('showHostInterfaceForm', 'new');
+            }}
           >
-            New Interface
+            Add Manually
           </button>
         </div>
+
+        <HostPortScanner
+          ports={ports}
+          expanded={showPortScan}
+          onToggle={() => ux.set('showPortScan', !showPortScan)}
+          onRescan={() => setScanToken((token) => token + 1)}
+          onUsePort={usePort}
+        />
 
         {showHostInterfaceForm !== null && (
           <HostInterfaceForm
             editId={showHostInterfaceForm === 'new' ? null : showHostInterfaceForm}
-            onClose={() => ux.set('showHostInterfaceForm', null)}
-            onRefresh={onRefresh}
+            prefill={showHostInterfaceForm === 'new' && prefillPort
+              ? { port: prefillPort.stable_path, name: prefillPort.label }
+              : null}
+            onClose={closeInterfaceForm}
+            onRefresh={refreshAfterInterfaceChange}
           />
         )}
 
         {!interfaces._loaded ? (
           <p class="text-text-muted">Loading host interfaces...</p>
         ) : foundInterfaces.length === 0 ? (
-          <p class="text-text-muted">No host interfaces configured yet.</p>
+          <p class="text-text-muted">
+            No host interfaces configured yet. Expand the port scan above to pick one.
+          </p>
         ) : (
           <div class="grid gap-3 lg:grid-cols-2">
             {foundInterfaces.map((iface) => (
@@ -58,11 +105,20 @@ export function DevicesTab({ devices, interfaces, ux, onRefresh }: {
                 onClick={() => ux.set('showHostInterfaceForm', iface.id)}
               >
                 <div class="flex items-center justify-between gap-3">
-                  <h3 class="text-sm font-semibold">{iface.port}</h3>
-                  <span class="text-xs text-text-muted">Edit</span>
+                  <h3 class="text-sm font-semibold">{iface.name}</h3>
+                  <div class="flex items-center gap-2">
+                    {!iface.port_present && (
+                      <span class="rounded border border-error px-1.5 py-0.5 text-xs text-error">
+                        Missing
+                      </span>
+                    )}
+                    <span class="text-xs text-text-muted">Edit</span>
+                  </div>
                 </div>
-                <p class="mt-2 text-xs text-text-muted">
+                <p class="mt-2 break-all font-mono text-xs text-text-muted">{iface.port}</p>
+                <p class="mt-1 text-xs text-text-muted">
                   {iface.baud_rate} baud, {iface.data_bits}{iface.parity.charAt(0).toUpperCase()}{iface.stop_bits}
+                  {iface.resolved_device && ` · ${iface.resolved_device}`}
                 </p>
               </button>
             ))}

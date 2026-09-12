@@ -4,7 +4,7 @@ RSpec.describe LogicBlock, type: :model do
   let(:diagram) { LogicDiagram.create!(name: "Boiler") }
 
   def measurement
-    host = HostInterface.create!(port: "/dev/ttyUSB0")
+    host = HostInterface.create!(name: "Test Bus", port: "/dev/ttyUSB0")
     device = Device.create!(name: "Temp board", host_interface: host, driver: "n4dsc08", modbus_address: 1)
     Measurement.create!(logic_diagram: diagram, name: "DHW_Temp", device: device, source_path: "temperatures[0]")
   end
