@@ -1,5 +1,44 @@
 # Claude Code Instructions
 
+## Running Things (read this before hunting for `ruby`)
+
+Ruby 4.0.2 and Node 22 come from **mise** (`mise.toml`), and `mise` itself lives
+at `~/.local/bin/mise`, which is **not on `PATH` in a non-login shell**. So a
+bare `ruby`, `bundle`, `rails`, or `npx` fails with "command not found", and
+`bin/rails` fails the same way because it shebangs to `env ruby`. There is no
+system Ruby to fall back to — don't go looking for one.
+
+Prefix commands:
+
+```sh
+export PATH="$HOME/.local/bin:$PATH"
+mise exec -- <command>
+```
+
+| Task | Command |
+| --- | --- |
+| Specs | `mise exec -- bundle exec rspec` (there is no `bin/rspec`) |
+| Ruby lint | `mise exec -- bin/rubocop` |
+| Frontend tests | `cd frontend && mise exec -- npm test` (vitest) |
+| Frontend typecheck | `cd frontend && mise exec -- npx tsc --noEmit` |
+| Frontend build | `cd frontend && mise exec -- npm run build` (esbuild → gitignored `dist/`) |
+| Everything at once (api + frontend + poller) | `mise exec -- bin/dev` (foreman, `Procfile.dev`) |
+| Poller alone | `mise exec -- bin/poller` |
+
+Notes:
+
+- **RSpec is the suite, not minitest.** `test/` is the stock Rails scaffold and
+  is empty, so `bin/ci`'s "Tests: Rails" step (`bin/rails test`) runs zero
+  tests and proves nothing. Run rspec directly.
+- `bin/rubocop` has a standing backlog of pre-existing offenses (`script/`,
+  `db/seeds.rb`, `lib/restful_api_controller.rb`, `app/services/logic/`, and a
+  couple of specs). Check that any offense you see is in a file you actually
+  touched before treating it as a regression.
+- PostgreSQL runs natively on the Pi and serves dev and prod from one instance,
+  separated by database name — there is no container to start.
+- The Pi is the real HVAC controller. The poller writes to physical relays, so
+  `bin/dev` and `bin/poller` drive hardware. See `claude/deployment.md`.
+
 ## Notes Directory
 
 - Maintain a `claude/` subdirectory for working notes.
