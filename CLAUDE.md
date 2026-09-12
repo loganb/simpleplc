@@ -39,6 +39,22 @@ Notes:
 - The Pi is the real HVAC controller. The poller writes to physical relays, so
   `bin/dev` and `bin/poller` drive hardware. See `claude/deployment.md`.
 
+## Commit Messages
+
+Keep them short. A subject line plus at most a few sentences of body — the
+design rationale belongs in `claude/<task-name>.md`, not in the commit.
+
+If a commit covers more than one feature or change, list them as bullets, one
+sentence each:
+
+```
+Add host port scanning
+
+- HostPortScanner enumerates real serial ports from /sys/class/tty.
+- HostInterface gains a required name and a computed port_present?.
+- The Devices tab turns a selected port into a prefilled interface form.
+```
+
 ## Notes Directory
 
 - Maintain a `claude/` subdirectory for working notes.
