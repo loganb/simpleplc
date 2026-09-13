@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 namespace :postgres do
+  # Offline snapshot restoration intentionally bypasses model callbacks (notably
+  # Trace computation). Live clients must resync after an administrative restore.
   desc "Import local SQLite app data into the current PostgreSQL database"
   task import_sqlite: :environment do
     require "json"

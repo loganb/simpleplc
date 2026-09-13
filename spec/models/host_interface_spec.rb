@@ -105,7 +105,7 @@ RSpec.describe HostInterface, type: :model do
   end
 
   describe "#report_connection" do
-    it "records the poller's observation without touching updated_at" do
+    it "records the poller's observation and advances updated_at" do
       iface = described_class.create!(name: "Bus A", port: "/dev/ttyUSB0")
       before = iface.updated_at
 
@@ -113,7 +113,8 @@ RSpec.describe HostInterface, type: :model do
         iface.report_connection(online: true)
       end
 
-      expect(iface.reload).to have_attributes(online: true, connection_error: nil, updated_at: before)
+      expect(iface.reload).to have_attributes(online: true, connection_error: nil)
+      expect(iface.updated_at).to be > before
       expect(iface.poller_reported_at).to be_present
     end
 

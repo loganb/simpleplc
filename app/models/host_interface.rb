@@ -1,4 +1,5 @@
 class HostInterface < ApplicationRecord
+  include PersistsObservations
   PARITIES = %w[none even odd].freeze
 
   # How long the poller's report is believed. Must stay comfortably above
@@ -68,11 +69,10 @@ class HostInterface < ApplicationRecord
     online ? "online" : "offline"
   end
 
-  # Records what the poller observed about the port. Writes columns directly:
-  # this runs every cycle and must not touch updated_at, fire callbacks, or
-  # collide with an operator editing the row from the web process.
+  # Reports run through normal validations, callbacks, timestamps and locking.
+  # Concurrent edits are preserved by retrying only the observation fields.
   def report_connection(online:, error: nil)
-    update_columns(online: online, connection_error: error, poller_reported_at: Time.current)
+    persist_observation({ online: online, connection_error: error, poller_reported_at: Time.current })
   end
 
   # With a block, opens a client, yields it, and closes it (rmodbus's own

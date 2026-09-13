@@ -45,3 +45,11 @@ HVAC PLC controller application — a web interface for monitoring and controlli
 - `logic_blocks` — diagram-owned stateful/function blocks with expression inputs, config, state, and frontend-computed stratum
 - `output_blocks` — diagram-owned binary output commands with an input expression, device/channel destination, and per-output enable gate
 - `traces` — explicit computation runs for a LogicDiagram, with `results` JSON storing schema-versioned measurement, logic block, and output block result buckets keyed by source ID.
+
+## Proposed work
+
+- WebSocket/live store architecture reviewed; see `claude/websocket-store.md` for the proposal and implementation plan. Task name agreed; implementation awaits review. Key constraints: poller writes bypass callbacks; derived API fields need dependency invalidation; time/filesystem changes need separate refresh handling; lock_version columns were added by the completed prerequisite.
+
+- Scope revision: first implement the proposed `lock-version` prerequisite (seven application tables, callback-enabled runtime writes, concurrency handling); see `claude/lock-version.md`. WebSocket work is limited to updates of already-known records for now; query invalidation and new-object discovery are deferred. The lock-version prerequisite is implemented and verified.
+
+- **Record locking** — all seven application tables have `lock_version` (integer, default 0, non-null). Runtime poller writes use validated Active Record saves with timestamps and callbacks; bounded persistence retries preserve operator edits without repeating hardware IO. API records expose versions and request-time stale writes return 409. The store does not equate row-version equality with representation equality. Offline SQLite restoration remains an explicit bypass. Test and development schemas migrated; restart Foreman to reload schemas. See `claude/lock-version.md` for verification.

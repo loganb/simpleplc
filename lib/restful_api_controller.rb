@@ -42,6 +42,9 @@ module RestfulApiController
     rescue_from UnprocessableEntityError do |e|
       render json: { error: e.message }, status: :unprocessable_entity
     end
+    rescue_from ActiveRecord::StaleObjectError do
+      render json: { errors: { base: [ "Record changed concurrently; reload and try again" ] } }, status: :conflict
+    end
     rescue_from ActiveRecord::RecordNotFound do
       render json: {}, status: :not_found
     end
@@ -90,7 +93,7 @@ module RestfulApiController
 
   # GET /resources/:id
   def show
-    ids             = api_instance.canonicalize_ids([params[:id]])
+    ids             = api_instance.canonicalize_ids([ params[:id] ])
     fetched_objects = api_instance.by_ids(ids)
     raise ActiveRecord::RecordNotFound if fetched_objects.all?(&:nil?)
 
@@ -109,9 +112,9 @@ module RestfulApiController
     raise ForbiddenError unless api_instance.can_create(request_params)
 
     object    = api_instance.create(request_params)
-    expounded = expounded_objects_for([object])
+    expounded = expounded_objects_for([ object ])
 
-    response_json = serialize_flat(expounded + [object])
+    response_json = serialize_flat(expounded + [ object ])
     response_json[:id] = object.id
     response_json[:invalidates] = api_instance.invalidates(object)
     render json: response_json, status: :created
@@ -125,7 +128,7 @@ module RestfulApiController
     raise ForbiddenError unless api_instance.can_create(request_params)
 
     object    = api_instance.new(request_params)
-    expounded = expounded_objects_for([object])
+    expounded = expounded_objects_for([ object ])
 
     response_json = serialize_flat(expounded)
     response_json[:data] = api_instance.serialize(object)
@@ -134,23 +137,23 @@ module RestfulApiController
 
   # PATCH/PUT /resources/:id
   def update
-    object = api_instance.by_ids(api_instance.canonicalize_ids([params[:id]]))[0]
+    object = api_instance.by_ids(api_instance.canonicalize_ids([ params[:id] ]))[0]
     raise ActiveRecord::RecordNotFound unless object
 
     request_params = api_instance.update_params(params)
     raise ForbiddenError unless api_instance.can_update(object, request_params)
 
     api_instance.update(object, request_params)
-    expounded = expounded_objects_for([object])
+    expounded = expounded_objects_for([ object ])
 
-    response_json = serialize_flat([object].concat(expounded))
+    response_json = serialize_flat([ object ].concat(expounded))
     response_json[:invalidates] = api_instance.invalidates(object)
     render json: response_json
   end
 
   # DELETE /resources/:id
   def destroy
-    object = api_instance.by_ids(api_instance.canonicalize_ids([params[:id]]))[0]
+    object = api_instance.by_ids(api_instance.canonicalize_ids([ params[:id] ]))[0]
     raise ActiveRecord::RecordNotFound unless object
     raise ForbiddenError unless api_instance.can_destroy(object)
 
@@ -180,7 +183,10 @@ module RestfulApiController
       .transform_keys { |name| name.underscore.pluralize.to_sym }
       .transform_values do |group|
         inst = api_instance_for(group.first.class)
-        group.map { |o| inst.serialize(o) }
+        group.map do |object|
+          serialized = inst.serialize(object)
+          object.is_a?(ApplicationRecord) ? serialized.merge(lock_version: object.lock_version) : serialized
+        end
       end
   end
 

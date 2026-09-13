@@ -164,3 +164,15 @@ describe('RestfulModelStore cache epochs', () => {
     });
   });
 });
+
+describe('record versions', () => {
+  it('repaints changed representations even when the row version is unchanged', () => {
+    installBrowserTimers();
+    const { store } = makeStore();
+    const model = store.m(Thing);
+    store.update_store({ data: { things: [{ id: 1, name: 'before', lock_version: 1 }] } });
+    const before = model.fetch(1)._seq;
+    store.update_store({ data: { things: [{ id: 1, name: 'after', lock_version: 1 }] } });
+    expect(model.fetch(1)._seq).toBeGreaterThan(before);
+  });
+});

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_12_000000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_13_000000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -20,6 +20,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_12_000000) do
     t.string "driver", null: false
     t.bigint "host_interface_id", null: false
     t.datetime "last_polled_at"
+    t.integer "lock_version", default: 0, null: false
     t.integer "modbus_address", null: false
     t.string "name"
     t.datetime "updated_at", null: false
@@ -32,6 +33,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_12_000000) do
     t.datetime "created_at", null: false
     t.integer "data_bits", default: 8, null: false
     t.boolean "enabled", default: true, null: false
+    t.integer "lock_version", default: 0, null: false
     t.string "name", null: false
     t.boolean "online", default: false, null: false
     t.string "parity", default: "none", null: false
@@ -45,6 +47,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_12_000000) do
     t.jsonb "config", default: {}, null: false
     t.datetime "created_at", null: false
     t.jsonb "input_expressions", default: {}, null: false
+    t.integer "lock_version", default: 0, null: false
     t.bigint "logic_diagram_id", null: false
     t.string "name", null: false
     t.integer "stratum", default: 1, null: false
@@ -56,6 +59,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_12_000000) do
 
   create_table "logic_diagrams", force: :cascade do |t|
     t.datetime "created_at", null: false
+    t.integer "lock_version", default: 0, null: false
     t.string "name", null: false
     t.boolean "output_enable", default: false, null: false
     t.integer "update_period", default: 60, null: false
@@ -65,6 +69,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_12_000000) do
   create_table "measurements", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.bigint "device_id"
+    t.integer "lock_version", default: 0, null: false
     t.bigint "logic_diagram_id", null: false
     t.string "mode", default: "acquisition", null: false
     t.string "name", null: false
@@ -82,6 +87,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_12_000000) do
     t.datetime "created_at", null: false
     t.bigint "device_id", null: false
     t.string "input_expression", null: false
+    t.integer "lock_version", default: 0, null: false
     t.bigint "logic_diagram_id", null: false
     t.string "name", null: false
     t.boolean "output_enable", default: false, null: false
@@ -94,6 +100,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_12_000000) do
 
   create_table "traces", force: :cascade do |t|
     t.datetime "created_at", null: false
+    t.integer "lock_version", default: 0, null: false
     t.bigint "logic_diagram_id", null: false
     t.datetime "recorded_at", null: false
     t.jsonb "results", default: {}, null: false

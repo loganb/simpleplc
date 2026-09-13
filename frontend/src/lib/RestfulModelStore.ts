@@ -794,12 +794,8 @@ export default class RestfulModelStore extends EventEmitter {
         for(const item of (response.data[model.inflections.plural] || [])) {
           item._loading = false; item._loaded = true;item._found = true;
 
-          //If a lock_version exists on the model, it's used to avoid unnecessary repaints
-          const orig = model.instances.get(item.id);
-          if(!orig || !orig.lock_version || !item.lock_version || orig.lock_version !== item.lock_version)
-            item._seq = update_seq;
-          else
-            item._seq = orig._seq;
+          // Row versions do not cover derived fields from related records or time.
+          item._seq = update_seq;
           model.instances.set(item.id, item);
         }
       }

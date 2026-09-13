@@ -57,7 +57,7 @@ RSpec.describe Poller do
 
     it "reconnects when the serial settings change" do
       poller.run_cycle
-      interface.update!(baud_rate: 19_200)
+      interface.reload.update!(baud_rate: 19_200)
       poller.run_cycle
 
       expect(ModBus::RTUClient).to have_received(:connect).twice
@@ -67,7 +67,7 @@ RSpec.describe Poller do
 
     it "does not reconnect when an unrelated field changes" do
       poller.run_cycle
-      interface.update!(name: "Renamed Bus")
+      interface.reload.update!(name: "Renamed Bus")
       poller.run_cycle
 
       expect(ModBus::RTUClient).to have_received(:connect).once
@@ -77,7 +77,7 @@ RSpec.describe Poller do
   describe "disabling a bus" do
     it "releases the port and reports offline once the port is actually closed" do
       poller.run_cycle
-      interface.update!(enabled: false)
+      interface.reload.update!(enabled: false)
       poller.run_cycle
 
       expect(clients.sole).to be_closed
@@ -89,7 +89,7 @@ RSpec.describe Poller do
       # The handshake anything waiting for the bus depends on: "disabled" is
       # only reached once the port is genuinely free.
       poller.run_cycle
-      interface.update!(enabled: false)
+      interface.reload.update!(enabled: false)
       expect(interface.reload.connection_state).to eq("releasing")
 
       poller.run_cycle
@@ -99,14 +99,14 @@ RSpec.describe Poller do
 
     it "stops polling the devices on that bus" do
       poller.run_cycle
-      interface.update!(enabled: false)
+      interface.reload.update!(enabled: false)
       poller.run_cycle
 
       expect(FakePollerDriver.reads).to eq(1)
     end
 
     it "never opens the port for a bus that starts out disabled" do
-      interface.update!(enabled: false)
+      interface.reload.update!(enabled: false)
       poller.run_cycle
 
       expect(ModBus::RTUClient).not_to have_received(:connect)
@@ -115,9 +115,9 @@ RSpec.describe Poller do
 
     it "reopens the port when the bus is enabled again" do
       poller.run_cycle
-      interface.update!(enabled: false)
+      interface.reload.update!(enabled: false)
       poller.run_cycle
-      interface.update!(enabled: true)
+      interface.reload.update!(enabled: true)
       poller.run_cycle
 
       expect(ModBus::RTUClient).to have_received(:connect).twice
@@ -162,7 +162,7 @@ RSpec.describe Poller do
     end
 
     it "does not try to open a port that is not present on the host" do
-      interface.update!(port: "/dev/ttyUSB-nope")
+      interface.reload.update!(port: "/dev/ttyUSB-nope")
 
       poller.run_cycle
 
@@ -184,7 +184,7 @@ RSpec.describe Poller do
   describe "releasing ports" do
     it "closes the port of an interface deleted between cycles" do
       poller.run_cycle
-      interface.destroy!
+      interface.reload.destroy!
       poller.run_cycle
 
       expect(clients.sole).to be_closed
@@ -202,6 +202,69 @@ RSpec.describe Poller do
 
     it "is a no-op when nothing is held" do
       expect { poller.shut_down }.not_to raise_error
+    end
+  end
+
+  describe "observation persistence" do
+    it "closes every port and continues reporting after a validation failure" do
+      other = HostInterface.create!(name: "Other", port: port_path)
+      poller.run_cycle
+      failing_id = interface.id
+      callback = ->(record) { record.errors.add(:base, "report rejected") if record.id == failing_id && !record.online }
+      HostInterface.set_callback(:validation, :before, callback)
+      begin
+        expect { poller.shut_down }.not_to raise_error
+        expect(clients).to all(be_closed)
+        expect(other.reload.online).to be(false)
+      ensure
+        HostInterface.skip_callback(:validation, :before, callback)
+      end
+    end
+
+    it "preserves a concurrent edit without repeating hardware IO" do
+      FakePollerDriver.read_behaviour = -> {
+        device.reload.update!(name: "Renamed")
+        { ok: true }
+      }
+      poller.run_cycle
+      expect(device.reload).to have_attributes(name: "Renamed", lock_version: 2)
+      expect(device.current_state.dig("data", "ok")).to be(true)
+      expect(FakePollerDriver.reads).to eq(1)
+    end
+
+    it "discards a sample if its device address changed during the read" do
+      FakePollerDriver.read_behaviour = -> {
+        device.reload.update!(modbus_address: 4)
+        { ok: true }
+      }
+      poller.run_cycle
+      expect(device.reload.current_state).to be_nil
+      expect(FakePollerDriver.reads).to eq(1)
+    end
+
+    it "runs device and interface update callbacks including shutdown reports" do
+      updates = []
+      callback = ->(record) { updates << [ record.class, record.id ] }
+      Device.set_callback(:update, :after, callback)
+      HostInterface.set_callback(:update, :after, callback)
+      begin
+        poller.run_cycle
+        poller.shut_down
+        expect(updates.count([ Device, device.id ])).to eq(1)
+        expect(updates.count([ HostInterface, interface.id ])).to eq(2)
+      ensure
+        Device.skip_callback(:update, :after, callback)
+        HostInterface.skip_callback(:update, :after, callback)
+      end
+    end
+
+    it "continues when a device was deleted during a read" do
+      FakePollerDriver.read_behaviour = -> {
+        device.reload.destroy!
+        { ok: true }
+      }
+      expect { poller.run_cycle }.not_to raise_error
+      expect(interface.reload.online).to be(true)
     end
   end
 end

@@ -70,7 +70,7 @@ class Poller
     Rails.logger.info "Poller: releasing #{@connections.size} port(s)"
     ids = @connections.keys
     release(ids)
-    HostInterface.where(id: ids).update_all(online: false, poller_reported_at: Time.current)
+    HostInterface.where(id: ids).find_each { |interface| interface.report_connection(online: false) }
   end
 
   private
@@ -148,6 +148,7 @@ class Poller
   end
 
   def poll_device(device, connection, output_writer, output_commands_by_device_id)
+    identity = device.attributes.symbolize_keys.slice(:host_interface_id, :driver, :modbus_address)
     state = begin
       driver = connection.driver_for(device)
       data = driver.read
@@ -180,6 +181,6 @@ class Poller
       { polled_at: Time.now.utc.iso8601, status: "error", error: e.message, data: nil }
     end
 
-    device.update_columns(current_state: state, last_polled_at: Time.now)
+    device.persist_observation({ current_state: state, last_polled_at: Time.current }, identity: identity)
   end
 end

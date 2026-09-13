@@ -1,4 +1,5 @@
 class Device < ApplicationRecord
+  include PersistsObservations
   belongs_to :host_interface
 
   validates :modbus_address, presence: true,
