@@ -30,6 +30,12 @@
 #   end
 #
 class RestfulApi
+  # Shared with the record stream; override when authorization is introduced.
+  # Receives connection identity, never an HTTP controller.
+  def self.record_scope(_principal)
+    name.delete_suffix("Api").constantize.all
+  end
+
   attr_reader :controller
 
   def initialize(controller)

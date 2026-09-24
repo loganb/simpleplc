@@ -11,9 +11,11 @@ import {
   Measurement,
   OutputBlock,
   Store,
+  connectLiveRecords,
 } from './store';
 import { appTree } from './uxTree';
 import type { TabName } from './uxTree';
+import type { StreamStatus } from './lib/RecordStream';
 
 const rootUx = appTree.subtree();
 
@@ -24,6 +26,14 @@ const TABS: { id: TabName; label: string }[] = [
 ];
 
 export function App() {
+  const [streamStatus, setStreamStatus] = useState<StreamStatus>('connecting');
+  useEffect(() => {
+    const stream = connectLiveRecords();
+    setStreamStatus(stream.status);
+    const listener = Store.addListener("streamStatus", setStreamStatus);
+    return () => { listener.remove(); stream.stop(); };
+  }, []);
+
   const [refreshToken, setRefreshToken] = useState(0);
   const lastForcedRefreshToken = useRef(0);
 
@@ -62,6 +72,11 @@ export function App() {
           <div>
             <h1 class="text-2xl font-bold tracking-tight">PLC Controller</h1>
             <p class="text-sm text-text-muted">HVAC Monitoring Dashboard</p>
+            <p class="text-xs text-text-muted" role="status">
+              {streamStatus === 'live' ? 'Live updates connected' :
+                streamStatus === 'connecting' ? 'Connecting live updates…' :
+                  'Live updates disconnected — showing last received data'}
+            </p>
           </div>
           <nav class="flex gap-1 rounded border border-border bg-surface-alt p-1" aria-label="Main sections">
             {TABS.map((tab) => (

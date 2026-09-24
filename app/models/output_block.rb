@@ -1,4 +1,5 @@
 class OutputBlock < ApplicationRecord
+  include ObservesRecordChanges
   include Memery
 
   belongs_to :logic_diagram

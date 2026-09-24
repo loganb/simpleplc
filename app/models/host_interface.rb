@@ -1,4 +1,5 @@
 class HostInterface < ApplicationRecord
+  include ObservesRecordChanges
   include PersistsObservations
   PARITIES = %w[none even odd].freeze
 

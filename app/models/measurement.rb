@@ -1,4 +1,5 @@
 class Measurement < ApplicationRecord
+  include ObservesRecordChanges
   MODES = %w[acquisition simulation].freeze
 
   belongs_to :logic_diagram

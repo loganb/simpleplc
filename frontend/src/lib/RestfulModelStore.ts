@@ -21,7 +21,14 @@ export interface TxnResult {
 }
 
 //
+export interface RecordInterest { resource: string; id: ServerRecordId }
+export interface RecordUpdate extends RecordInterest { lock_version: number }
+
 interface RecordFlags {
+  readonly _stale?: boolean,
+  readonly _invalidated_at?: number,
+  readonly _required_version?: number,
+  readonly _response_order?: number,
   readonly _loading: boolean,
   readonly _loaded: boolean,
   readonly _found: boolean,
@@ -97,6 +104,20 @@ class TwoGenerationCache<K,V> {
       this.previous.delete(key);
     }
     return previousValue;
+  }
+
+  peek(key: K): V | undefined {
+    return this.current.get(key) ?? this.previous.get(key);
+  }
+
+  entries() {
+    return new Map([...this.previous, ...this.current]).entries();
+  }
+
+  // Background traffic must not promote an unused previous-generation record.
+  replace(key: K, value: V) {
+    if(this.current.has(key)) this.current.set(key, value);
+    else if(this.previous.has(key)) this.previous.set(key, value);
   }
 
   has(key: K) {
@@ -284,6 +305,49 @@ export default class RestfulModelStore extends EventEmitter {
     }
   }
 
+
+  private requestClock = 0;
+  private pendingRecords = new Set<string>();
+
+  private recordKey(resource: string, id: RecordId) {
+    return JSON.stringify([resource, id]);
+  }
+
+  recordInterests(): RecordInterest[] {
+    const interests: RecordInterest[] = [];
+    for(const model of Object.values(this.models)) {
+      for(const [id] of model.instances.entries()) {
+        if(typeof id !== 'object') interests.push({ resource: model.name, id });
+      }
+    }
+    return interests;
+  }
+
+  applyRecordUpdates(updates: RecordUpdate[]) {
+    for(const update of updates) {
+      const model = this.models[update.resource];
+      const record = model?.instances.peek(update.id);
+      if(!record || !Number.isSafeInteger(update.lock_version) || update.lock_version < 0) continue;
+      if(update.lock_version <= Math.max(record.lock_version ?? -1, record._required_version ?? -1)) continue;
+      model.instances.replace(update.id, {
+        ...record, _stale: true, _required_version: update.lock_version,
+        _invalidated_at: ++this.requestClock, _seq: this.seq++,
+      });
+    }
+    this.soil();
+  }
+
+  reconcileRecords(interests: RecordInterest[] = this.recordInterests()) {
+    for(const { resource, id } of interests) {
+      const model = this.models[resource];
+      const record = model?.instances.peek(id);
+      if(record) model.instances.replace(id, {
+        ...record, _stale: true, _invalidated_at: ++this.requestClock, _seq: this.seq++,
+      });
+    }
+    this.soil();
+  }
+
   /*
    * Used to track the current state of the data store
    */
@@ -300,6 +364,7 @@ export default class RestfulModelStore extends EventEmitter {
     }
     this.seq++;
     this.emit('cacheEpochAdvanced');
+    this.emit('recordInterestsChanged');
     this.soil();
   }
 
@@ -354,31 +419,28 @@ export default class RestfulModelStore extends EventEmitter {
     if((typeof(id) === 'undefined' || id == null) && !model.singleton) {
       throw new Error("Whoops!");
     }
-    //See if we get a hit in the unsaved set, followed by the cache, otherwise kick off a load cycle
     let exists = true;
-    const record = this.fetchNewRecord(model, id) || model.instances.get(id) as ModelRecord<T> | undefined || {
-      _loading: true,
-      _loaded:  exists = false,
-      _found:   false,
-      _seq:     this.seq++,
-      id: id as T['id']
-    } as NotFoundRecord<T>;
-    if(!exists || (record && record._loaded && force)) {
-      //Always return a blank object
+    let record = this.fetchNewRecord(model, id) || model.instances.get(id) as ModelRecord<T> | undefined || {
+      _loading: true, _loaded: exists = false, _found: false, _seq: this.seq++, id,
+    } as ModelRecord<T>;
+    if(!exists) {
       model.instances.set(id, record);
-      this.soil();
-      this.io_queue.enqueue({
-        io_type: 'fetch',
-        model: model,
-        run_time: 0, //The distant past, so means "right now"
-        record: record as ExtantRecord<Identifiable>,
-      });
-      this.schedule_queue_processing();
+      this.emit('recordInterestsChanged');
     }
-
-    this.emit('loadSequence',record._seq);
+    if(!record._new && (!exists || record._stale || force)) {
+      const key = this.recordKey(model.name, id);
+      if(!this.pendingRecords.has(key)) {
+        record = { ...record, _loading: true, _stale: true, _seq: this.seq++ };
+        model.instances.set(id, record);
+        this.pendingRecords.add(key);
+        this.io_queue.enqueue({ io_type: 'fetch', model, run_time: 0, record });
+        this.schedule_queue_processing();
+        this.soil();
+      }
+    }
+    this.emit('loadSequence', record._seq);
     return record;
-    //return this.models.get(id) || ret;
+
   }
 
 
@@ -405,6 +467,7 @@ export default class RestfulModelStore extends EventEmitter {
 
     const url = "/" + encodeURIComponent(model.singleton ? model.name : model.inflections.plural) + '.json';
 
+    const responseOrder = ++this.requestClock;
     const request = this.axios.post(url,
       {[model.name]: record_params},
       {
@@ -413,7 +476,7 @@ export default class RestfulModelStore extends EventEmitter {
 
     request.then((response) => {
       //Put all the new entities in
-      this.update_store(response);
+      this.update_store(response, responseOrder);
 
       //Update the txn to reflect the id of the new object
       this.txns.set(txn, {
@@ -468,12 +531,13 @@ export default class RestfulModelStore extends EventEmitter {
       const query_string = JSON.stringify({[model.name]: initial_fields});
       const url = "/" + encodeURIComponent(model.singleton ? model.name : model.inflections.plural) + '/new.json?json=' + encodeURIComponent(query_string);
 
-      const request = this.axios.get(url);
+      const responseOrder = ++this.requestClock;
+    const request = this.axios.get(url);
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       request.then((response: any) => {
         //These will only be "ancillary" records, not the new object
-        this.update_store(response);
+        this.update_store(response, responseOrder);
   
         const new_object = response.data.data as T; //The new record
 
@@ -558,6 +622,7 @@ export default class RestfulModelStore extends EventEmitter {
       model.query_version++;
       //clear the model that was deleted
       model.instances.delete(id);
+      this.emit('recordInterestsChanged');
 
       this.soil();
     }).catch((error) => {
@@ -590,6 +655,7 @@ export default class RestfulModelStore extends EventEmitter {
 
     const url = "/" + encodeURIComponent(model.singleton ? model.name : model.inflections.plural) + (id ? ('/' + encodeURIComponent(id.toString())) : '');
 
+    const responseOrder = ++this.requestClock;
     const request = this.axios.patch(url,
       {[model.name]: changes},
       {
@@ -602,7 +668,7 @@ export default class RestfulModelStore extends EventEmitter {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     request.then((response: any) => {
       //Put all the new entities in
-      this.update_store(response);
+      this.update_store(response, responseOrder);
 
       //Update the txn to reflect the id of the new object
       this.txns.set(txn, {
@@ -764,179 +830,132 @@ export default class RestfulModelStore extends EventEmitter {
     }
   }
 
+  // Accept primary records, sideloads and mutation results through the same gate.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  update_store(response: any) {
-    const update_seq = this.seq++;
-    // Invalidate anything specified in the invalidates clause
+  update_store(response: any, responseOrder = ++this.requestClock) {
     const invalidates = response.data.invalidates as InvalidatesClause;
     if(invalidates) {
-      for(const clazz of Object.keys(invalidates)) {
-        const model = this.models[clazz];
-        if(model) {
-          const invalidation = invalidates[clazz];
-          if(invalidation === "all" || invalidation === "queries")
-            model.query_version++;
-          if(invalidation === "all" || invalidation === "records")
-            model.instances.clear();
-        }
-      }  
+      for(const [name, invalidation] of Object.entries(invalidates)) {
+        const model = this.models[name];
+        if(!model) continue;
+        if(invalidation === 'all' || invalidation === 'queries') model.query_version++;
+        if(invalidation === 'all' || invalidation === 'records') model.instances.clear();
+      }
     }
-
-    // Read any model objects in the response
+    let added = false;
     for(const model of Object.values(this.models)) {
-      if(model.singleton) {
-        if(response.data[model.name]) {
-          const item = response.data[model.name];
-          item._loading = false; item._loaded = true;item._found = true;item._seq = update_seq;
-          model.instances.set(model.name, item);
-        }
-      } else {
-        for(const item of (response.data[model.inflections.plural] || [])) {
-          item._loading = false; item._loaded = true;item._found = true;
-
-          // Row versions do not cover derived fields from related records or time.
-          item._seq = update_seq;
-          model.instances.set(item.id, item);
+      const items = model.singleton
+        ? (response.data[model.name] ? [response.data[model.name]] : [])
+        : (response.data[model.inflections.plural] || []);
+      for(const item of items) {
+        const id = model.singleton ? model.name : item.id;
+        const orig = model.instances.peek(id);
+        const newerVersion = item.lock_version !== undefined &&
+          item.lock_version > (orig?.lock_version ?? -1);
+        if(orig && responseOrder < (orig._response_order ?? -1) && !newerVersion) continue;
+        if(orig?.lock_version !== undefined &&
+          (item.lock_version === undefined || item.lock_version < orig.lock_version)) continue;
+        const stale = responseOrder < (orig?._invalidated_at ?? -1) ||
+          (orig?._required_version !== undefined && (item.lock_version ?? -1) < orig._required_version);
+        const value = {
+          ...item, _loading: false, _loaded: true, _found: true, _stale: stale,
+          _invalidated_at: orig?._invalidated_at, _required_version: orig?._required_version,
+          _response_order: Math.max(responseOrder, orig?._response_order ?? -1), _seq: this.seq++,
+        };
+        if(orig) model.instances.replace(id, value);
+        else {
+          model.instances.set(id, value);
+          added = true;
         }
       }
     }
+    if(added || invalidates) this.emit('recordInterestsChanged');
     this.soil();
   }
 
   private processQueue() {
     const now = Date.now();
-
     for(;;) {
       const op = this.io_queue.dequeue();
-      if (!op) break;
-      if (op.run_time > now) { //Put it back if we can't use it, uncommon case
-        this.io_queue.enqueue(op);
-        break;
-      }
-
+      if(!op) break;
+      if(op.run_time > now) { this.io_queue.enqueue(op); break; }
       const model = op.model;
-      let url: string;
-      if(op.io_type === 'fetch') {
-        const id    = op.record.id;
-        //Start the fetch of the object
-        url = "/" + encodeURIComponent(model.singleton ? model.name : model.inflections.plural) + (id ? ('/' + encodeURIComponent(id.toString())) : '');  
-      } else {
-        const query = op.query;
-
-        url = "/" + encodeURIComponent(model.inflections.plural) +
-        (query.name ? ("/" + encodeURIComponent(query.name)) : "") + '.json' +
-        (query.args ? "?q=" + encodeURIComponent(query.args) : "");
+      const recordId = op.io_type === 'fetch' ? op.record.id : undefined;
+      const key = recordId !== undefined ? this.recordKey(model.name, recordId) : undefined;
+      if(op.io_type === 'fetch' && !model.instances.peek(op.record.id)) {
+        this.pendingRecords.delete(key!);
+        continue;
       }
-      this.io_rate_limiter.execute(() => (this.axios.get(url, {
-        headers: {
-          Accept: 'application/json'
-        }
-      }))).then((response) => {
+      const url = op.io_type === 'fetch'
+        ? "/" + encodeURIComponent(model.singleton ? model.name : model.inflections.plural) +
+          (op.record.id ? '/' + encodeURIComponent(op.record.id.toString()) : '')
+        : "/" + encodeURIComponent(model.inflections.plural) +
+          (op.query.name ? "/" + encodeURIComponent(op.query.name) : '') + '.json' +
+          (op.query.args ? '?q=' + encodeURIComponent(op.query.args) : '');
+      const responseOrder = ++this.requestClock;
+      this.io_rate_limiter.execute(() => this.axios.get(url, {
+        headers: { Accept: 'application/json' },
+      })).then(response => {
         if(op.io_type === 'query') {
           const query = op.query;
-          //Extra work of responding to the query-specific portion
-          //Get the IDs out of the query
-          const queryResults = response.data.query;
-          queryResults._loading = false;
-          queryResults._loaded  = true;
-          queryResults._found   = true;
-          queryResults._seq     = this.seq++;
-          queryResults._query_version = query.query_version_at_start;
-          queryResults.metadata = response.data.metadata;
-          this.queriesForName(model as Model<Identifiable>, query.name).set(query.args, queryResults);
+          const results = Object.assign(response.data.query, {
+            _loading: false, _loaded: true, _found: true, _seq: this.seq++,
+            _query_version: query.query_version_at_start, metadata: response.data.metadata,
+          });
+          this.queriesForName(model as Model<Identifiable>, query.name).set(query.args, results);
         }
-        //This updates the model store which is uniform across both queries & fetches
-        this.update_store(response);
-      }).catch((error) => {
-        let retriable_error, terminal_error;
+        this.update_store(response, responseOrder);
+        if(key) {
+          this.pendingRecords.delete(key);
+          const record = model.instances.peek(recordId!);
+          if(record?._loading) model.instances.replace(recordId!, { ...record, _loading: false });
+        }
+        this.soil();
+      }).catch(error => {
+        const terminal = [401, 403, 404].includes(error.response?.status);
         if(op.io_type === 'fetch') {
           const id = op.record.id;
-          // This is for all non-final errrors, queues for retry
-          //TODO: If this is a force-reload, preserve existing data
-          retriable_error = () => {
-            const error_count = (op.record._error || 0) + 1;
-            const record = {
-              _loading: true,
-              _loaded: false,
-              _found: false,
-              _seq: this.seq++,
-              _error: error_count, //Increment the error count
-              id: id
-            } as NotFoundRecord<Identifiable>;
-            model.instances.set(id, record);
-            this.io_queue.enqueue({
-              io_type: 'fetch',
-              model: model,
-              //Retry the first error immediately, otherwise, backoff exponentially, max 30 seconds
-              run_time: now + 1000*Math.min(Math.max(0,Math.min(error_count,10)-1)**1.5,30),
-              record: record,
-            });
-            this.soil();
+          const orig = model.instances.peek(id);
+          if(!orig) {
+            this.pendingRecords.delete(key!);
+            return;
           }
-          terminal_error = () => {
-            model.instances.set(id, {
-              _loading: false,
-              _loaded: true,
-              _found: false,
-              _seq: this.seq++,
-              id: id
+          if(terminal) {
+            this.pendingRecords.delete(key!);
+            // An obsolete request must not erase a newer accepted response.
+            if(responseOrder >= (orig._response_order ?? -1) &&
+               responseOrder >= (orig._invalidated_at ?? -1)) {
+              model.instances.replace(id, {
+                id, _found: false, _loaded: true, _loading: false,
+                _response_order: responseOrder, _seq: this.seq++,
+              });
+            } else model.instances.replace(id, { ...orig, _loading: false });
+          } else {
+            const errors = (op.record._error ?? 0) + 1;
+            const record = { ...orig, _error: errors, _loading: true };
+            model.instances.replace(id, record);
+            this.io_queue.enqueue({
+              ...op, record, run_time: Date.now() + 1000 * Math.min(30, errors ** 1.5),
             });
-            this.soil();
           }
         } else {
           const query = op.query;
-          const error_count = query.error_count + 1;
-          terminal_error = () => {
-            const queryResults = Object.assign([], {
-              _loaded: true,
-              _loading: false,
-              _found: false,
-              _seq: this.seq++,
-              _query_version: query.query_version_at_start
+          this.queriesForName(model as Model<Identifiable>, query.name).set(query.args, Object.assign([], {
+            _loading: !terminal, _loaded: true, _found: false, _seq: this.seq++,
+            _query_version: query.query_version_at_start,
+          }));
+          if(!terminal) {
+            const errors = query.error_count + 1;
+            this.io_queue.enqueue({
+              ...op, run_time: Date.now() + 1000 * Math.min(30, errors ** 1.5),
+              query: { ...query, error_count: errors, query_version_at_start: model.query_version },
             });
-            this.queriesForName(model as Model<Identifiable>, query.name).set(query.args, queryResults);
-          }
-          retriable_error = () => {
-            const queryResults = Object.assign([], {
-              _loaded: true,
-              _loading: true,
-              _found: false,
-              _seq: this.seq++,
-              _query_version: query.query_version_at_start,
-              _error_count: error_count
-            });
-            this.queriesForName(model as Model<Identifiable>, query.name).set(query.args, queryResults);
-            this.soil();
-
-            this.io_queue.enqueue(Object.assign({},op,{
-              run_time: now + 1000*Math.min(Math.max(0,Math.min(error_count,10)-1)**1.5,30),
-              query: Object.assign({},op.query,{
-                error_count: error_count,
-                //Since we're retrying the query, it is running against the current query version.
-                query_version_at_start: model.query_version
-              })
-            }));
           }
         }
-        if (error.response) {
-          if (error.response.status === 404) {
-            terminal_error();
-          } else if (error.response.status === 401) {
-            // Unauthorized, for now just treat like unfound
-            terminal_error();
-          } else {
-            console.log("Fetch Error at Server", error);
-            retriable_error();
-          }
-        } else {
-          console.log("Fetch Error", error)
-          retriable_error();
-        }
-        //In the case of error, it's possible we re-queued a task, so recompute the schedule
+        this.soil();
         this.schedule_queue_processing();
       });
     }
-    //Either there's no items left or they're not runnable yet, schedule for future
     this.schedule_queue_processing();
   }
 

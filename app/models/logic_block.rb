@@ -1,4 +1,5 @@
 class LogicBlock < ApplicationRecord
+  include ObservesRecordChanges
   include Memery
 
   def self.api_class_name

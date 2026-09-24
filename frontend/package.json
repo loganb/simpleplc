@@ -9,6 +9,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@rails/actioncable": "^7.2.302",
     "axios": "^1.9.0",
     "fbemitter": "^3.0.0",
     "preact": "^10.25.0",
@@ -17,6 +18,7 @@
   "devDependencies": {
     "@tailwindcss/cli": "^4.1.0",
     "@types/fbemitter": "^2.0.35",
+    "@types/rails__actioncable": "^8.0.3",
     "esbuild": "^0.28.0",
     "esbuild-sass-plugin": "^3.7.0",
     "sass": "^1.99.0",

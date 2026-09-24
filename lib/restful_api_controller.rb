@@ -70,7 +70,7 @@ module RestfulApiController
 
   # Returns the API instance for an arbitrary model class.
   def api_instance_for(clazz)
-    api_instances[clazz.respond_to?(:api_class_name) ? clazz.api_class_name : clazz.name]
+    api_instances[RecordResources.api_class_name(clazz)]
   end
 
   # GET /resources?q=<json>
@@ -193,6 +193,6 @@ module RestfulApiController
   # Returns the API-facing class name for a model class.
   # Supports STI via an optional .api_class_name class method.
   def api_class_name_for(clazz)
-    clazz.respond_to?(:api_class_name) ? clazz.api_class_name : clazz.name
+    RecordResources.api_class_name(clazz)
   end
 end

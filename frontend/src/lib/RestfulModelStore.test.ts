@@ -176,3 +176,100 @@ describe('record versions', () => {
     expect(model.fetch(1)._seq).toBeGreaterThan(before);
   });
 });
+
+describe('live record updates', () => {
+  beforeEach(installBrowserTimers);
+
+  it('coalesces notifications and keeps cached data while one refresh is in flight', async () => {
+    const { store, axios } = makeStore();
+    const model = store.m(Thing);
+    store.update_store({ data: { things: [{ id: 1, name: 'old', lock_version: 0 }] } });
+    let resolve!: (value: unknown) => void;
+    axios.get.mockImplementation(() => new Promise(r => { resolve = r; }));
+    store.applyRecordUpdates([{ resource: 'thing', id: 1, lock_version: 1 }]);
+    model.fetch(1);
+    model.fetch(1);
+    await settleIo();
+    expect(axios.get).toHaveBeenCalledTimes(1);
+    expect(model.fetch(1)).toMatchObject({ name: 'old', _found: true, _loading: true });
+    store.applyRecordUpdates([{ resource: 'thing', id: 1, lock_version: 2 }]);
+    resolve({ data: { things: [{ id: 1, name: 'middle', lock_version: 1 }] } });
+    await settleIo();
+    model.fetch(1);
+    await settleIo();
+    expect(axios.get).toHaveBeenCalledTimes(2);
+    resolve({ data: { things: [{ id: 1, name: 'new', lock_version: 2 }] } });
+    await settleIo();
+    expect(model.fetch(1)).toMatchObject({ name: 'new', lock_version: 2, _loading: false });
+  });
+
+  it('does not regress records through sideloads or late mutation responses', () => {
+    const { store } = makeStore();
+    const model = store.m(Thing);
+    store.update_store({ data: { things: [{ id: 1, name: 'new', lock_version: 2 }] } });
+    store.update_store({ data: { things: [{ id: 1, name: 'old', lock_version: 1 }] } });
+    expect(model.fetch(1)).toMatchObject({ name: 'new', lock_version: 2 });
+  });
+
+  it('ignores unknown and evicted IDs without changing query membership versions', async () => {
+    const { store, axios } = makeStore();
+    const model = store.m(Thing);
+    store.update_store({ data: { things: [{ id: 1, name: 'old', lock_version: 0 }] } });
+    store.advanceEpoch();
+    expect(store.recordInterests()).toEqual([{ resource: 'thing', id: 1 }]);
+    store.advanceEpoch();
+    store.applyRecordUpdates([{ resource: 'thing', id: 1, lock_version: 1 }]);
+    expect(store.recordInterests()).toEqual([]);
+    await settleIo();
+    expect(axios.get).not.toHaveBeenCalled();
+    expect(model.query_version).toBe(0);
+  });
+
+  it('accepts version zero and ignores duplicate notifications', async () => {
+    const { store, axios } = makeStore();
+    const model = store.m(Thing);
+    store.update_store({ data: { things: [{ id: 1, name: 'zero', lock_version: 0 }] } });
+    store.applyRecordUpdates([{ resource: 'thing', id: 1, lock_version: 0 }]);
+    model.fetch(1);
+    await settleIo();
+    expect(axios.get).not.toHaveBeenCalled();
+  });
+
+  it('requires a new read when reconciliation occurs during an older read', async () => {
+    const { store, axios } = makeStore();
+    const model = store.m(Thing);
+    let resolve!: (value: unknown) => void;
+    axios.get.mockImplementation(() => new Promise(r => { resolve = r; }));
+    model.fetch(1);
+    await settleIo();
+    store.reconcileRecords([{ resource: 'thing', id: 1 }]);
+    resolve({ data: { things: [{ id: 1, name: 'old snapshot', lock_version: 0 }] } });
+    await settleIo();
+    model.fetch(1);
+    await settleIo();
+    expect(axios.get).toHaveBeenCalledTimes(2);
+    resolve({ data: { things: [{ id: 1, name: 'fresh snapshot', lock_version: 0 }] } });
+    await settleIo();
+    expect(model.fetch(1)).toMatchObject({ name: 'fresh snapshot', _loading: false });
+  });
+});
+
+describe('response ordering', () => {
+  beforeEach(installBrowserTimers);
+
+  it('accepts a higher row version even if its request started earlier', () => {
+    const { store } = makeStore();
+    const model = store.m(Thing);
+    store.update_store({ data: { things: [{ id: 1, name: 'version one', lock_version: 1 }] } }, 20);
+    store.update_store({ data: { things: [{ id: 1, name: 'version two', lock_version: 2 }] } }, 10);
+    expect(model.fetch(1)).toMatchObject({ name: 'version two', lock_version: 2 });
+  });
+
+  it('rejects an older equal-version representation', () => {
+    const { store } = makeStore();
+    const model = store.m(Thing);
+    store.update_store({ data: { things: [{ id: 1, name: 'new derived value', lock_version: 1 }] } }, 20);
+    store.update_store({ data: { things: [{ id: 1, name: 'old derived value', lock_version: 1 }] } }, 10);
+    expect(model.fetch(1)).toMatchObject({ name: 'new derived value' });
+  });
+});

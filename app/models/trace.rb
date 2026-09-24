@@ -1,4 +1,5 @@
 class Trace < ApplicationRecord
+  include ObservesRecordChanges
   RESULT_BUCKETS = {
     "Measurement" => "measurements",
     "HysteresisLogicBlock" => "logic_blocks",

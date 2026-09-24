@@ -1,4 +1,5 @@
 class LogicDiagram < ApplicationRecord
+  include ObservesRecordChanges
   has_many :logic_blocks, dependent: :destroy
   has_many :measurements, dependent: :destroy
   has_many :output_blocks, dependent: :destroy

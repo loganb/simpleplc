@@ -1,4 +1,5 @@
 class Device < ApplicationRecord
+  include ObservesRecordChanges
   include PersistsObservations
   belongs_to :host_interface
 

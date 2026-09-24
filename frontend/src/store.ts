@@ -1,4 +1,6 @@
 import axios from 'axios';
+import { createConsumer } from '@rails/actioncable';
+import RecordStream from './lib/RecordStream';
 import RestfulModelStore from './lib/RestfulModelStore';
 import type { ModelDefinition } from './lib/RestfulModelStore';
 
@@ -238,5 +240,12 @@ export const Trace: ModelDefinition<TraceFields> = {
   inflections: { plural: 'traces', title: 'Trace' },
   singleton: false,
 };
+
+// Open the connection with the mounted app, not merely by importing model definitions.
+export function connectLiveRecords() {
+  const cableUrl = new URL('/cable', new URL(API_BASE, window.location.href));
+  cableUrl.protocol = cableUrl.protocol === 'https:' ? 'wss:' : 'ws:';
+  return new RecordStream(Store, createConsumer(cableUrl.toString()));
+}
 
 export { AxiosClient, Store };
