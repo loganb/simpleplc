@@ -48,7 +48,7 @@ Design and prioritize with the user before implementation. These findings are ob
 
 # Proposed implementation plan: complete hardware setup from the UX
 
-Status: implemented and verified locally on 2026-09-26; not deployed to production.
+Status: deployed to production as 894cdcf on 2026-09-26 after user approval.
 
 ## Outcome and scope
 
@@ -258,3 +258,8 @@ Implemented the approved workflow in the development checkout. Production remain
 Start/restart the development API and poller to load the migrated schema and new code, and run the frontend dev process. Use Devices → disable a bus → scan → select/match drivers → preview/apply → review and enable. Physical address/baud programming and manual output actuation remain outside this scope.
 
 No commit or production deployment was performed for this implementation. A future deployment must install the new code and migration together and restart both web and poller; old clients lacking configuration_revision receive an actionable precondition error and should reload.
+
+
+## Production deployment — 2026-09-26
+
+User authorized commit, push, and deployment. Implementation commit 894cdcf was pushed to origin/main and deployed with bin/deploy. Production migration and frontend build succeeded; web and poller are active. Homepage, health, driver metadata and device API returned 200. Relay device 3 at address 1 resumed successful polling with all eight inputs and outputs false, no errors, and the interface online. Real-browser visual verification remains outstanding.

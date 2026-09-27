@@ -116,3 +116,8 @@ Deployed commit `5e9df7b` with `bin/deploy`; frontend build and database migrati
 Serial enumeration found FTDI FT230X adapter serial `D30I8SGW` at `/dev/ttyUSB0`, stable path `/dev/serial/by-id/usb-FTDI_FT230X_Basic_UART_D30I8SGW-if00-port0`, plus kernel console `/dev/ttyAMA10`. Production interface 1 actually points to missing macOS path `/dev/cu.usbserial-D30E7F3F` (contrary to the historical assumption above); its three configured devices have no polling data. Configuration was left unchanged.
 
 With the poller stopped and automatically restarted afterward, a read-only scan of addresses 1–247 at 9600 8N1 found only address 1. Holding registers 1–8 and 129–136 all returned zero, consistent with the N4D8B08 relay I/O board. Product register 247 returned IllegalDataAddress and input-register temperature reads timed out, so model identification is inferred, not definitive. No device writes were performed.
+
+
+## Hardware setup deployed — 2026-09-26
+
+Deployed 894cdcf after user authorization; pushed to origin/main. Hardware setup migration and frontend build succeeded. Web and poller services are active; /, /up, /drivers.json and /devices.json return 200. The configured FTDI bus is online and relay device 3 at address 1 has fresh successful polls without errors. Cooperative serial ownership locking is now implemented (superseding the deferred item above).

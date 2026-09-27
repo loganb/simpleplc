@@ -78,3 +78,8 @@ Driver constructors have no hardware IO. The poller calls configure! before cach
 Devices supports port replacement, scan/cancel, reviewed atomic configuration changes, dependency-aware deletion, structured errors/conflict recovery and two-fresh-poll verification after enable. Configuration revisions protect operator edits independently of heartbeat/scan updates. Shared serial locks and unique adapter claims prevent cooperating processes or aliases from owning the same bus. Stale connection-error text still clears on the next poll.
 
 Validation: 181 RSpec examples and 33 frontend tests pass; TypeScript and frontend build pass. Includes an API/poller journey against a fake RTU endpoint and Preact component tests. Real Chromium smoke checking timed out; visual browser verification remains unconfirmed. Development/test databases migrated; restart development API/poller to load the schema/code. Production is unchanged, and implementation changes remain uncommitted and undeployed.
+
+
+### Hardware setup production deployment — 2026-09-26
+
+The previously local hardware setup implementation is now deployed at 894cdcf, following explicit user approval. Production migration/build succeeded, both services are active, and API checks confirm fresh successful relay polling. See hardware-setup.md for implementation and validation details.
