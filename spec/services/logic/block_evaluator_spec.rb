@@ -145,7 +145,7 @@ RSpec.describe Logic::BlockEvaluator do
     device = Device.create!(
       name: "Temp board",
       host_interface: host,
-      driver: "n4dsc08",
+      driver: "Drivers::N4DSC08",
       modbus_address: 1,
       current_state: {
         "status" => "ok",

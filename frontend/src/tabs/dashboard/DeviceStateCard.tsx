@@ -15,7 +15,7 @@ export function DeviceStateCard({ device, interfaces }: {
   // whenever it last worked. They're kept — the last good value is the most
   // useful thing to look at when diagnosing why a bus went away — but they must
   // not be presented as current.
-  const stale = ifaceFound !== null && ifaceFound.connection_state !== 'online';
+  const stale = !d.last_polled_at || Date.now() - Date.parse(d.last_polled_at) > 35000 || (ifaceFound !== null && (!ifaceFound.enabled || ifaceFound.connection_state !== 'online'));
 
   return (
     <div class="rounded-lg border border-border bg-surface p-4 space-y-3">
@@ -25,7 +25,7 @@ export function DeviceStateCard({ device, interfaces }: {
           {stale && (
             <span
               class="inline-block rounded-full bg-surface-alt px-2 py-0.5 text-xs font-medium text-text-muted"
-              title={`Bus "${ifaceFound!.name}" is ${ifaceFound!.connection_state}. These values are not being updated.`}
+              title="These are old observations; the device is not reporting fresh values."
             >
               Stale
             </span>
@@ -43,6 +43,7 @@ export function DeviceStateCard({ device, interfaces }: {
         {state?.data && <DeviceData data={state.data} />}
       </div>
 
+      {state?.error && <p role="alert" class="text-sm text-error">{state.error}</p>}
       {state?.polled_at && (
         <p class="text-xs text-text-muted">
           Polled: {new Date(state.polled_at).toLocaleTimeString()}

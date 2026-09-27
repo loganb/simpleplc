@@ -35,8 +35,10 @@ RSpec.describe Drivers::N4D8B08 do
   let(:slave) { FakeSlave.new(register_values) }
   let(:register_values) { {} }
 
-  it "configures inputs and outputs as unrelated when initialized" do
-    described_class.new(device, slave)
+  it "does not write until explicitly configured" do
+    driver = described_class.new(device, slave)
+    expect(slave.holding_registers.writes).to be_empty
+    driver.configure!
 
     expect(slave.holding_registers.writes).to include([ 0x00FD, 0x0000 ])
   end

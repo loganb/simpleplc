@@ -47,7 +47,7 @@ RSpec.describe "Record locking", type: :request do
     device = Device.create!(host_interface: interface, driver: "Drivers::N4D8B08", modbus_address: 1)
     get "/devices/#{device.id}"
     expect(response.parsed_body.fetch("devices").first.fetch("lock_version")).to eq(0)
-    expect(response.parsed_body.fetch("host_interfaces").first.fetch("lock_version")).to eq(0)
+    expect(response.parsed_body.fetch("host_interfaces").first.fetch("lock_version")).to eq(interface.reload.lock_version)
   end
 
   it "bounds retries when another writer repeatedly wins" do
@@ -83,7 +83,7 @@ RSpec.describe "Record locking", type: :request do
       HostInterface.find(object.id).update!(name: "Concurrent edit")
       original.call(object, params)
     end
-    patch "/host_interfaces/#{interface.id}", params: { host_interface: { name: "Stale edit" } }
+    patch "/host_interfaces/#{interface.id}", params: { host_interface: { name: "Stale edit", configuration_revision: interface.configuration_revision } }
     expect(response).to have_http_status(:conflict)
     expect(response.parsed_body.fetch("errors").fetch("base")).not_to be_empty
     expect(interface.reload.name).to eq("Concurrent edit")

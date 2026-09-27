@@ -1,7 +1,7 @@
-import { useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { useLoaders } from '../../lib/DataLoader2';
 import type { ExistingRecord, ReifiedQueryResult } from '../../lib/RestfulModelStore';
-import { HostPort, Store } from '../../store';
+import { Device, HostInterface, HostPort, Store } from '../../store';
 import type { DeviceFields, HostInterfaceFields, HostPortFields } from '../../store';
 import type { DevicesUXState } from '../../uxTree';
 import { DeviceStateCard } from '../dashboard/DeviceStateCard';
@@ -16,17 +16,29 @@ export function DevicesTab({ devices, interfaces, ux, onRefresh }: {
   ux: DevicesUXState;
   onRefresh: () => void;
 }) {
+  useEffect(() => {
+    const timer = setInterval(() => {
+      Store.m(HostInterface).queryFor(null, {}, true);
+      Store.m(Device).queryFor(null, {}, true);
+    }, 3000);
+    return () => clearInterval(timer);
+  }, []);
   // Scans are forced separately from the app-wide refresh so "Rescan" re-reads
   // the host even though nothing in the database changed.
   const [scanToken, setScanToken] = useState(0);
+  const lastScanToken = useRef(0);
 
-  const { showHostInterfaceForm, showDeviceForm, showPortScan, prefillPortId, ports } = useLoaders(() => ({
+  const { showHostInterfaceForm, showDeviceForm, showPortScan, prefillPortId, ports } = useLoaders(() => {
+    const force = scanToken !== lastScanToken.current;
+    lastScanToken.current = scanToken;
+    return ({
     showHostInterfaceForm: ux.get('showHostInterfaceForm') ?? null,
     showDeviceForm: ux.get('showDeviceForm') ?? null,
     showPortScan: ux.get('showPortScan') ?? false,
     prefillPortId: ux.get('prefillPortId') ?? null,
-    ports: Store.m(HostPort).queryFor(null, {}, scanToken > 0),
-  }), [ux, Store], [ux, scanToken]);
+    ports: Store.m(HostPort).queryFor(null, {}, force),
+    });
+  }, [ux, Store], [ux, scanToken]);
 
   const prefillRecord = prefillPortId !== null ? Store.m(HostPort).fetch(prefillPortId) : null;
   const prefillPort = prefillRecord?._found
@@ -82,6 +94,7 @@ export function DevicesTab({ devices, interfaces, ux, onRefresh }: {
 
         {showHostInterfaceForm !== null && (
           <HostInterfaceForm
+            key={`${showHostInterfaceForm}-${prefillPortId}`}
             editId={showHostInterfaceForm === 'new' ? null : showHostInterfaceForm}
             prefill={showHostInterfaceForm === 'new' && prefillPort
               ? { port: prefillPort.stable_path, name: prefillPort.label }
@@ -103,6 +116,7 @@ export function DevicesTab({ devices, interfaces, ux, onRefresh }: {
               <HostInterfaceCard
                 key={iface.id}
                 iface={iface}
+                devices={foundDevices.filter(d => d.host_interface_id === iface.id)}
                 onEdit={() => ux.set('showHostInterfaceForm', iface.id)}
                 onRefresh={refreshAfterInterfaceChange}
               />
@@ -125,6 +139,7 @@ export function DevicesTab({ devices, interfaces, ux, onRefresh }: {
 
         {showDeviceForm !== null && (
           <DeviceForm
+            key={String(showDeviceForm)}
             editId={showDeviceForm === 'new' ? null : showDeviceForm}
             interfaces={interfaces}
             onClose={() => ux.set('showDeviceForm', null)}

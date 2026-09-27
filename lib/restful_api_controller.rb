@@ -36,6 +36,18 @@ module RestfulApiController
   class UnprocessableEntityError < StandardError; end
 
   included do
+    rescue_from HardwareError do |e|
+      render json: { code: e.code, message: e.message, errors: { base: [ e.message ] }, details: e.details }, status: e.status
+    end
+    rescue_from ActiveRecord::RecordInvalid, ActiveRecord::RecordNotDestroyed, ActiveRecord::RecordNotSaved do |e|
+      render json: { code: "validation", message: e.message, errors: e.record.errors.to_hash }, status: :unprocessable_entity
+    end
+    rescue_from ActiveRecord::InvalidForeignKey, ActiveRecord::RecordNotUnique do
+      render json: { code: "conflict", errors: { base: [ "Configuration or dependencies changed; reload and review" ] } }, status: :conflict
+    end
+    rescue_from ActionController::ParameterMissing do |e|
+      render json: { errors: { base: [ e.message ] } }, status: :unprocessable_entity
+    end
     rescue_from ForbiddenError do
       render json: {}, status: :forbidden
     end

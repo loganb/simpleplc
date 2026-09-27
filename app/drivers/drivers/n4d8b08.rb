@@ -42,11 +42,20 @@ module Drivers
 
     RELATIONSHIP_UNRELATED = 0x0000
 
+    def self.device_support(probe)
+      results = [ probe.read(:holding_registers, 1..8), probe.read(:holding_registers, 129..136) ]
+      return probe.verdict("no", "Required relay/input registers are unsupported") if results.any? { |r| r[:status] == "unsupported" }
+      if results.all? { |r| r[:status] == "ok" }
+        return probe.verdict("no", "Relay/input registers contain non-binary values") unless results.all? { |r| r[:values].all? { |v| [ 0, 1 ].include?(v) } }
+        return probe.verdict("maybe", "Eight binary inputs and outputs respond; no unique product ID")
+      end
+      probe.verdict("maybe", "Relay/input reads are inconclusive")
+    end
+
     def self.display_name  = "N4D8B08 8-Ch RS485 Relay I/O"
     def self.channel_count = CHANNEL_COUNT
 
-    def initialize(device, slave)
-      super
+    def configure!
       slave.holding_registers[RELATIONSHIP_REG] = RELATIONSHIP_UNRELATED
     end
 

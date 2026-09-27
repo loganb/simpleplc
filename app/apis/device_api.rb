@@ -13,6 +13,52 @@ class DeviceApi < RestfulApi
     params.require(:device).permit(:name, :host_interface_id, :modbus_address, :driver)
   end
 
+  def create(params)
+    bus = HostInterface.find(params[:host_interface_id])
+    bus.with_lock { HardwareConfiguration.quiet!(bus) { super(params) } }
+  end
+
+  def update_params(params)
+    create_params(params).tap { |p| p[:configuration_revision] = params.require(:device)[:configuration_revision] }
+  end
+
+  def update(device, params)
+    fields = params.to_h
+    expected = fields.delete("configuration_revision")
+    ids = [ device.host_interface_id, fields.fetch("host_interface_id", device.host_interface_id).to_i ].uniq.sort
+    Device.transaction do
+      buses = HostInterface.where(id: ids).order(:id).lock.to_a
+      raise ActiveRecord::RecordNotFound unless buses.size == ids.size
+      device.lock!
+      HardwareConfiguration.check_revision!(device, expected)
+      structural = (fields.keys & %w[host_interface_id driver modbus_address]).any? { |key| fields[key].to_s != device.public_send(key).to_s }
+      raise HardwareError, "Cancel the scan before editing devices" if buses.any?(&:scan_active?)
+      action = -> { device.assign_attributes(fields); HardwareConfiguration.compatible!(device); device.save! }
+      if structural
+        with_quiet_buses(buses, &action)
+      else
+        action.call
+      end
+    end
+  end
+
+  def destroy(device)
+    bus = device.host_interface
+    bus.with_lock do
+      device.lock!
+      HardwareConfiguration.check_revision!(device, controller.params[:configuration_revision])
+      HardwareConfiguration.quiet!(bus) do
+        HardwareConfiguration.deletable!([ device.id ])
+        device.destroy!
+      end
+    end
+  end
+
+  def with_quiet_buses(buses, &block)
+    return block.call if buses.empty?
+    HardwareConfiguration.quiet!(buses.first) { with_quiet_buses(buses.drop(1), &block) }
+  end
+
   def expound(objects)
     HostInterface.where(id: objects.map(&:host_interface_id).uniq)
   end
@@ -26,6 +72,7 @@ class DeviceApi < RestfulApi
 
   def serialize(device)
     {
+      configuration_revision: device.configuration_revision,
       id:               device.id,
       name:             device.name,
       modbus_address:   device.modbus_address,

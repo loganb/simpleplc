@@ -1,6 +1,24 @@
 class HostInterface < ApplicationRecord
   include ObservesRecordChanges
   include PersistsObservations
+  include HardwareRevision
+  CONFIGURATION_FIELDS = %w[name port baud_rate data_bits stop_bits parity enabled].freeze
+  before_validation :identify_port, if: -> { new_record? || will_save_change_to_port? }
+  validates :port_identity, uniqueness: true, allow_nil: true
+
+  def scan_active? = %w[requested scanning].include?(scan_state)
+
+  def identify_port
+    found = HostPortScanner.scan.find do |p|
+      begin
+        File.realpath(p.stable_path) == File.realpath(port)
+      rescue SystemCallError
+        false
+      end
+    end if port_present?
+    self.port = found.stable_path if found
+    self.port_identity = port_present? ? SerialBusLock.identity(port) : nil
+  end
   PARITIES = %w[none even odd].freeze
 
   # How long the poller's report is believed. Must stay comfortably above

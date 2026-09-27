@@ -11,7 +11,11 @@ RSpec.describe Poller do
     Dir.mktmpdir do |dir|
       @port_path = File.join(dir, "ttyUSB0")
       FileUtils.touch(@port_path)
-      example.run
+      begin
+        example.run
+      ensure
+        poller.shut_down
+      end
     end
   end
 
@@ -40,7 +44,7 @@ RSpec.describe Poller do
     end
 
     it "reuses driver instances, so a driver's setup writes happen once per connection" do
-      # Drivers::N4D8B08#initialize writes the relationship register; rebuilding
+      # Drivers::N4D8B08#configure! writes the relationship register; rebuilding
       # a driver every cycle would mean a bus write every 10 seconds forever.
       2.times { poller.run_cycle }
 
@@ -207,7 +211,9 @@ RSpec.describe Poller do
 
   describe "observation persistence" do
     it "closes every port and continues reporting after a validation failure" do
-      other = HostInterface.create!(name: "Other", port: port_path)
+      other_path = "#{port_path}-other"
+      FileUtils.touch(other_path)
+      other = HostInterface.create!(name: "Other", port: other_path)
       poller.run_cycle
       failing_id = interface.id
       callback = ->(record) { record.errors.add(:base, "report rejected") if record.id == failing_id && !record.online }

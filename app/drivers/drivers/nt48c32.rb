@@ -20,6 +20,13 @@ module Drivers
     # Value returned when no NTC probe is connected (-273.1°C = absolute zero sentinel)
     NO_PROBE_RAW = 0xF555  # -2731 as signed → -273.1°C
 
+    def self.device_support(probe)
+      result = probe.read(:holding_registers, 247)
+      return probe.verdict("yes", "Product ID 2532 identifies NT48C32") if result[:status] == "ok" && result[:values] == PRODUCT_ID
+      return probe.verdict("no", "Different product ID: #{result[:values]}") if result[:status] == "ok"
+      probe.verdict("maybe", "Product ID could not be established")
+    end
+
     def self.display_name  = "NT48C32 32-Ch NTC Temperature"
     def self.channel_count = CHANNEL_COUNT
 

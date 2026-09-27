@@ -22,6 +22,7 @@ const Store = new RestfulModelStore(AxiosClient, {
 // ---------------------------------------------------------------------------
 
 export interface DeviceFields {
+  configuration_revision: number;
   id: number;
   name: string;
   modbus_address: number;
@@ -42,7 +43,24 @@ export const Device: ModelDefinition<DeviceFields> = {
   singleton: false,
 };
 
+export interface DriverFields {
+  id: string; name: string; channel_count: number; fields: string[];
+  binary_outputs: boolean; configuration_effects: string;
+}
+export interface SerialProfile { baud_rate: number; data_bits: number; stop_bits: number; parity: string }
+export interface DriverSupport { driver: string; support: 'yes' | 'no' | 'maybe'; reason: string; evidence: unknown[] }
+export interface ScanDevice { address: number; profile_index: number; profile: SerialProfile; observed_at: string; driver_support: DriverSupport[] }
 export interface HostInterfaceFields {
+  configuration_revision: number;
+  scan_state: 'idle' | 'requested' | 'scanning' | 'completed' | 'failed' | 'cancelled' | 'interrupted';
+  scan_request_id: string | null;
+  scan_options: { port?: string; profiles?: SerialProfile[]; first_address?: number; last_address?: number };
+  scan_results: { completed?: number; total?: number; devices?: ScanDevice[]; error?: string; diagnostics?: unknown[] };
+  scan_cancel_requested: boolean;
+  scan_requested_at: string | null;
+  scan_started_at: string | null;
+  scan_finished_at: string | null;
+  scan_updated_at: string | null;
   id: number;
   name: string;
   port: string;

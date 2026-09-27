@@ -22,9 +22,9 @@ RSpec.describe "Devices API", type: :request do
       # as missing — this is what drives the "missing" badge in the UI.
       "port_present" => false,
       "resolved_device" => nil,
-      # A new bus is enabled but no poller has reported on it yet.
-      "enabled" => true,
-      "connection_state" => "unknown",
+      # New buses start disabled until setup is reviewed.
+      "enabled" => false,
+      "connection_state" => "disabled",
       "connection_error" => nil,
       "poller_reported_at" => nil
     )
@@ -49,6 +49,7 @@ RSpec.describe "Devices API", type: :request do
 
     patch "/devices/#{device_id}", params: {
       device: {
+        configuration_revision: Device.find(device_id).configuration_revision,
         name: "Relay I/O",
         host_interface_id: host_id,
         modbus_address: 4,
@@ -67,7 +68,7 @@ RSpec.describe "Devices API", type: :request do
     let(:interface) { HostInterface.create!(name: "Relay Bus", port: "/dev/ttyUSB9") }
 
     it "lets the operator disable an interface" do
-      patch "/host_interfaces/#{interface.id}", params: { host_interface: { enabled: false } }
+      patch "/host_interfaces/#{interface.id}", params: { host_interface: { enabled: false, configuration_revision: interface.configuration_revision } }
 
       expect(response).to have_http_status(:ok)
       expect(response.parsed_body.fetch("host_interfaces").first).to include(
@@ -83,7 +84,7 @@ RSpec.describe "Devices API", type: :request do
       # Only the poller may say a port is held open. A client that could set
       # this could fake a healthy bus.
       patch "/host_interfaces/#{interface.id}", params: {
-        host_interface: { enabled: true, online: true, connection_error: "nope" }
+        host_interface: { configuration_revision: interface.configuration_revision, enabled: true, online: true, connection_error: "nope" }
       }
 
       expect(interface.reload).to have_attributes(online: false, connection_error: nil)

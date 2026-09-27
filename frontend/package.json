@@ -17,10 +17,12 @@
   },
   "devDependencies": {
     "@tailwindcss/cli": "^4.1.0",
+    "@testing-library/preact": "^3.2.4",
     "@types/fbemitter": "^2.0.35",
     "@types/rails__actioncable": "^8.0.3",
     "esbuild": "^0.28.0",
     "esbuild-sass-plugin": "^3.7.0",
+    "jsdom": "^30.1.1",
     "sass": "^1.99.0",
     "tailwindcss": "^4.1.0",
     "typescript": "^5.8.0",

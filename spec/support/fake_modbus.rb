@@ -36,8 +36,19 @@ class FakePollerDriver < Drivers::Base
     self.class.instantiations += 1
   end
 
+  def self.display_name = "Fake"
+  def self.channel_count = 8
+
   def read
     self.class.reads += 1
     self.class.read_behaviour.call
+  end
+end
+
+RSpec.configure do |config|
+  config.before do |example|
+    if example.metadata[:file_path].include?("poller") || example.metadata[:file_path].include?("record_locking")
+      allow(Drivers::Registry).to receive(:all).and_wrap_original { |original| original.call + [FakePollerDriver] }
+    end
   end
 end

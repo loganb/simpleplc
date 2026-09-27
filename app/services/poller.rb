@@ -51,6 +51,13 @@ class Poller
     interfaces = HostInterface.includes(:devices).to_a
 
     interfaces.each do |iface|
+      iface.reload
+      if !iface.enabled? && iface.scan_active?
+        release([ iface.id ])
+        iface.report_connection(online: false)
+        HardwareScan.new(iface, stopping: -> { @stopping }).run
+        next
+      end
       connection = connection_for(iface)
       next unless connection
 

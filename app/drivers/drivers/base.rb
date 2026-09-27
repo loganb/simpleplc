@@ -1,7 +1,7 @@
 module Drivers
   # Abstract base class for all RS-485 device drivers.
   #
-  # Each driver is instantiated per-request with the Device record and
+  # Each driver is cached per connection with the Device record and
   # a live ModBus::RTUSlave. Drivers translate high-level operations into
   # Modbus register reads/writes and return structured data.
   #
@@ -14,6 +14,13 @@ module Drivers
     def initialize(device, slave)
       @device = device
       @slave  = slave
+    end
+
+    # Explicit normal-operation setup. Constructors and discovery never write.
+    def configure!; end
+
+    def self.device_support(probe)
+      probe.verdict("maybe", "No compatibility check implemented")
     end
 
     # Read current values from the device.

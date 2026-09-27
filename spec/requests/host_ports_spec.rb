@@ -74,6 +74,8 @@ RSpec.describe "HostPorts API", type: :request do
 
   describe "linking a port to the interface using it" do
     it "reports host_interface_id for an interface configured with the by-id path" do
+      allow(File).to receive(:realpath).and_call_original
+      allow(File).to receive(:realpath).with(usb_port.by_id).and_return("/dev/ttyUSB0")
       interface = HostInterface.create!(name: "Bus A", port: usb_port.by_id)
 
       get "/host_ports.json"

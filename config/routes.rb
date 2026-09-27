@@ -6,11 +6,22 @@ Rails.application.routes.draw do
   # Can be used by load balancers and uptime monitors to verify that the app is live.
   get "up" => "rails/health#show", as: :rails_health_check
 
-  resources :host_interfaces
+  resources :drivers, only: [ :index ]
+  resources :host_interfaces do
+    member do
+      post :scan
+      post :cancel_scan
+      post :preview
+      post :apply
+      get :impact
+    end
+  end
   # Read-only: discovered ports are a property of the host, not rows we own.
   # Ids are base64url-encoded paths, so no route constraint is needed.
   resources :host_ports, only: [ :index, :show ]
-  resources :devices
+  resources :devices do
+    get :impact, on: :member
+  end
   resources :measurements
   resources :logic_diagrams
   resources :logic_blocks

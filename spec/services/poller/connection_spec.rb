@@ -40,6 +40,21 @@ RSpec.describe Poller::Connection do
 
     before { FakePollerDriver.reset! }
 
+    it "configures once and only caches successful configuration" do
+      calls = 0
+      allow_any_instance_of(FakePollerDriver).to receive(:configure!) do
+        calls += 1
+        raise IOError, "configuration failed" if calls == 1
+      end
+      expect { connection.driver_for(device) }.to raise_error(IOError)
+      driver = connection.driver_for(device)
+      expect(connection.driver_for(device)).to equal(driver)
+      expect(calls).to eq(2)
+      device.update!(modbus_address: 4)
+      connection.driver_for(device)
+      expect(calls).to eq(3)
+    end
+
     it "rebuilds the driver when the device's address changes" do
       connection.driver_for(device)
       device.update!(modbus_address: 4)

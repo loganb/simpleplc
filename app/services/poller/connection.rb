@@ -19,14 +19,26 @@ class Poller
     # Opens the port. Raises whatever the serial library raises; the caller
     # decides what a failure to open means for the interface's state.
     def self.open(interface, read_retry_timeout:, read_retries:)
+      bus_lock = SerialBusLock.acquire(interface.port)
+      interface.with_lock do
+        raise HardwareError, "Interface disabled or scanning" unless interface.enabled? && !interface.scan_active?
+        interface.identify_port
+        interface.save! if interface.changed?
+      end
       client = interface.modbus_client
       client.read_retry_timeout = read_retry_timeout
       client.read_retries = read_retries
 
-      new(client, settings_for(interface))
+      new(client, settings_for(interface), bus_lock: bus_lock)
+    rescue Exception
+      client&.close
+      bus_lock&.close
+      interface.reload if interface.persisted?
+      raise
     end
 
-    def initialize(client, settings)
+    def initialize(client, settings, bus_lock: nil)
+      @bus_lock = bus_lock
       @client   = client
       @settings = settings
       @drivers  = {}
@@ -38,8 +50,8 @@ class Poller
       !client.closed? && settings == self.class.settings_for(interface)
     end
 
-    # Drivers are cached per device, because instantiating one can transact on
-    # the bus — Drivers::N4D8B08#initialize writes the input/output relationship
+    # Drivers are cached per device, because explicitly configuring one can transact on
+    # the bus — Drivers::N4D8B08#configure! writes the input/output relationship
     # register. Rebuilding them every cycle means a setup write to every relay
     # board every 10 seconds; cached here, it happens once when the bus comes
     # online, which is also when a power-cycled board needs it.
@@ -49,6 +61,7 @@ class Poller
       return cached.last if cached && cached.first == fingerprint
 
       driver = device.driver_instance(client.with_slave(device.modbus_address))
+      driver.configure!
       @drivers[device.id] = [ fingerprint, driver ]
       driver
     end
@@ -64,6 +77,8 @@ class Poller
     rescue SystemCallError, IOError => e
       # The port is already gone — that's the state we were trying to reach.
       Rails.logger.debug { "Poller: error closing port: #{e.message}" }
+    ensure
+      @bus_lock&.close
     end
   end
 end

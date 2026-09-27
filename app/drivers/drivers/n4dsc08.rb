@@ -19,6 +19,12 @@ module Drivers
     TEMP_REG_BASE  = 0x0000
     SENSOR_FAULT   = 0x8000
 
+    def self.device_support(probe)
+      result = probe.read(:input_registers, 0..7)
+      return probe.verdict("no", "Required temperature registers are unsupported") if result[:status] == "unsupported"
+      probe.verdict("maybe", result[:status] == "ok" ? "Eight temperature registers respond; model identity is not unique" : "Temperature reads are inconclusive")
+    end
+
     def self.display_name  = "N4DSC08 8-Ch DS18B20 Temperature"
     def self.channel_count = CHANNEL_COUNT
 

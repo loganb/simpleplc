@@ -1,5 +1,6 @@
 class OutputBlock < ApplicationRecord
   include ObservesRecordChanges
+  include LocksHardwareReference
   include Memery
 
   belongs_to :logic_diagram
@@ -72,7 +73,7 @@ class OutputBlock < ApplicationRecord
   def device_supports_binary_output_channel
     return if device.blank?
 
-    driver_class = device.driver.to_s.safe_constantize
+    driver_class = Drivers::Registry.find(device.driver)
     return errors.add(:device, "driver is unknown") unless driver_class
 
     unless driver_class.instance_methods.include?(:open) && driver_class.instance_methods.include?(:close)
