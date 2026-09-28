@@ -192,3 +192,12 @@ Deployed commit `08d67c2`. The production web and poller services are active;
 the homepage and `/up` return HTTP 200. The Device API exposes the relay boards'
 eight inputs and eight outputs, and both production devices resumed fresh,
 successful polling with no device or output-write errors.
+
+## TODO
+
+- Handle API validation error responses in logic-diagram forms. A production
+  attempt to create a Measurement named `3rd Floor Call` correctly returned
+  HTTP 422 with `Name must be an expression-safe identifier`, but the frontend
+  discarded that detail and showed only `Save failed`. Surface field-specific
+  Rails validation messages so the operator can correct the form without
+  consulting server logs.
