@@ -84,3 +84,9 @@ Validation: 181 RSpec examples and 33 frontend tests pass; TypeScript and fronte
 ### Hardware setup production deployment — 2026-09-26
 
 The previously local hardware setup implementation is now deployed at 894cdcf, following explicit user approval. Production migration/build succeeded, both services are active, and API checks confirm fresh successful relay polling. See hardware-setup.md for implementation and validation details.
+
+### Enumerated measurement inputs production deployment — 2026-09-28
+
+Device input/output catalogs and the measurement source selector are deployed at
+`08d67c2`. Production web and poller services are active, HTTP health checks
+pass, and both relay boards resumed fresh successful polling without errors.

@@ -121,3 +121,11 @@ With the poller stopped and automatically restarted afterward, a read-only scan 
 ## Hardware setup deployed — 2026-09-26
 
 Deployed 894cdcf after user authorization; pushed to origin/main. Hardware setup migration and frontend build succeeded. Web and poller services are active; /, /up, /drivers.json and /devices.json return 200. The configured FTDI bus is online and relay device 3 at address 1 has fresh successful polls without errors. Cooperative serial ownership locking is now implemented (superseding the deferred item above).
+
+## Enumerated measurement inputs deployed — 2026-09-28
+
+Deployed `08d67c2` after user authorization. The production build and database
+preparation succeeded; both systemd services are active and `/` plus `/up`
+return HTTP 200 over Tailscale. `/devices.json` exposes driver-declared `inputs`
+and `outputs` for both relay boards. Both devices resumed fresh successful polls,
+the interface is online, and no device or output-write errors are reported.

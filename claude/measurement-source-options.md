@@ -185,3 +185,10 @@ User confirmed implementation on 2026-09-27.
   design-before-hardware use.
 - Verification: 185 RSpec examples and 34 frontend tests pass; TypeScript
   checking, frontend production build, and `git diff --check` pass.
+
+## Production Deployment — 2026-09-28
+
+Deployed commit `08d67c2`. The production web and poller services are active;
+the homepage and `/up` return HTTP 200. The Device API exposes the relay boards'
+eight inputs and eight outputs, and both production devices resumed fresh,
+successful polling with no device or output-write errors.
