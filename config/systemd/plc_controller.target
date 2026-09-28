@@ -1,0 +1,6 @@
+[Unit]
+Description=PLC Controller (all services)
+Wants=plc_controller-web.service plc_controller-poller.service plc_controller-logic-runner.service
+
+[Install]
+WantedBy=multi-user.target

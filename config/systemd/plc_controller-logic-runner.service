@@ -1,0 +1,17 @@
+[Unit]
+Description=PLC Controller logic diagram runner
+After=network.target postgresql.service
+Wants=postgresql.service
+PartOf=plc_controller.target
+
+[Service]
+Type=simple
+User=logan
+WorkingDirectory=/opt/plc_controller/current
+EnvironmentFile=/etc/plc_controller/production.env
+ExecStart=/home/logan/.local/bin/mise exec -- bin/logic_runner
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

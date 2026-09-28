@@ -1,0 +1,5 @@
+#!/usr/bin/env ruby
+# Scheduled LogicDiagram evaluation daemon — see claude/logic-runner.md.
+require_relative "../config/environment"
+
+LogicRunner.new.run

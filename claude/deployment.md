@@ -57,8 +57,13 @@ summarized below since that path isn't durable).
   the next deploy.
 
 ### Process supervision
-- Two systemd services (`plc_controller-web`, `plc_controller-poller`), both
-  `Restart=always`, grouped under `plc_controller.target` for convenience.
+- The intended service set is three systemd services (`plc_controller-web`,
+  `plc_controller-poller`, and `plc_controller-logic-runner`), all
+  `Restart=always`, grouped under `plc_controller.target` for convenience. The
+  currently deployed target still contains only web and poller. Versioned
+  definitions for the logic runner and updated target live in `config/systemd/`;
+  installing them in `/etc/systemd/system` and running `systemctl daemon-reload`
+  is an explicit future production deployment step.
   Run as the existing `logan` user (single-owner box, no separate service
   account) — `logan` is in the `dialout` group for serial port access.
   `Restart=always` matters most for the poller: it's the process actually
@@ -76,6 +81,11 @@ summarized below since that path isn't durable).
   Pi's first real production boot, since dev never eager-loads. Moving the
   logic into a class removed the need for that exception: `app/` classes only
   define code, so eager loading them is always safe.
+- The logic scheduler follows the same shape: `LogicRunner`
+  (`app/services/logic_runner.rb`) is invoked by `bin/logic_runner`. It creates
+  due Trace records but never accesses hardware. A PostgreSQL advisory lock
+  allows only one runner per application database; systemd supervises the
+  production instance while Foreman runs the development instance.
 
 ### Deploy mechanism
 - Production runs from a `git worktree` at `/opt/plc_controller/current`,
