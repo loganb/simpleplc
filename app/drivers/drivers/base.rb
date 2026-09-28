@@ -38,5 +38,10 @@ module Drivers
     def self.channel_count
       raise NotImplementedError
     end
+
+    # Stable hardware capabilities. Inputs are readable values and outputs are
+    # writable channels; logic-diagram concepts do not belong in this layer.
+    def self.inputs = []
+    def self.outputs = []
   end
 end

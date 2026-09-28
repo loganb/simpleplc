@@ -36,6 +36,30 @@ RSpec.describe Measurement, type: :model do
     expect(measurement.trace_value).to be_nil
   end
 
+  it "requires a device and source path together" do
+    host = HostInterface.create!(name: "Test Bus", port: "/dev/ttyUSB0")
+    device = Device.create!(name: "Relay board", host_interface: host, driver: "Drivers::N4D8B08", modbus_address: 3)
+
+    without_path = described_class.new(logic_diagram: diagram, name: "MissingPath", device: device)
+    without_device = described_class.new(logic_diagram: diagram, name: "MissingDevice", source_path: "inputs[0]")
+
+    expect(without_path).not_to be_valid
+    expect(without_path.errors[:source_path]).to include("must be selected with a device")
+    expect(without_device).not_to be_valid
+    expect(without_device.errors[:device]).to include("must be selected with a source path")
+  end
+
+  it "only accepts paths declared as inputs by the selected device driver" do
+    host = HostInterface.create!(name: "Test Bus", port: "/dev/ttyUSB0")
+    device = Device.create!(name: "Relay board", host_interface: host, driver: "Drivers::N4D8B08", modbus_address: 3)
+    output = described_class.new(logic_diagram: diagram, name: "RelayState", device: device, source_path: "outputs[0]")
+    out_of_range = described_class.new(logic_diagram: diagram, name: "NinthInput", device: device, source_path: "inputs[8]")
+
+    expect(output).not_to be_valid
+    expect(output.errors[:source_path]).to include("is not an input supported by the selected device")
+    expect(out_of_range).not_to be_valid
+  end
+
   it "extracts acquisition values from device current_state data" do
     host = HostInterface.create!(name: "Test Bus", port: "/dev/ttyUSB0")
     device = Device.create!(

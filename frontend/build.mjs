@@ -5,6 +5,7 @@ import { watch } from 'node:fs';
 import { sassPlugin } from 'esbuild-sass-plugin';
 
 const isWatch = process.argv.includes('--watch');
+const devHost = process.env.PLC_DEV_HOST ?? '0.0.0.0';
 const PUBLIC_DIR = 'public';
 const OUT_DIR = 'dist';
 
@@ -62,8 +63,8 @@ if (isWatch) {
     }, 50);
   });
 
-  await ctx.serve({ servedir: OUT_DIR, port: 5174 });
-  console.log('Dev server: http://localhost:5174');
+  await ctx.serve({ host: devHost, servedir: OUT_DIR, port: 5174 });
+  console.log(`Dev server: http://${devHost}:5174`);
 } else {
   await esbuild.build(options);
   await new Promise((resolve, reject) => {

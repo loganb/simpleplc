@@ -35,6 +35,22 @@ export interface DeviceFields {
     error: string | null;
     data: Record<string, unknown>;
   } | null;
+  inputs: DeviceInput[];
+  outputs: DeviceOutput[];
+}
+
+export interface DeviceInput {
+  path: string;
+  label: string;
+  value_type: 'boolean' | 'number';
+  units: string | null;
+}
+
+export interface DeviceOutput {
+  channel: number;
+  label: string;
+  value_type: 'boolean';
+  units: string | null;
 }
 
 export const Device: ModelDefinition<DeviceFields> = {

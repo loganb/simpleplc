@@ -54,6 +54,16 @@ module Drivers
 
     def self.display_name  = "N4D8B08 8-Ch RS485 Relay I/O"
     def self.channel_count = CHANNEL_COUNT
+    def self.inputs
+      CHANNEL_COUNT.times.map do |index|
+        { path: "inputs[#{index}]", label: "Input #{index + 1}", value_type: "boolean", units: nil }
+      end
+    end
+    def self.outputs
+      (1..CHANNEL_COUNT).map do |channel|
+        { channel: channel, label: "Relay #{channel}", value_type: "boolean", units: nil }
+      end
+    end
 
     def configure!
       slave.holding_registers[RELATIONSHIP_REG] = RELATIONSHIP_UNRELATED

@@ -35,12 +35,9 @@ class HardwareConfiguration
   end
 
   def self.compatible!(device)
-    meta = Drivers::Registry.metadata.find { |m| m[:id] == device.driver }
-    return unless meta
-    bad_outputs = OutputBlock.where(device_id: device.id).any? { |o| !meta[:binary_outputs] || o.channel > meta[:channel_count] }
+    bad_outputs = OutputBlock.where(device_id: device.id).any? { |o| !device.supports_binary_output?(o.channel) }
     bad_inputs = Measurement.where(device_id: device.id, mode: "acquisition").where.not(source_path: [ nil, "" ]).any? do |m|
-      match = /\A(\w+)\[(\d+)\]\z/.match(m.source_path.to_s)
-      !match || !meta[:fields].include?(match[1]) || match[2].to_i >= meta[:channel_count]
+      !device.supports_input?(m.source_path)
     end
     raise HardwareError, "Selected driver is incompatible with existing measurements or outputs" if bad_outputs || bad_inputs
   end

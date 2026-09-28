@@ -31,4 +31,21 @@ class Device < ApplicationRecord
   def driver_instance(slave)
     Drivers::Registry.fetch(driver).new(self, slave)
   end
+
+  def inputs = driver_class.inputs
+  def outputs = driver_class.outputs
+
+  def supports_input?(path)
+    inputs.any? { |input| input[:path] == path }
+  end
+
+  def supports_binary_output?(channel)
+    outputs.any? { |output| output[:channel] == channel && output[:value_type] == "boolean" }
+  end
+
+  private
+
+  def driver_class
+    Drivers::Registry.fetch(driver)
+  end
 end

@@ -79,7 +79,9 @@ class DeviceApi < RestfulApi
       driver:           device.driver,
       host_interface_id: device.host_interface_id,
       last_polled_at:   device.last_polled_at&.iso8601,
-      current_state:    device.current_state
+      current_state:    device.current_state,
+      inputs:           device.inputs,
+      outputs:          device.outputs
     }
   end
 end

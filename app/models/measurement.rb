@@ -14,6 +14,7 @@ class Measurement < ApplicationRecord
   }
   validates :mode, inclusion: { in: MODES }
   validates :simulation_value, numericality: true, allow_nil: true
+  validate :device_input_is_valid
 
   def simulation?
     mode == "simulation"
@@ -38,6 +39,19 @@ class Measurement < ApplicationRecord
   end
 
   private
+
+  def device_input_is_valid
+    return unless acquisition?
+    return if device.blank? && source_path.blank?
+
+    if device.blank?
+      errors.add(:device, "must be selected with a source path")
+    elsif source_path.blank?
+      errors.add(:source_path, "must be selected with a device")
+    elsif !device.supports_input?(source_path)
+      errors.add(:source_path, "is not an input supported by the selected device")
+    end
+  end
 
   def device_value
     return nil if device.blank? || source_path.blank?

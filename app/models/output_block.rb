@@ -73,15 +73,12 @@ class OutputBlock < ApplicationRecord
   def device_supports_binary_output_channel
     return if device.blank?
 
-    driver_class = Drivers::Registry.find(device.driver)
-    return errors.add(:device, "driver is unknown") unless driver_class
-
-    unless driver_class.instance_methods.include?(:open) && driver_class.instance_methods.include?(:close)
+    binary_outputs = device.outputs.select { |output| output[:value_type] == "boolean" }
+    if binary_outputs.empty?
       errors.add(:device, "driver does not support binary output writes")
-    end
-
-    if driver_class.respond_to?(:channel_count) && channel.present? && channel > driver_class.channel_count
-      errors.add(:channel, "must be between 1 and #{driver_class.channel_count}")
+    elsif channel.present? && !device.supports_binary_output?(channel)
+      channels = binary_outputs.map { |output| output[:channel] }
+      errors.add(:channel, "must be between #{channels.min} and #{channels.max}")
     end
   end
 end

@@ -29,6 +29,11 @@ module Drivers
 
     def self.display_name  = "NT48C32 32-Ch NTC Temperature"
     def self.channel_count = CHANNEL_COUNT
+    def self.inputs
+      CHANNEL_COUNT.times.map do |index|
+        { path: "temperatures[#{index}]", label: "Temperature #{index + 1}", value_type: "number", units: "°C" }
+      end
+    end
 
     # Returns temperature readings for all 32 channels.
     #

@@ -27,6 +27,11 @@ module Drivers
 
     def self.display_name  = "N4DSC08 8-Ch DS18B20 Temperature"
     def self.channel_count = CHANNEL_COUNT
+    def self.inputs
+      CHANNEL_COUNT.times.map do |index|
+        { path: "temperatures[#{index}]", label: "Temperature #{index + 1}", value_type: "number", units: "°C" }
+      end
+    end
 
     # Returns temperature readings for all 8 channels.
     #

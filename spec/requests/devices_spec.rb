@@ -44,7 +44,20 @@ RSpec.describe "Devices API", type: :request do
       "name" => "Relay board",
       "host_interface_id" => host_id,
       "modbus_address" => 3,
-      "driver" => "Drivers::N4D8B08"
+      "driver" => "Drivers::N4D8B08",
+      "inputs" => [
+        { "path" => "inputs[0]", "label" => "Input 1", "value_type" => "boolean", "units" => nil },
+        { "path" => "inputs[1]", "label" => "Input 2", "value_type" => "boolean", "units" => nil },
+        { "path" => "inputs[2]", "label" => "Input 3", "value_type" => "boolean", "units" => nil },
+        { "path" => "inputs[3]", "label" => "Input 4", "value_type" => "boolean", "units" => nil },
+        { "path" => "inputs[4]", "label" => "Input 5", "value_type" => "boolean", "units" => nil },
+        { "path" => "inputs[5]", "label" => "Input 6", "value_type" => "boolean", "units" => nil },
+        { "path" => "inputs[6]", "label" => "Input 7", "value_type" => "boolean", "units" => nil },
+        { "path" => "inputs[7]", "label" => "Input 8", "value_type" => "boolean", "units" => nil }
+      ],
+      "outputs" => (1..8).map { |channel|
+        { "channel" => channel, "label" => "Relay #{channel}", "value_type" => "boolean", "units" => nil }
+      }
     )
 
     patch "/devices/#{device_id}", params: {

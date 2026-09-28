@@ -5,9 +5,11 @@ module Drivers
     def self.fetch(key) = find(key) || raise(ArgumentError, "Unsupported driver #{key}")
     def self.metadata
       all.map do |driver|
+        input_fields = driver.inputs.filter_map { |input| input[:path][/\A\w+/] }.uniq
+        output_fields = driver.outputs.any? ? [ "outputs" ] : []
         { id: driver.name, name: driver.display_name, channel_count: driver.channel_count,
-          fields: driver == N4D8B08 ? %w[inputs outputs] : %w[temperatures],
-          binary_outputs: driver == N4D8B08,
+          fields: input_fields + output_fields,
+          binary_outputs: driver.outputs.any? { |output| output[:value_type] == "boolean" },
           configuration_effects: driver == N4D8B08 ? "Sets inputs and outputs to unrelated mode when normal polling starts." : "None" }
       end
     end
