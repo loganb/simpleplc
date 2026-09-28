@@ -57,13 +57,13 @@ summarized below since that path isn't durable).
   the next deploy.
 
 ### Process supervision
-- The intended service set is three systemd services (`plc_controller-web`,
+- The service set is three systemd services (`plc_controller-web`,
   `plc_controller-poller`, and `plc_controller-logic-runner`), all
-  `Restart=always`, grouped under `plc_controller.target` for convenience. The
-  currently deployed target still contains only web and poller. Versioned
+  `Restart=always`, grouped under `plc_controller.target` for convenience.
+  Versioned
   definitions for the logic runner and updated target live in `config/systemd/`;
-  installing them in `/etc/systemd/system` and running `systemctl daemon-reload`
-  is an explicit future production deployment step.
+  production copies are installed in `/etc/systemd/system` and changes require
+  `systemctl daemon-reload` before restarting the target.
   Run as the existing `logan` user (single-owner box, no separate service
   account) — `logan` is in the `dialout` group for serial port access.
   `Restart=always` matters most for the poller: it's the process actually
@@ -139,3 +139,16 @@ preparation succeeded; both systemd services are active and `/` plus `/up`
 return HTTP 200 over Tailscale. `/devices.json` exposes driver-declared `inputs`
 and `outputs` for both relay boards. Both devices resumed fresh successful polls,
 the interface is online, and no device or output-write errors are reported.
+
+## Logic runner deployed — 2026-09-28
+
+Deployed commit `99f43b7`, installed the versioned
+`plc_controller-logic-runner.service` and updated `plc_controller.target`, ran
+`systemctl daemon-reload`, and restarted the target. Web, poller, logic runner,
+and target are active; all three services report zero restarts and `/up` returns
+HTTP 200. Production's `Heat Control Logic` diagram computed traces at
+23:39:21, 23:39:51, and 23:40:21 UTC, matching its 30-second update period.
+The bus remained online and both relay devices resumed fresh successful polls
+with no connection, device-read, or output-write errors. The deployment's npm
+install reported nine existing audit findings (one low, two moderate, six high);
+they were not changed as part of this backend daemon task.

@@ -166,9 +166,8 @@ implementation proceeded from that confirmation.
 - Added RSpec coverage for scheduling, dynamic changes, failure isolation,
   retry throttling, shutdown, singleton locking, and the handoff into
   `Logic::OutputWriter`.
-- Production services were not installed, restarted, or deployed. The current
-  development Foreman session also needs a restart before it will launch the
-  new Procfile process.
+- Production deployment is recorded below. The current development Foreman
+  session still needs a restart before it will launch the new Procfile process.
 
 Verification on 2026-09-28:
 
@@ -180,3 +179,13 @@ Verification on 2026-09-28:
 - A real PostgreSQL test-database smoke check acquired and released the runner's
   advisory lock successfully.
 - Ruby syntax checks and `git diff --check` pass.
+
+## Production deployment
+
+Deployed commit `99f43b7` on 2026-09-28. Installed the versioned logic-runner
+service and target definitions, reloaded systemd, and restarted
+`plc_controller.target`. Web, poller, logic runner, and target are active with
+zero service restarts; `/up` returns HTTP 200. The production diagram created
+traces at three consecutive 30-second boundaries, and subsequent device polls
+were fresh and successful with no output-write errors. Production deployment
+details are also recorded in `claude/deployment.md`.
