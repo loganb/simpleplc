@@ -22,6 +22,7 @@ mise exec -- <command>
 | Frontend tests | `cd frontend && mise exec -- npm test` (vitest) |
 | Frontend typecheck | `cd frontend && mise exec -- npx tsc --noEmit` |
 | Frontend build | `cd frontend && mise exec -- npm run build` (esbuild → gitignored `dist/`) |
+| Frontend UI screenshot | `cd frontend && mise exec -- node screenshot.mjs <url> <out.png>` (Playwright, not system `chromium` — see below) |
 | Everything at once (api + frontend + poller) | `mise exec -- bin/dev` (foreman, `Procfile.dev`) |
 | Poller alone | `mise exec -- bin/poller` |
 
@@ -38,6 +39,45 @@ Notes:
   separated by database name — there is no container to start.
 - The Pi is the real HVAC controller. The poller writes to physical relays, so
   `bin/dev` and `bin/poller` drive hardware. See `claude/deployment.md`.
+
+## Testing the UI with a real browser
+
+Logan usually already has `bin/dev` (foreman) running in his own console, with
+`bin/poller` driving the real relays. **Never start a second `bin/poller`** —
+two pollers would both write to the same hardware. If you need a live server
+for your own testing, run just the Rails half on a different port and skip
+the poller:
+
+```sh
+export PATH="$HOME/.local/bin:$PATH"
+mise exec -- bin/rails server -p 3001 -d   # shares the same dev Postgres DB
+```
+
+**Do not use the system `chromium` CLI** (`chromium --headless --dump-dom`,
+`--screenshot`, etc.). On this Pi that package boots the full desktop browser
+— extensions, top-chrome WebUI, Segmentation Platform, Optimization Guide —
+even in headless mode, and the one-shot CLI flags hang forever waiting on
+that machinery regardless of `--no-sandbox`/`--disable-gpu`/timeouts. This
+isn't a sandboxing or networking problem (loopback and internet both work
+fine for normal processes) — it's specific to those CLI flags on this
+Chromium build. Don't spend time re-discovering this; use Playwright
+instead, which bundles its own known-good headless Chromium and is already a
+frontend devDependency:
+
+```sh
+cd frontend && mise exec -- node screenshot.mjs http://127.0.0.1:3001 /tmp/shot.png
+```
+
+`frontend/screenshot.mjs` is a ~15-line script — read it before writing a
+one-off Playwright script of your own, and prefer extending it over hand-
+rolling raw CDP calls (fragile: e.g. the `Page.navigate` CDP command hangs
+on this Chromium build even though Playwright's own navigation works fine).
+Then view the PNG with the Read tool.
+
+If Playwright's browser isn't installed yet (`~/.cache/ms-playwright` is
+empty), run `npx playwright install chromium` once — it downloads a browser
+over the network, so don't do it silently inside a bigger task without
+mentioning it.
 
 ## Commit Messages
 

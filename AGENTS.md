@@ -1,5 +1,41 @@
 # Agent Coding Instructions
 
+## Testing the UI with a real browser
+
+Logan usually already has `bin/dev` (foreman) running in his own console, with
+`bin/poller` driving the real relays. **Never start a second `bin/poller`** —
+two pollers would both write to the same hardware. If you need a live server
+for your own testing, run just the Rails half on a different port and skip
+the poller:
+
+```sh
+export PATH="$HOME/.local/bin:$PATH"
+mise exec -- bin/rails server -p 3001 -d   # shares the same dev Postgres DB
+```
+
+**Do not use the system `chromium` CLI** (`chromium --headless --dump-dom`,
+`--screenshot`, etc.) — it hangs indefinitely on this Pi regardless of flags
+(`--no-sandbox`, `--disable-gpu`, timeouts). That package boots the full
+desktop browser (extensions, WebUI, background ML services) even headless,
+and the one-shot CLI flags never return. It's not a sandboxing or networking
+issue — loopback and internet both work fine for normal processes — it's
+specific to those CLI flags on this Chromium build. Don't re-discover this by
+trial and error. Use Playwright instead (a `frontend` devDependency, bundles
+its own known-good headless Chromium):
+
+```sh
+cd frontend && mise exec -- node screenshot.mjs http://127.0.0.1:3001 /tmp/shot.png
+```
+
+Read `frontend/screenshot.mjs` (~15 lines) before writing your own Playwright
+script — extend it rather than hand-rolling raw CDP calls, which have their
+own rough edges here (e.g. the `Page.navigate` CDP command hangs on this
+Chromium build even though Playwright's own navigation works fine).
+
+If Playwright's browser isn't installed yet (`~/.cache/ms-playwright` is
+empty), `npx playwright install chromium` fetches it — that's a network call,
+so don't run it silently inside a larger task.
+
 ## Notes Directory
 
 - Maintain a `claude/` subdirectory for working notes.
