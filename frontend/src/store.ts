@@ -70,6 +70,13 @@ export interface DriverFields {
   binary_outputs: boolean; configuration_effects: string;
   inputs: DeviceInput[]; outputs: DeviceOutput[];
 }
+
+/** Read-only catalog of supported drivers. `id` is the stored driver key, e.g. "Drivers::N4D8B08". */
+export const Driver: ModelDefinition<DriverFields> = {
+  name: 'driver',
+  inflections: { plural: 'drivers', title: 'Driver' },
+  singleton: false,
+};
 export interface SerialProfile { baud_rate: number; data_bits: number; stop_bits: number; parity: string }
 export interface DriverSupport { driver: string; support: 'yes' | 'no' | 'maybe'; reason: string; evidence: unknown[] }
 export interface ScanDevice { address: number; profile_index: number; profile: SerialProfile; observed_at: string; driver_support: DriverSupport[] }

@@ -50,7 +50,23 @@ the poller:
 
 ```sh
 export PATH="$HOME/.local/bin:$PATH"
-mise exec -- bin/rails server -p 3001 -d   # shares the same dev Postgres DB
+mise exec -- bin/rails server -p 3002 -b 127.0.0.1 -d   # shares the same dev Postgres DB
+```
+
+**Port 3001 is production** (the systemd `plc_controller-web` service, with
+its own poller — see `claude/deployment.md`). Never test against it or bind
+to it. Use a spare port such as 3002, and stop the server when you're done
+(`kill $(cat tmp/pids/server.pid)`).
+
+A dev Rails server serves only the API; it doesn't serve the frontend. To load
+the UI against it, build the frontend, point a copy of `dist/` at your server,
+and serve that copy statically (dev CORS allows any origin):
+
+```sh
+cd frontend && mise exec -- npm run build
+mkdir -p /tmp/ui && cp -r dist/. /tmp/ui/
+sed -i 's|window.PLC_API_BASE = ""|window.PLC_API_BASE = "http://127.0.0.1:3002"|' /tmp/ui/index.html
+(cd /tmp/ui && python3 -m http.server 5199 --bind 127.0.0.1 &)
 ```
 
 **Do not use the system `chromium` CLI** (`chromium --headless --dump-dom`,
@@ -65,7 +81,7 @@ instead, which bundles its own known-good headless Chromium and is already a
 frontend devDependency:
 
 ```sh
-cd frontend && mise exec -- node screenshot.mjs http://127.0.0.1:3001 /tmp/shot.png
+cd frontend && mise exec -- node screenshot.mjs http://127.0.0.1:5199 /tmp/shot.png
 ```
 
 `frontend/screenshot.mjs` is a ~15-line script — read it before writing a
@@ -78,6 +94,19 @@ If Playwright's browser isn't installed yet (`~/.cache/ms-playwright` is
 empty), run `npx playwright install chromium` once — it downloads a browser
 over the network, so don't do it silently inside a bigger task without
 mentioning it.
+
+## Frontend Server I/O
+
+All frontend I/O to the server goes through `RestfulModelStore` (`Store` in
+`frontend/src/store.ts`): `fetch`, `queryFor`, `create`, `patch`, `destroy`.
+Don't import axios or `AxiosClient` into components. If the store can't do
+something, extend the store rather than going around it.
+
+The API has no actions. State changes are a **create** or a **patch** of a
+resource — never a verb endpoint like `POST /things/:id/do_something`. Model
+an "action" as a field mutation (e.g. a flag) or as creating a different
+record. The Devices tab still has legacy direct calls and verb endpoints being
+migrated; see `claude/store-io-cleanup.md`. Don't add more.
 
 ## Commit Messages
 

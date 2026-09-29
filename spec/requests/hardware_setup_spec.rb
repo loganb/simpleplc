@@ -15,6 +15,14 @@ RSpec.describe "Hardware setup API", type: :request do
     expect(response).to have_http_status(:unprocessable_entity)
   end
 
+  it "shows one driver by its opaque id, as the frontend store fetches it" do
+    get "/drivers/#{ERB::Util.url_encode("Drivers::N4D8B08")}"
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.fetch("drivers").map { |d| d.fetch("id") }).to eq([ "Drivers::N4D8B08" ])
+    get "/drivers/Object"
+    expect(response).to have_http_status(:not_found)
+  end
+
   it "protects configuration edits without conflicting with observations" do
     version = revision
     interface.report_connection(online: false)

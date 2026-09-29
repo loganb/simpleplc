@@ -35,6 +35,7 @@ HVAC PLC controller application — a web interface for monitoring and controlli
 - `lib/restful_api_controller.rb` — controller mixin providing REST actions.
 - `frontend/src/App.tsx` — main Preact dashboard component.
 - `frontend/src/store.ts` — RestfulModelStore instance + model definitions.
+- **Frontend I/O rule:** all server I/O goes through RestfulModelStore, and the API has no actions — only create/patch (an "action" becomes a field mutation or a new record). Devices-tab legacy direct axios calls and verb endpoints (`scan`, `cancel_scan`, `preview`, `apply`, `impact`) are being migrated in two phases; see `claude/store-io-cleanup.md`.
 - `frontend/src/lib/` — RestfulModelStore, DataLoader2, TreeStore, RateLimiter, MemoryStore (ported from BioTrack). RestfulModelStore has two-generation record/query caches; `query_version` is the separate per-model query invalidation counter.
 - `frontend/build.mjs` — esbuild config + Tailwind CLI subprocess + `public/` → `dist/` copy. Dev server on port 5174 serving `dist/`; static build writes to `dist/`.
 

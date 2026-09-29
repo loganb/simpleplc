@@ -1,9 +1,13 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/preact';
+import { AxiosClient, Store } from '../../store';
 import type { DeviceFields, HostInterfaceFields } from '../../store';
-const api = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() }));
-vi.mock('../../store', () => ({ AxiosClient: api }));
+// Stub the HTTP client the Store itself uses, so store reads and the remaining direct calls both hit these mocks.
+const api = {
+  get: vi.spyOn(AxiosClient, 'get'), post: vi.spyOn(AxiosClient, 'post'),
+  patch: vi.spyOn(AxiosClient, 'patch'), delete: vi.spyOn(AxiosClient, 'delete'),
+};
 import { InterfaceEditor } from './HardwareForms';
 import { DeviceForm } from './DeviceForm';
 import { DeviceScanPanel } from './DeviceScanPanel';
@@ -23,9 +27,16 @@ const drivers = [
 const relayDevice = { id: 3, name: 'Relay', host_interface_id: 1, modbus_address: 1, driver: 'relay', configuration_revision: 7,
   io_labels: { inputs: { 'inputs[0]': 'Boiler enable' }, outputs: {} }, inputs: drivers[0].inputs, outputs: drivers[0].outputs };
 const impact = { devices: [], measurements: [], output_blocks: [] };
+let current = { bus, relayDevice };
 beforeEach(() => {
-  vi.resetAllMocks();
-  api.get.mockImplementation(async (url: string) => ({ data: url === '/drivers' ? { drivers } : url === '/devices/3' ? { devices: [relayDevice] } : url === '/host_ports' ? { host_ports: [] } : url.endsWith('/impact') ? impact : { host_interfaces: [bus] } }));
+  Store.models = {}; // Fresh caches per test; models are recreated lazily by Store.m().
+  current = { bus, relayDevice };
+  for (const method of [api.post, api.patch, api.delete]) method.mockReset().mockResolvedValue({ data: {} });
+  api.get.mockReset().mockImplementation(async (url: string) => ({ data:
+    url.startsWith('/drivers.json') ? { drivers, query: drivers.map(d => d.id) } :
+    url === '/devices/3' ? { devices: [current.relayDevice] } :
+    url.startsWith('/host_ports.json') ? { host_ports: [], query: [] } :
+    url.endsWith('/impact') ? impact : { host_interfaces: [current.bus] } }));
 });
 afterEach(cleanup);
 
@@ -50,7 +61,7 @@ describe('hardware setup components', () => {
 
     const dialog = await screen.findByRole('dialog', { name: 'Edit Device' });
     expect(dialog).toBeTruthy();
-    expect((screen.getByLabelText('Custom label for Input 1') as HTMLInputElement).value).toBe('Boiler enable');
+    expect((await screen.findByLabelText('Custom label for Input 1') as HTMLInputElement).value).toBe('Boiler enable');
     expect((screen.getByLabelText('Custom label for Relay 1') as HTMLInputElement).placeholder).toBe('Relay 1');
 
     fireEvent.input(screen.getByLabelText('Custom label for Input 1'), { target: { value: '' } });
@@ -79,6 +90,22 @@ describe('hardware setup components', () => {
     expect(close).not.toHaveBeenCalled();
   });
 
+  it('compares a conflicted draft with the store record and keeps the draft against the shown revision', async () => {
+    render(<InterfaceEditor editId={1} onClose={vi.fn()} onRefresh={vi.fn()} />);
+    const name = await screen.findByLabelText('Name');
+    fireEvent.input(name, { target: { value: 'My draft' } });
+    api.patch.mockRejectedValueOnce({ response: { data: { errors: { base: ['Configuration changed'] } } } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    current.bus = { ...bus, name: 'Theirs', configuration_revision: 5 };
+    fireEvent.click(await screen.findByRole('button', { name: 'Reload for comparison' }));
+    await screen.findByText(/"name": "Theirs"/);
+    fireEvent.click(screen.getByRole('button', { name: 'Keep my draft against this revision' }));
+    expect((name as HTMLInputElement).value).toBe('My draft');
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(api.patch).toHaveBeenLastCalledWith('/host_interfaces/1',
+      { host_interface: expect.objectContaining({ name: 'My draft', configuration_revision: 5 }) }));
+  });
+
   it('waits for deletion and keeps the form visible on failure', async () => {
     const close = vi.fn();
     render(<InterfaceEditor editId={1} onClose={close} onRefresh={vi.fn()} />);
@@ -105,6 +132,22 @@ describe('hardware setup components', () => {
     await screen.findByRole('button', { name: 'Apply configuration' });
     expect(api.post).toHaveBeenCalledWith('/host_interfaces/1/preview', expect.objectContaining({ devices: [expect.objectContaining({ driver: 'relay', scan_request_id: 'scan-a' })] }));
     expect(api.post.mock.calls.some(c => c[0].endsWith('/apply'))).toBe(false);
+  });
+
+  it('compares a device draft with the live saved devices and previews against the shown revision', async () => {
+    const saved = { ...relayDevice, name: 'Saved relay' } as unknown as DeviceFields;
+    const view = render(<DeviceScanPanel iface={bus} devices={[saved]} onRefresh={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Edit device list' }));
+    const changed = { ...bus, configuration_revision: 9 };
+    view.rerender(<DeviceScanPanel iface={changed} devices={[{ ...saved, name: 'Renamed elsewhere' }]} onRefresh={vi.fn()} />);
+    await screen.findByText(/Configuration changed since this draft began/);
+    fireEvent.click(screen.getByRole('button', { name: 'Reload for comparison' }));
+    await screen.findByText('#3 Renamed elsewhere, address 1');
+    fireEvent.click(screen.getByRole('button', { name: 'Keep draft against this revision' }));
+    api.post.mockResolvedValue({ data: { devices: [], deleted_ids: [], impact } });
+    fireEvent.click(screen.getByRole('button', { name: 'Preview changes' }));
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith('/host_interfaces/1/preview',
+      expect.objectContaining({ configuration_revision: 9, devices: [expect.objectContaining({ name: 'Saved relay' })] })));
   });
 
   it('tracks fresh polls after enabling rather than counting old samples', async () => {

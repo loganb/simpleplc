@@ -1,7 +1,9 @@
-import { useEffect, useRef, useState } from 'preact/hooks';
-import { AxiosClient } from '../../store';
+import { useRef, useState } from 'preact/hooks';
+import type { ExistingRecord } from '../../lib/RestfulModelStore';
+import { AxiosClient, Device, HostInterface, Store } from '../../store';
 import type { DeviceFields, DriverFields, HostInterfaceFields, ScanDevice } from '../../store';
 import { adoptResult, buttonClass as btn, deviceDraft, errorMessage, inputClass as input, scanActive, sortedSupport } from './hardware';
+import { useDrivers } from './useDrivers';
 import type { DeviceDraft } from './hardware';
 import { ImpactView } from './HardwareForms';
 import type { Impact } from './HardwareForms';
@@ -9,7 +11,7 @@ const token = () => `hardware-${Date.now()}-${Math.random().toString(36).slice(2
 interface Preview { devices: DeviceDraft[]; deleted_ids: number[]; impact: Impact }
 
 export function DeviceScanPanel({ iface, devices, onRefresh }: { iface: HostInterfaceFields; devices: DeviceFields[]; onRefresh: () => void }) {
-  const [drivers, setDrivers] = useState<DriverFields[]>([]);
+  const drivers = useDrivers();
   const [range, setRange] = useState({ first: 1, last: 247 });
   const [bauds, setBauds] = useState(String(iface.baud_rate));
   const [busy, setBusy] = useState(false);
@@ -18,11 +20,12 @@ export function DeviceScanPanel({ iface, devices, onRefresh }: { iface: HostInte
   const [revision, setRevision] = useState(iface.configuration_revision);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [previewRequest, setPreviewRequest] = useState<object | null>(null);
-  const [current, setCurrent] = useState<{ rows: DeviceDraft[]; revision: number } | null>(null);
+  // Comparison shows the live saved configuration, so the revision kept is the one on screen.
+  const [comparing, setComparing] = useState(false);
+  const current = comparing ? { revision: iface.configuration_revision, rows: devices.map(deviceDraft) } : null;
   const scanToken = useRef<string | null>(null);
   const active = scanActive(iface.scan_state);
   const changed = draft !== null && revision !== iface.configuration_revision;
-  useEffect(() => { AxiosClient.get('/drivers').then(r => setDrivers(r.data.drivers)).catch(e => setError(errorMessage(e))); }, []);
   const run = async (action: () => Promise<void>) => {
     setBusy(true); setError('');
     try { await action(); } catch (e) { setError(errorMessage(e)); } finally { setBusy(false); }
@@ -80,15 +83,16 @@ export function DeviceScanPanel({ iface, devices, onRefresh }: { iface: HostInte
             const r = await AxiosClient.post(`/host_interfaces/${iface.id}/preview`, request);
             setPreview(r.data); setPreviewRequest(request);
           })}>Preview changes</button>
-          <button class={btn} disabled={busy} onClick={() => run(async () => {
-            const [b, d] = await Promise.all([AxiosClient.get(`/host_interfaces/${iface.id}`), AxiosClient.get('/devices', { params: { host_interface_id: iface.id } })]);
-            setCurrent({ revision: b.data.host_interfaces[0].configuration_revision, rows: (d.data.devices || []).map(deviceDraft) });
-          })}>Reload for comparison</button>
-          <button class={btn} disabled={busy} onClick={() => { setDraft(null); setPreview(null); setCurrent(null); setError(''); }}>Discard draft</button>
+          <button class={btn} disabled={busy} onClick={() => {
+            Store.m(HostInterface).fetch(iface.id, true);
+            Store.m(Device).queryFor(null, {}, true);
+            setComparing(true);
+          }}>Reload for comparison</button>
+          <button class={btn} disabled={busy} onClick={() => { setDraft(null); setPreview(null); setComparing(false); setError(''); }}>Discard draft</button>
         </div>
         {current && <div class="space-y-2"><p>Current saved devices:</p>{current.rows.map(r => <p class="text-sm">#{r.id} {r.name}, address {r.modbus_address}</p>)}
-          <button class={btn} onClick={() => { setRevision(current.revision); setCurrent(null); setPreview(null); }}>Keep draft against this revision</button>
-          <button class={btn} onClick={() => { edit(current.rows); setRevision(current.revision); setCurrent(null); }}>Use saved devices</button>
+          <button class={btn} onClick={() => { setRevision(current.revision); setComparing(false); setPreview(null); }}>Keep draft against this revision</button>
+          <button class={btn} onClick={() => { edit(current.rows); setRevision(current.revision); setComparing(false); }}>Use saved devices</button>
         </div>}
         {preview && <div class="rounded border border-border p-3 space-y-2">
           <h5 class="font-semibold">Ready to apply</h5>
@@ -105,7 +109,7 @@ export function DeviceScanPanel({ iface, devices, onRefresh }: { iface: HostInte
   </div>;
 }
 
-function ScanResult({ result, groupId, drivers, rows, disabled, onChoose }: { result: ScanDevice; groupId: number; drivers: DriverFields[]; rows: DeviceDraft[]; disabled: boolean; onChoose: (driver: string, id?: number) => void }) {
+function ScanResult({ result, groupId, drivers, rows, disabled, onChoose }: { result: ScanDevice; groupId: number; drivers: ExistingRecord<DriverFields>[]; rows: DeviceDraft[]; disabled: boolean; onChoose: (driver: string, id?: number) => void }) {
   const [driver, setDriver] = useState('');
   const [match, setMatch] = useState('new');
   return <section class="rounded border border-border p-3 space-y-2">
