@@ -91,5 +91,11 @@ The user approved implementation with “Okay, let's go” on 2026-09-29. The us
 - LogicDiagram Measurement sources continue to save paths while displaying effective input labels. Output editing now enumerates the selected Device's outputs and saves the numeric channel; Measurement and Output cards resolve saved identities back to effective labels.
 - OutputBlockForm was split into its own component to keep the enumerated-output behavior directly testable.
 - The implementation improved on the initial draft by exposing driver catalogs and allowing labels during Device creation rather than requiring a save-and-reopen cycle.
-- Development schema migrated. Production was not migrated or deployed.
-- Verification: 202 RSpec examples, 37 Vitest tests, TypeScript check, frontend production build, and `git diff --check` passed. A browser smoke check was not run because no local Rails or frontend server was listening.
+- Development and production schemas migrated. Production deployed at `cf38150` on 2026-09-29; all services and HTTP health passed, and both relay boards resumed clean polling.
+- Verification: 202 RSpec examples, 37 Vitest tests, TypeScript check, frontend production build, and `git diff --check` passed. After deployment, Playwright loaded the production dashboard and the Device edit modal without console/page errors; visual inspection confirmed the modal overlay and paired input/output label fields render correctly.
+
+## Production deployment — 2026-09-29
+
+Committed as `cf38150` and deployed that SHA directly to the production worktree. The JSONB migration and frontend build succeeded. `plc_controller.target`, web, poller, and logic runner are active; `/up`, `/drivers.json`, and `/devices.json` return HTTP 200. The driver API exposes default input/output catalogs, Device records expose empty `io_labels` plus effective catalogs, the bus is online, and both relay boards produced newer successful polls after the restart with no read or output-write errors. Production labels were not changed during verification.
+
+The environment rejected pushing repository contents to `origin/main` without a separate explicit approval, so this deployment currently references a local commit that has not been pushed.

@@ -99,5 +99,7 @@ for every driver-declared input and output. Overrides live in one `io_labels`
 JSONB column; API catalogs merge them over driver defaults. LogicDiagram forms
 and cards display effective labels while Measurements and OutputBlocks continue
 to persist stable paths and numeric channels. Label-only edits do not advance the
-parent bus revision or touch hardware. Development is migrated; production is
-unchanged. See `claude/device-io-labels.md` for design and verification.
+parent bus revision or touch hardware. Development and production are migrated;
+production is deployed at `cf38150`, with all services healthy and both relay
+boards polling cleanly after restart. See `claude/device-io-labels.md` for design
+and verification.

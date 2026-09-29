@@ -152,3 +152,22 @@ The bus remained online and both relay devices resumed fresh successful polls
 with no connection, device-read, or output-write errors. The deployment's npm
 install reported nine existing audit findings (one low, two moderate, six high);
 they were not changed as part of this backend daemon task.
+
+## Device I/O labels deployed — 2026-09-29
+
+Committed and deployed `cf38150` directly from the shared local Git object
+database. The `devices.io_labels` JSONB migration and frontend build succeeded.
+The target, web, poller, and logic-runner services are active; `/up`,
+`/drivers.json`, and `/devices.json` return HTTP 200. Driver metadata exposes
+default input/output catalogs and both Device records expose `io_labels` plus
+effective catalogs. The relay bus is online, and devices 3 and 4 produced newer
+successful polls after restart with no device or output-write errors. No
+production labels were changed during verification.
+
+Playwright smoke checks loaded both the production dashboard and a deep-linked
+Device edit modal without console or page errors. The modal overlay, driver
+details, and paired input/output label fields rendered correctly.
+
+The push to `origin/main` was rejected by the execution environment because it
+requires separate explicit approval for repository-source egress. Production is
+therefore at local commit `cf38150` while the remote branch remains unchanged.
