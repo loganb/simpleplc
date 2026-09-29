@@ -229,3 +229,14 @@ Implemented as planned, with these notes:
 8. Tests, typecheck, build, rspec; screenshot the Devices tab against a dev
    server on a spare port (3001 is production).
 9. Docs updates.
+
+## Production deployment — 2026-09-29
+
+Phases 1 and 2 (`0e1e7fb`, `f458aab`) were deployed together. Production
+services were stopped first so the old poller never saw the dropped column;
+then the commits were pushed and `bin/deploy` ran. Migration
+`20260929100000_simplify_hardware_setup` applied cleanly. Web, poller and
+logic runner are active with zero restarts, and `/up` returns 200.
+`POST …/scan` now 404s, and `GET /drivers/:id` works. Interface 1 is online,
+and relay devices 3 and 4 resumed polling (`ok`, no errors). The production UI
+loads without console errors.
