@@ -8,6 +8,9 @@ RSpec.describe "Hardware setup API", type: :request do
     get "/drivers"
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body.fetch("drivers").size).to eq(3)
+    relay = response.parsed_body.fetch("drivers").find { |driver| driver.fetch("id") == "Drivers::N4D8B08" }
+    expect(relay.fetch("inputs").first).to include("path" => "inputs[0]", "label" => "Input 1")
+    expect(relay.fetch("outputs").first).to include("channel" => 1, "label" => "Relay 1")
     post "/devices", params: { device: { host_interface_id: interface.id, name: "Bad", driver: "Object", modbus_address: 1 } }
     expect(response).to have_http_status(:unprocessable_entity)
   end

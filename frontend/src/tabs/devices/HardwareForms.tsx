@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import type { ComponentChildren } from 'preact';
 import { AxiosClient } from '../../store';
-import type { DriverFields, HostInterfaceFields, HostPortFields } from '../../store';
+import type { DeviceIoLabels, DriverFields, HostInterfaceFields, HostPortFields } from '../../store';
 import { appTree } from '../../uxTree';
 import { buttonClass as btn, inputClass as input, errorMessage } from './hardware';
 
@@ -16,10 +16,11 @@ export function ImpactView({ impact }: { impact: Impact }) {
   </div>;
 }
 
-type Fields = Record<string, string | number | boolean | null>;
-function Editor({ resource, singular, editId, defaults, children, onClose, onRefresh }: {
+type Fields = Record<string, unknown>;
+function Editor({ resource, singular, editId, defaults, prepare, children, onClose, onRefresh }: {
   resource: string; singular: string; editId: number | null; defaults: Fields;
-  children: (fields: Fields, change: (key: string, value: string | number | boolean) => void) => ComponentChildren;
+  prepare?: (fields: Fields) => Fields;
+  children: (fields: Fields, change: (key: string, value: unknown) => void) => ComponentChildren;
   onClose: () => void; onRefresh: () => void;
 }) {
   const [fields, setFields] = useState(defaults);
@@ -42,8 +43,9 @@ function Editor({ resource, singular, editId, defaults, children, onClose, onRef
     try { await action(); } catch (e) { setError(errorMessage(e)); } finally { setBusy(false); }
   };
   const save = () => run(async () => {
-    if (editId === null) await AxiosClient.post(`/${resource}`, { [singular]: fields });
-    else await AxiosClient.patch(url, { [singular]: fields });
+    const payload = prepare ? prepare(fields) : fields;
+    if (editId === null) await AxiosClient.post(`/${resource}`, { [singular]: payload });
+    else await AxiosClient.patch(url, { [singular]: payload });
     onRefresh(); onClose();
   });
   return <section class="rounded border border-border bg-surface-alt p-4 space-y-3">
@@ -59,7 +61,7 @@ function Editor({ resource, singular, editId, defaults, children, onClose, onRef
       <button class={btn} onClick={() => { setFields({ ...fields, configuration_revision: latest.configuration_revision }); setLatest(null); setError(''); }}>Keep my draft against this revision</button>
       <button class={btn} onClick={() => { setFields(latest); setLatest(null); setError(''); }}>Use current configuration</button>
     </div>}
-    {!loaded ? <p>Loading…</p> : <fieldset disabled={busy} class="space-y-3">{children(fields, (key, value) => { setFields({ ...fields, [key]: value }); setImpact(null); })}</fieldset>}
+    {!loaded ? <p>Loading…</p> : <fieldset disabled={busy} class="space-y-3">{children(fields, (key, value) => { setFields(current => ({ ...current, [key]: value })); setImpact(null); })}</fieldset>}
     <div class="flex gap-2">
       <button class={btn} disabled={busy || !loaded} onClick={save}>{busy ? 'Working…' : 'Save'}</button>
       <button class={btn} disabled={busy} onClick={onClose}>Cancel</button>
@@ -116,7 +118,22 @@ export function DeviceEditor({ editId, interfaces, onClose, onRefresh }: { editI
   const [drivers, setDrivers] = useState<DriverFields[]>([]);
   const [error, setError] = useState('');
   useEffect(() => { AxiosClient.get('/drivers').then(r => setDrivers(r.data.drivers)).catch(e => setError(errorMessage(e))); }, []);
-  return <Editor resource="devices" singular="device" editId={editId} defaults={{ name: '', host_interface_id: interfaces[0]?.id || '', modbus_address: 1, driver: '' }} onClose={onClose} onRefresh={onRefresh}>
+  const labelsFor = (value: unknown): DeviceIoLabels => value && typeof value === 'object' ? value as DeviceIoLabels : {};
+  const compactLabels = (value: unknown): DeviceIoLabels => {
+    const labels = labelsFor(value);
+    return (['inputs', 'outputs'] as const).reduce<DeviceIoLabels>((result, section) => {
+      const entries = Object.entries(labels[section] ?? {}).flatMap(([key, label]) => {
+        const trimmed = label.trim();
+        return trimmed ? [[key, trimmed] as [string, string]] : [];
+      });
+      if (entries.length) result[section] = Object.fromEntries(entries);
+      return result;
+    }, {});
+  };
+  const prepare = (fields: Fields) => ({ ...fields, io_labels: compactLabels(fields.io_labels) });
+  return <Editor resource="devices" singular="device" editId={editId}
+    defaults={{ name: '', host_interface_id: interfaces[0]?.id || '', modbus_address: 1, driver: '', io_labels: {} }}
+    prepare={prepare} onClose={onClose} onRefresh={onRefresh}>
     {(f, change) => <>
       <p class="text-sm text-text-muted">For discovered hardware, select a driver from its scan results. Manual setup has no compatibility evidence.</p>
       {error && <p role="alert" class="text-error">{error}</p>}
@@ -125,10 +142,48 @@ export function DeviceEditor({ editId, interfaces, onClose, onRefresh }: { editI
         <option value="">Select interface</option>{interfaces.map(i => <option value={i.id}>{i.name} — {i.port}</option>)}
       </select></label>
       <label class="block">Address<input type="number" min="1" max="247" class={input} value={Number(f.modbus_address)} onInput={e => change('modbus_address', Number(e.currentTarget.value))} /></label>
-      <label class="block">Driver<select class={input} value={String(f.driver)} onChange={e => change('driver', e.currentTarget.value)}>
+      <label class="block">Driver<select class={input} value={String(f.driver)} onChange={e => {
+        const driver = drivers.find(candidate => candidate.id === e.currentTarget.value);
+        const labels = labelsFor(f.io_labels);
+        const allowedInputs = new Set(driver?.inputs.map(item => item.path) ?? []);
+        const allowedOutputs = new Set(driver?.outputs.map(item => String(item.channel)) ?? []);
+        change('driver', e.currentTarget.value);
+        change('io_labels', {
+          inputs: Object.fromEntries(Object.entries(labels.inputs ?? {}).filter(([key]) => allowedInputs.has(key))),
+          outputs: Object.fromEntries(Object.entries(labels.outputs ?? {}).filter(([key]) => allowedOutputs.has(key))),
+        });
+      }}>
         <option value="">Select driver</option>{drivers.map(d => <option value={d.id}>{d.name}</option>)}
       </select></label>
       {drivers.filter(d => d.id === f.driver).map(d => <p class="text-sm text-text-muted">{d.channel_count} channels · {d.fields.join(', ')}. Configuration: {d.configuration_effects}</p>)}
+      {drivers.filter(d => d.id === f.driver).map(driver => {
+        const labels = labelsFor(f.io_labels);
+        const changeLabel = (section: 'inputs' | 'outputs', key: string, value: string) => change('io_labels', {
+          ...labels,
+          [section]: { ...(labels[section] ?? {}), [key]: value },
+        });
+        return <div key={driver.id} class="grid gap-5 border-t border-border pt-4 md:grid-cols-2">
+          <section class="space-y-2">
+            <h4 class="font-semibold">Inputs</h4>
+            {driver.inputs.length === 0 ? <p class="text-sm text-text-muted">This driver has no inputs.</p> : driver.inputs.map(item => <label key={item.path} class="block text-sm">
+              <span class="flex justify-between gap-2"><span>{item.label}</span><code class="text-xs text-text-muted">{item.path}</code></span>
+              <input class={input} aria-label={`Custom label for ${item.label}`} placeholder={item.label}
+                value={labels.inputs?.[item.path] ?? ''} onInput={event => changeLabel('inputs', item.path, event.currentTarget.value)} />
+            </label>)}
+          </section>
+          <section class="space-y-2">
+            <h4 class="font-semibold">Outputs</h4>
+            {driver.outputs.length === 0 ? <p class="text-sm text-text-muted">This driver has no outputs.</p> : driver.outputs.map(item => {
+              const key = String(item.channel);
+              return <label key={key} class="block text-sm">
+                <span class="flex justify-between gap-2"><span>{item.label}</span><code class="text-xs text-text-muted">Channel {item.channel}</code></span>
+                <input class={input} aria-label={`Custom label for ${item.label}`} placeholder={item.label}
+                  value={labels.outputs?.[key] ?? ''} onInput={event => changeLabel('outputs', key, event.currentTarget.value)} />
+              </label>;
+            })}
+          </section>
+        </div>;
+      })}
     </>}
   </Editor>;
 }

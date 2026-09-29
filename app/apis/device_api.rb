@@ -10,7 +10,7 @@ class DeviceApi < RestfulApi
   def can_destroy(device) = true
 
   def create_params(params)
-    params.require(:device).permit(:name, :host_interface_id, :modbus_address, :driver)
+    params.require(:device).permit(:name, :host_interface_id, :modbus_address, :driver, io_labels: {})
   end
 
   def create(params)
@@ -80,6 +80,7 @@ class DeviceApi < RestfulApi
       host_interface_id: device.host_interface_id,
       last_polled_at:   device.last_polled_at&.iso8601,
       current_state:    device.current_state,
+      io_labels:        device.io_labels,
       inputs:           device.inputs,
       outputs:          device.outputs
     }

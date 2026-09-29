@@ -35,8 +35,14 @@ export interface DeviceFields {
     error: string | null;
     data: Record<string, unknown>;
   } | null;
+  io_labels: DeviceIoLabels;
   inputs: DeviceInput[];
   outputs: DeviceOutput[];
+}
+
+export interface DeviceIoLabels {
+  inputs?: Record<string, string>;
+  outputs?: Record<string, string>;
 }
 
 export interface DeviceInput {
@@ -62,6 +68,7 @@ export const Device: ModelDefinition<DeviceFields> = {
 export interface DriverFields {
   id: string; name: string; channel_count: number; fields: string[];
   binary_outputs: boolean; configuration_effects: string;
+  inputs: DeviceInput[]; outputs: DeviceOutput[];
 }
 export interface SerialProfile { baud_rate: number; data_bits: number; stop_bits: number; parity: string }
 export interface DriverSupport { driver: string; support: 'yes' | 'no' | 'maybe'; reason: string; evidence: unknown[] }

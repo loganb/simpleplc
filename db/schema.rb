@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_26_000000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_29_000000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -20,6 +20,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_26_000000) do
     t.jsonb "current_state"
     t.string "driver", null: false
     t.bigint "host_interface_id", null: false
+    t.jsonb "io_labels", default: {}, null: false
     t.datetime "last_polled_at"
     t.integer "lock_version", default: 0, null: false
     t.integer "modbus_address", null: false

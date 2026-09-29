@@ -77,6 +77,36 @@ RSpec.describe "Devices API", type: :request do
     )
   end
 
+  it "updates labels on a live device and returns effective catalogs" do
+    interface = HostInterface.create!(name: "Relay Bus", port: "/dev/missing", enabled: true)
+    device = Device.create!(
+      host_interface: interface,
+      name: "Relay board",
+      driver: "Drivers::N4D8B08",
+      modbus_address: 1
+    )
+
+    patch "/devices/#{device.id}", params: {
+      device: {
+        configuration_revision: device.configuration_revision,
+        io_labels: {
+          inputs: { "inputs[0]" => "Boiler enable" },
+          outputs: { "1" => "Supply fan" }
+        }
+      }
+    }, as: :json
+
+    expect(response).to have_http_status(:ok)
+    record = response.parsed_body.fetch("devices").first
+    expect(record.fetch("io_labels")).to eq(
+      "inputs" => { "inputs[0]" => "Boiler enable" },
+      "outputs" => { "1" => "Supply fan" }
+    )
+    expect(record.fetch("inputs").first.fetch("label")).to eq("Boiler enable")
+    expect(record.fetch("outputs").first.fetch("label")).to eq("Supply fan")
+    expect(interface.reload.enabled).to be(true)
+  end
+
   describe "enabling and disabling a bus" do
     let(:interface) { HostInterface.create!(name: "Relay Bus", port: "/dev/ttyUSB9") }
 

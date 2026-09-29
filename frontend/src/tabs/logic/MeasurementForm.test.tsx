@@ -33,7 +33,7 @@ describe('MeasurementForm', () => {
     const devices = loadedDevices(
       device(1, 'Temperature board', [
         { path: 'temperatures[0]', label: 'Temperature 1', value_type: 'number', units: '°C' },
-        { path: 'temperatures[1]', label: 'Temperature 2', value_type: 'number', units: '°C' },
+        { path: 'temperatures[1]', label: 'Return air', value_type: 'number', units: '°C' },
       ]),
       device(2, 'Relay board', [
         { path: 'inputs[0]', label: 'Input 1', value_type: 'boolean', units: null },
@@ -49,13 +49,13 @@ describe('MeasurementForm', () => {
 
     fireEvent.change(screen.getByLabelText('Device'), { target: { value: '1' } });
     await waitFor(() => expect((screen.getByLabelText('Source') as HTMLSelectElement).disabled).toBe(false));
-    expect(screen.getByRole('option', { name: 'Temperature 2 (°C)' })).toBeTruthy();
+    expect(screen.getByRole('option', { name: 'Return air (°C)' })).toBeTruthy();
     fireEvent.change(source, { target: { value: 'temperatures[1]' } });
     expect((screen.getByLabelText('Units') as HTMLInputElement).value).toBe('°C');
 
     fireEvent.change(screen.getByLabelText('Device'), { target: { value: '2' } });
     expect(source.value).toBe('');
-    expect(screen.queryByRole('option', { name: 'Temperature 2 (°C)' })).toBeNull();
+    expect(screen.queryByRole('option', { name: 'Return air (°C)' })).toBeNull();
     expect(screen.getByRole('option', { name: 'Input 1' })).toBeTruthy();
 
     fireEvent.input(screen.getByLabelText('Name'), { target: { value: 'HeatCall' } });

@@ -5,6 +5,7 @@ import type { DeviceFields, HostInterfaceFields } from '../../store';
 const api = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() }));
 vi.mock('../../store', () => ({ AxiosClient: api }));
 import { InterfaceEditor } from './HardwareForms';
+import { DeviceForm } from './DeviceForm';
 import { DeviceScanPanel } from './DeviceScanPanel';
 import { HostInterfaceCard } from './HostInterfaceCard';
 const bus = { id: 1, name: 'Bus', port: '/dev/missing', baud_rate: 9600, data_bits: 8, stop_bits: 1, parity: 'none', enabled: false,
@@ -13,15 +14,58 @@ const bus = { id: 1, name: 'Bus', port: '/dev/missing', baud_rate: 9600, data_bi
       { driver: 'relay', support: 'maybe', reason: 'Binary registers', evidence: [] }, { driver: 'ntc', support: 'no', reason: 'Different ID', evidence: [] },
     ] },
   ] }, connection_state: 'disabled', connection_error: null } as unknown as HostInterfaceFields;
-const drivers = [{ id: 'relay', name: 'Relay board' }, { id: 'ntc', name: 'NTC board' }];
+const drivers = [
+  { id: 'relay', name: 'Relay board', channel_count: 2, fields: ['inputs', 'outputs'], binary_outputs: true, configuration_effects: 'None',
+    inputs: [{ path: 'inputs[0]', label: 'Input 1', value_type: 'boolean', units: null }, { path: 'inputs[1]', label: 'Input 2', value_type: 'boolean', units: null }],
+    outputs: [{ channel: 1, label: 'Relay 1', value_type: 'boolean', units: null }, { channel: 2, label: 'Relay 2', value_type: 'boolean', units: null }] },
+  { id: 'ntc', name: 'NTC board', channel_count: 1, fields: ['temperatures'], binary_outputs: false, configuration_effects: 'None', inputs: [], outputs: [] },
+];
+const relayDevice = { id: 3, name: 'Relay', host_interface_id: 1, modbus_address: 1, driver: 'relay', configuration_revision: 7,
+  io_labels: { inputs: { 'inputs[0]': 'Boiler enable' }, outputs: {} }, inputs: drivers[0].inputs, outputs: drivers[0].outputs };
 const impact = { devices: [], measurements: [], output_blocks: [] };
 beforeEach(() => {
   vi.resetAllMocks();
-  api.get.mockImplementation(async (url: string) => ({ data: url === '/drivers' ? { drivers } : url === '/host_ports' ? { host_ports: [] } : url.endsWith('/impact') ? impact : { host_interfaces: [bus] } }));
+  api.get.mockImplementation(async (url: string) => ({ data: url === '/drivers' ? { drivers } : url === '/devices/3' ? { devices: [relayDevice] } : url === '/host_ports' ? { host_ports: [] } : url.endsWith('/impact') ? impact : { host_interfaces: [bus] } }));
 });
 afterEach(cleanup);
 
 describe('hardware setup components', () => {
+  it('closes the Device modal with Escape', async () => {
+    const interfaces = Object.assign([{ ...bus, _found: true }], { _loaded: true }) as unknown as import('../../lib/RestfulModelStore').ReifiedQueryResult<HostInterfaceFields>;
+    const close = vi.fn();
+    render(<DeviceForm editId={3} interfaces={interfaces} onClose={close} onRefresh={vi.fn()} />);
+    await screen.findByRole('dialog', { name: 'Edit Device' });
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    expect(close).toHaveBeenCalledOnce();
+  });
+
+  it('edits custom I/O labels in a modal and submits only overrides', async () => {
+    const interfaces = Object.assign([{ ...bus, _found: true }], { _loaded: true }) as unknown as import('../../lib/RestfulModelStore').ReifiedQueryResult<HostInterfaceFields>;
+    const close = vi.fn();
+    api.patch.mockResolvedValue({ data: {} });
+
+    render(<DeviceForm editId={3} interfaces={interfaces} onClose={close} onRefresh={vi.fn()} />);
+
+    const dialog = await screen.findByRole('dialog', { name: 'Edit Device' });
+    expect(dialog).toBeTruthy();
+    expect((screen.getByLabelText('Custom label for Input 1') as HTMLInputElement).value).toBe('Boiler enable');
+    expect((screen.getByLabelText('Custom label for Relay 1') as HTMLInputElement).placeholder).toBe('Relay 1');
+
+    fireEvent.input(screen.getByLabelText('Custom label for Input 1'), { target: { value: '' } });
+    fireEvent.input(screen.getByLabelText('Custom label for Relay 2'), { target: { value: 'Alarm relay' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(api.patch).toHaveBeenCalledWith('/devices/3', {
+      device: expect.objectContaining({
+        configuration_revision: 7,
+        io_labels: { outputs: { '2': 'Alarm relay' } },
+      }),
+    }));
+    expect(close).toHaveBeenCalled();
+  });
+
   it('keeps an edit draft and its opening revision while reporting a save conflict', async () => {
     const close = vi.fn();
     render(<InterfaceEditor editId={1} onClose={close} onRefresh={vi.fn()} />);

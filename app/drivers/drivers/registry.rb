@@ -9,6 +9,8 @@ module Drivers
         output_fields = driver.outputs.any? ? [ "outputs" ] : []
         { id: driver.name, name: driver.display_name, channel_count: driver.channel_count,
           fields: input_fields + output_fields,
+          inputs: driver.inputs,
+          outputs: driver.outputs,
           binary_outputs: driver.outputs.any? { |output| output[:value_type] == "boolean" },
           configuration_effects: driver == N4D8B08 ? "Sets inputs and outputs to unrelated mode when normal polling starts." : "None" }
       end
