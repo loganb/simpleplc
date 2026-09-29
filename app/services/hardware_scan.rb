@@ -4,10 +4,17 @@ class HardwareScan
   MAX_SECONDS = 900
   PROFILE_KEYS = %w[baud_rate data_bits stop_bits parity].freeze
 
-  def self.request(interface, token, options)
-    raise HardwareError.new("A request ID is required", status: :unprocessable_entity) unless token.is_a?(String) && token.size.between?(1, 100)
+  # The only scan states a client may set; every other transition is the executor's.
+  def self.transition(interface, state, options)
+    case state
+    when "requested" then request(interface, options)
+    when "cancelling" then cancel(interface)
+    else raise HardwareError.new("scan_state can only be set to requested or cancelling", status: :unprocessable_entity)
+    end
+  end
+
+  def self.request(interface, options)
     interface.with_lock do
-      return interface if interface.scan_request_id == token
       raise HardwareError, "Disable the interface before scanning" if interface.enabled?
       raise HardwareError, "A scan is already pending or running" if interface.scan_active?
       options = options.stringify_keys
@@ -22,10 +29,10 @@ class HardwareScan
         raise ArgumentError, "Invalid serial profile" unless [ 1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200 ].include?(p["baud_rate"]) && (5..8).cover?(p["data_bits"]) && [ 1, 2 ].include?(p["stop_bits"]) && HostInterface::PARITIES.include?(p["parity"])
         p
       end.uniq
-      interface.update!(scan_state: "requested", scan_request_id: token,
+      interface.update!(scan_state: "requested", scan_request_id: SecureRandom.uuid,
         scan_options: { first_address: first, last_address: last, profiles: profiles, port: interface.port, probe_version: 1 },
         scan_results: { schema_version: 1, completed: 0, total: (last - first + 1) * profiles.size, devices: [], diagnostics: [] },
-        scan_cancel_requested: false, scan_requested_at: Time.current, scan_updated_at: Time.current,
+        scan_requested_at: Time.current, scan_updated_at: Time.current,
         scan_started_at: nil, scan_finished_at: nil)
     end
     interface
@@ -33,13 +40,14 @@ class HardwareScan
     raise HardwareError.new(e.message, status: :unprocessable_entity)
   end
 
-  def self.cancel(interface, token)
+  # A pending scan never reached the executor, so it ends here. A running one is
+  # asked to stop at its next checkpoint. Anything else has already finished.
+  def self.cancel(interface)
     interface.with_lock do
-      raise HardwareError, "This scan has been replaced; reload" unless interface.scan_request_id == token
       if interface.scan_state == "requested"
-        interface.update!(scan_state: "cancelled", scan_cancel_requested: true, scan_finished_at: Time.current, scan_updated_at: Time.current)
+        interface.update!(scan_state: "cancelled", scan_finished_at: Time.current, scan_updated_at: Time.current)
       elsif interface.scan_state == "scanning"
-        interface.update!(scan_cancel_requested: true)
+        interface.update!(scan_state: "cancelling", scan_updated_at: Time.current)
       end
     end
     interface
@@ -57,8 +65,10 @@ class HardwareScan
       begin
         @interface.reload
         return unless @interface.scan_active?
-        if @interface.scan_state == "scanning"
-          @interface.update!(scan_state: "interrupted", scan_finished_at: Time.current, scan_updated_at: Time.current)
+        # A sweep in progress when the executor (re)starts was abandoned by a previous one.
+        if %w[scanning cancelling].include?(@interface.scan_state)
+          @interface.update!(scan_state: @interface.scan_state == "cancelling" ? "cancelled" : "interrupted",
+            scan_finished_at: Time.current, scan_updated_at: Time.current)
           return
         end
         @token = @interface.scan_request_id
@@ -82,7 +92,7 @@ class HardwareScan
     raise Interrupted, "Poller stopped" if @stopping.call
     raise Interrupted, "Scan exceeded #{MAX_SECONDS} seconds" if Process.clock_gettime(Process::CLOCK_MONOTONIC) > @deadline
     @interface.reload
-    raise Cancelled, "Scan cancelled" if @interface.scan_request_id != @token || @interface.scan_cancel_requested || @interface.enabled?
+    raise Cancelled, "Scan cancelled" if @interface.scan_request_id != @token || @interface.scan_state == "cancelling" || @interface.enabled?
   end
 
   def perform

@@ -6,7 +6,8 @@ class HostInterface < ApplicationRecord
   before_validation :identify_port, if: -> { new_record? || will_save_change_to_port? }
   validates :port_identity, uniqueness: true, allow_nil: true
 
-  def scan_active? = %w[requested scanning].include?(scan_state)
+  # Cancelling counts: the executor may still hold the port until it stops.
+  def scan_active? = %w[requested scanning cancelling].include?(scan_state)
 
   def identify_port
     found = HostPortScanner.scan.find do |p|

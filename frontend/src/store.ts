@@ -82,11 +82,11 @@ export interface DriverSupport { driver: string; support: 'yes' | 'no' | 'maybe'
 export interface ScanDevice { address: number; profile_index: number; profile: SerialProfile; observed_at: string; driver_support: DriverSupport[] }
 export interface HostInterfaceFields {
   configuration_revision: number;
-  scan_state: 'idle' | 'requested' | 'scanning' | 'completed' | 'failed' | 'cancelled' | 'interrupted';
+  /** Clients may set only 'requested' (with scan_options) or 'cancelling'; the poller owns the rest. */
+  scan_state: 'idle' | 'requested' | 'scanning' | 'cancelling' | 'completed' | 'failed' | 'cancelled' | 'interrupted';
   scan_request_id: string | null;
   scan_options: { port?: string; profiles?: SerialProfile[]; first_address?: number; last_address?: number };
   scan_results: { completed?: number; total?: number; devices?: ScanDevice[]; error?: string; diagnostics?: unknown[] };
-  scan_cancel_requested: boolean;
   scan_requested_at: string | null;
   scan_started_at: string | null;
   scan_finished_at: string | null;
@@ -296,4 +296,5 @@ export function connectLiveRecords() {
   return new RecordStream(Store, createConsumer(cableUrl.toString()));
 }
 
-export { AxiosClient, Store };
+// The axios client stays private: all server I/O goes through Store.
+export { Store };

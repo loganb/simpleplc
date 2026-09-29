@@ -163,6 +163,32 @@ describe('RestfulModelStore cache epochs', () => {
       errors: { base: ['nope'] },
     });
   });
+
+  it('keeps the server errors and HTTP status when patch fails', async () => {
+    const { store } = makeStore();
+    const axios = store.axios as unknown as { patch: ReturnType<typeof vi.fn> };
+    axios.patch = vi.fn().mockRejectedValue({
+      response: { status: 409, data: { errors: { base: ['Configuration changed'] } } },
+    });
+
+    const txn = store.m(Thing).patch(1, { name: 'stale' });
+    await settleIo();
+
+    expect(store.txn_status(txn)).toMatchObject({
+      id: 1, status: 'error', httpStatus: 409, errors: { base: ['Configuration changed'] },
+    });
+  });
+
+  it('records an error transaction when create fails without a response', async () => {
+    const { store } = makeStore();
+    const axios = store.axios as unknown as { post: ReturnType<typeof vi.fn> };
+    axios.post = vi.fn().mockRejectedValue(new Error('Network Error'));
+
+    const txn = store.m(Thing).create({ name: 'offline' });
+    await settleIo();
+
+    expect(store.txn_status(txn)).toMatchObject({ id: null, status: 'error', errors: undefined, httpStatus: undefined });
+  });
 });
 
 describe('record versions', () => {

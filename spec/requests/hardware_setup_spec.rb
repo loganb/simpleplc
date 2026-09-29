@@ -33,68 +33,51 @@ RSpec.describe "Hardware setup API", type: :request do
     expect(interface.reload.name).to eq("New")
   end
 
-  it "exposes the state machine but does not accept forged scan results" do
-    post "/host_interfaces/#{interface.id}/scan", params: { request_id: "scan-1", options: { first_address: 1, last_address: 4 } }
-    expect(response).to have_http_status(:accepted)
-    patch "/host_interfaces/#{interface.id}", params: { host_interface: { enabled: true, configuration_revision: revision } }
+  it "starts and cancels a scan by patching its state, separately from configuration" do
+    url = "/host_interfaces/#{interface.id}"
+    patch url, params: { host_interface: { scan_state: "requested", scan_options: { first_address: 1, last_address: 4 } } }, as: :json
+    expect(response).to have_http_status(:ok)
+    scanned = response.parsed_body.fetch("host_interfaces").first
+    expect(scanned).to include("scan_state" => "requested", "scan_request_id" => be_present)
+    expect(interface.reload.scan_options).to include("first_address" => 1, "last_address" => 4)
+    patch url, params: { host_interface: { enabled: true, configuration_revision: revision } }, as: :json
     expect(response).to have_http_status(:conflict)
-    post "/host_interfaces/#{interface.id}/cancel_scan", params: { request_id: "scan-1" }
+    patch url, params: { host_interface: { scan_state: "cancelling", name: "Renamed" } }, as: :json
+    expect(response).to have_http_status(:unprocessable_entity)
+    patch url, params: { host_interface: { scan_state: "completed" } }, as: :json
+    expect(response).to have_http_status(:unprocessable_entity)
+    patch url, params: { host_interface: { scan_state: "cancelling" } }, as: :json
     expect(response).to have_http_status(:ok)
     expect(interface.reload.scan_state).to eq("cancelled")
+    expect(interface.name).to eq("Bus")
   end
 
-  it "previews and applies address swaps atomically, preserving records" do
-    a = Device.create!(host_interface: interface, name: "A", driver: "Drivers::N4D8B08", modbus_address: 1)
-    b = Device.create!(host_interface: interface, name: "B", driver: "Drivers::N4D8B08", modbus_address: 2)
-    changes = { configuration_revision: revision, request_id: "apply-1", devices: [
-      { id: a.id, name: "A", driver: a.driver, modbus_address: 2 },
-      { id: b.id, name: "B", driver: b.driver, modbus_address: 1 }
-    ] }
-    post "/host_interfaces/#{interface.id}/preview", params: changes, as: :json
+  it "does not let clients forge scan progress or results" do
+    patch "/host_interfaces/#{interface.id}", params: { host_interface: { scan_state: "requested", scan_results: { devices: [ { address: 9 } ] } } }, as: :json
     expect(response).to have_http_status(:ok)
-    expect(a.reload.modbus_address).to eq(1)
-    post "/host_interfaces/#{interface.id}/apply", params: changes, as: :json
-    expect(response).to have_http_status(:ok)
-    expect([ a.reload.modbus_address, b.reload.modbus_address ]).to eq([ 2, 1 ])
-    post "/host_interfaces/#{interface.id}/apply", params: changes, as: :json
-    expect(response).to have_http_status(:ok)
+    expect(interface.reload.scan_results["devices"]).to eq([])
   end
 
-  it "blocks deleting referenced devices and explains the impact" do
+  it "deletes without a revision but still blocks referenced devices" do
     device = Device.create!(host_interface: interface, name: "Relay", driver: "Drivers::N4D8B08", modbus_address: 1)
+    spare = Device.create!(host_interface: interface, name: "Spare", driver: "Drivers::N4D8B08", modbus_address: 2)
     diagram = LogicDiagram.create!(name: "D", update_period: 60)
     Measurement.create!(logic_diagram: diagram, device: device, name: "input", mode: "acquisition", source_path: "inputs[0]")
-    get "/devices/#{device.id}/impact"
-    expect(response.parsed_body.fetch("measurements").size).to eq(1)
-    delete "/devices/#{device.id}", params: { configuration_revision: device.configuration_revision }
+    delete "/devices/#{device.id}"
     expect(response).to have_http_status(:conflict)
+    expect(response.parsed_body.dig("details", "measurements").size).to eq(1)
     expect(Device.exists?(device.id)).to be(true)
-  end
-  it "rolls back an invalid final set and rejects stale previews" do
-    a = Device.create!(host_interface: interface, name: "A", driver: "Drivers::N4D8B08", modbus_address: 1)
-    old = revision
-    invalid = { configuration_revision: old, request_id: "bad", devices: [
-      { id: a.id, name: "Changed", driver: a.driver, modbus_address: 2 },
-      { name: "Duplicate", driver: a.driver, modbus_address: 2 }
-    ] }
-    post "/host_interfaces/#{interface.id}/apply", params: invalid, as: :json
-    expect(response).to have_http_status(:unprocessable_entity)
-    expect(a.reload.name).to eq("A")
-    a.update!(name: "Someone else")
-    post "/host_interfaces/#{interface.id}/apply", params: invalid, as: :json
-    expect(response).to have_http_status(:conflict)
+    delete "/devices/#{spare.id}"
+    expect(response).to have_http_status(:no_content)
+    expect(Device.exists?(spare.id)).to be(false)
   end
 
-  it "rejects scan choices marked no or belonging to an old attempt" do
-    profile = interface.attributes.slice(*HardwareScan::PROFILE_KEYS)
-    interface.update!(scan_request_id: "new", scan_state: "completed", scan_options: { port: interface.port },
-      scan_results: { devices: [ { address: 1, profile_index: 0, profile: profile, driver_support: [ { driver: "Drivers::NT48C32", support: "no" } ] } ] })
-    request = { configuration_revision: revision, devices: [ { name: "NTC", modbus_address: 1, driver: "Drivers::NT48C32", scan_request_id: "new", profile_index: 0 } ] }
-    post "/host_interfaces/#{interface.id}/preview", params: request, as: :json
+  it "still requires a disabled bus to delete" do
+    device = Device.create!(host_interface: interface, name: "Relay", driver: "Drivers::N4D8B08", modbus_address: 1)
+    interface.reload.update!(enabled: true)
+    delete "/devices/#{device.id}"
     expect(response).to have_http_status(:conflict)
-    request[:devices][0][:scan_request_id] = "old"
-    post "/host_interfaces/#{interface.id}/preview", params: request, as: :json
-    expect(response).to have_http_status(:conflict)
+    expect(Device.exists?(device.id)).to be(true)
   end
 
   it "blocks a driver change that would break output references" do
@@ -105,9 +88,12 @@ RSpec.describe "Hardware setup API", type: :request do
     expect(response).to have_http_status(:conflict)
     expect(device.reload.driver).to eq("Drivers::N4D8B08")
   end
-  it "returns validation errors for malformed scan options" do
-    post "/host_interfaces/#{interface.id}/scan", params: { request_id: "bad", options: "not an object" }, as: :json
-    expect(response).to have_http_status(:unprocessable_entity)
-  end
 
+  it "returns validation errors for malformed scan options" do
+    patch "/host_interfaces/#{interface.id}", params: { host_interface: { scan_state: "requested", scan_options: "not an object" } }, as: :json
+    expect(response).to have_http_status(:unprocessable_entity)
+    patch "/host_interfaces/#{interface.id}", params: { host_interface: { scan_state: "requested", scan_options: { first_address: 0 } } }, as: :json
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(interface.reload.scan_state).to eq("idle")
+  end
 end

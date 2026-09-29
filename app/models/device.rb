@@ -5,7 +5,6 @@ class Device < ApplicationRecord
   CONFIGURATION_FIELDS = %w[name host_interface_id modbus_address driver io_labels].freeze
   BUS_CONFIGURATION_FIELDS = %w[name host_interface_id modbus_address driver].freeze
   MAX_IO_LABEL_LENGTH = 100
-  attr_accessor :reconciling
   validates :driver, inclusion: { in: ->(_) { Drivers::Registry.all.map(&:name) } }
   has_many :measurements, dependent: :restrict_with_error
   has_many :output_blocks, dependent: :restrict_with_error
@@ -27,7 +26,7 @@ class Device < ApplicationRecord
   validates :modbus_address, presence: true,
     numericality: { only_integer: true, in: 1..247 }
   validates :driver, presence: true
-  validates :modbus_address, uniqueness: { scope: :host_interface_id }, unless: :reconciling
+  validates :modbus_address, uniqueness: { scope: :host_interface_id }
 
   # Returns an instantiated driver for this device.
   # The driver is given a connected Modbus slave to communicate through.

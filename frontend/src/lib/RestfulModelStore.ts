@@ -17,7 +17,8 @@ export interface TxnResult {
   readonly status: 'succeeded' | 'error',
   readonly seq: number,
   readonly id: RecordId | null,
-  readonly errors?: unknown
+  readonly errors?: unknown,
+  readonly httpStatus?: number  // Absent on success and when no response arrived (network error)
 }
 
 //
@@ -498,7 +499,8 @@ export default class RestfulModelStore extends EventEmitter {
       this.txns.set(txn, {
         id: null,
         status: 'error',
-        errors: response.data.errors,
+        errors: response?.data?.errors,
+        httpStatus: response?.status,
         seq: this.seq++
       });
       this.soil();
@@ -629,7 +631,8 @@ export default class RestfulModelStore extends EventEmitter {
       this.txns.set(txn, {
         status: 'error',
         id: id,
-        errors: error.response && error.response.data && error.response.data.errors,
+        errors: error.response?.data?.errors,
+        httpStatus: error.response?.status,
         seq: this.seq++
       });
       this.soil();
@@ -680,10 +683,12 @@ export default class RestfulModelStore extends EventEmitter {
       //clear all queries for the the model
       model.query_version++;
       this.soil();
-    }).catch(() => {
+    }).catch((error) => {
       this.txns.set(txn, {
         status: 'error',
         id: id,
+        errors: error.response?.data?.errors,
+        httpStatus: error.response?.status,
         seq: this.seq++
       });
       this.soil();

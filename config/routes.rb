@@ -7,21 +7,11 @@ Rails.application.routes.draw do
   get "up" => "rails/health#show", as: :rails_health_check
 
   resources :drivers, only: [ :index, :show ]
-  resources :host_interfaces do
-    member do
-      post :scan
-      post :cancel_scan
-      post :preview
-      post :apply
-      get :impact
-    end
-  end
+  resources :host_interfaces
   # Read-only: discovered ports are a property of the host, not rows we own.
   # Ids are base64url-encoded paths, so no route constraint is needed.
   resources :host_ports, only: [ :index, :show ]
-  resources :devices do
-    get :impact, on: :member
-  end
+  resources :devices
   resources :measurements
   resources :logic_diagrams
   resources :logic_blocks

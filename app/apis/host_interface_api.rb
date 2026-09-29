@@ -18,13 +18,28 @@ class HostInterfaceApi < RestfulApi
     super(params.to_h.merge("enabled" => false))
   end
 
+  # Besides configuration, an update may move the scan state machine: the client
+  # sets scan_state to "requested" (with scan_options) or "cancelling". Progress
+  # and results are the executor's alone and are never permitted.
   def update_params(params)
-    create_params(params).tap { |p| p[:configuration_revision] = params.require(:host_interface)[:configuration_revision] }
+    raw = params.require(:host_interface)
+    options = raw[:scan_options]
+    unless options.nil? || options.is_a?(ActionController::Parameters)
+      raise HardwareError.new("Scan options must be an object", status: :unprocessable_entity)
+    end
+    create_params(params).merge(
+      raw.permit(:scan_state, scan_options: [ :first_address, :last_address, { profiles: [ :baud_rate, :data_bits, :stop_bits, :parity ] } ])
+    ).tap { |p| p[:configuration_revision] = raw[:configuration_revision] }
   end
 
   def update(bus, params)
     fields = params.to_h
+    scan = fields.extract!("scan_state", "scan_options")
     expected = fields.delete("configuration_revision")
+    if scan.any?
+      raise HardwareError.new("Change the scan separately from configuration", status: :unprocessable_entity) if fields.any?
+      return HardwareScan.transition(bus, scan["scan_state"], scan["scan_options"] || {})
+    end
     bus.with_lock do
       HardwareConfiguration.check_revision!(bus, expected)
       raise HardwareError, "Cancel the scan and wait before editing" if bus.scan_active?
@@ -39,7 +54,6 @@ class HostInterfaceApi < RestfulApi
 
   def destroy(bus)
     bus.with_lock do
-      HardwareConfiguration.check_revision!(bus, controller.params[:configuration_revision])
       HardwareConfiguration.quiet!(bus) do
         HardwareConfiguration.deletable!(bus.devices.pluck(:id))
         bus.destroy!
@@ -59,7 +73,6 @@ class HostInterfaceApi < RestfulApi
       configuration_revision: hi.configuration_revision,
       scan_state: hi.scan_state, scan_request_id: hi.scan_request_id,
       scan_options: hi.scan_options, scan_results: hi.scan_results,
-      scan_cancel_requested: hi.scan_cancel_requested,
       scan_requested_at: hi.scan_requested_at&.iso8601, scan_started_at: hi.scan_started_at&.iso8601,
       scan_finished_at: hi.scan_finished_at&.iso8601, scan_updated_at: hi.scan_updated_at&.iso8601,
       id:              hi.id,

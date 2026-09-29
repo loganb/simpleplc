@@ -46,7 +46,6 @@ class DeviceApi < RestfulApi
     bus = device.host_interface
     bus.with_lock do
       device.lock!
-      HardwareConfiguration.check_revision!(device, controller.params[:configuration_revision])
       HardwareConfiguration.quiet!(bus) do
         HardwareConfiguration.deletable!([ device.id ])
         device.destroy!

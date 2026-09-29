@@ -23,7 +23,7 @@ RSpec.describe "Hardware setup journey", type: :request do
     end
   end
 
-  it "repairs, scans, matches a relay, applies, and polls using the public API" do
+  it "repairs, scans, matches a relay with plain CRUD, and polls using the public API" do
     Dir.mktmpdir do |dir|
       port = File.join(dir, "adapter")
       File.write(port, "")
@@ -39,8 +39,8 @@ RSpec.describe "Hardware setup journey", type: :request do
       temp = Device.create!(host_interface: bus, name: "Absent", driver: "Drivers::N4DSC08", modbus_address: 1)
       patch "/host_interfaces/#{bus.id}", params: { host_interface: { port: port, name: "Relay Bus", configuration_revision: bus.reload.configuration_revision } }
       expect(response).to have_http_status(:ok)
-      post "/host_interfaces/#{bus.id}/scan", params: { request_id: "journey", options: { first_address: 1, last_address: 3 } }
-      expect(response).to have_http_status(:accepted)
+      patch "/host_interfaces/#{bus.id}", params: { host_interface: { scan_state: "requested", scan_options: { first_address: 1, last_address: 3 } } }, as: :json
+      expect(response).to have_http_status(:ok)
       poller = Poller.new
       poller.run_cycle
       get "/host_interfaces/#{bus.id}"
@@ -48,15 +48,11 @@ RSpec.describe "Hardware setup journey", type: :request do
       expect(scanned["scan_state"]).to eq("completed")
       expect(scanned["scan_results"]["devices"].map { |d| d["address"] }).to eq([ 1 ])
       expect(endpoint.writes).to be_empty
-      request = { request_id: "apply", configuration_revision: scanned["configuration_revision"], devices: [
-        { id: relay.id, name: "Relay", driver: relay.driver, modbus_address: 1, scan_request_id: "journey", profile_index: 0 }
-      ] }
-      post "/host_interfaces/#{bus.id}/preview", params: request, as: :json
+      # The absent board holds address 1, so it goes first; then the relay moves there.
+      delete "/devices/#{temp.id}"
+      expect(response).to have_http_status(:no_content)
+      patch "/devices/#{relay.id}", params: { device: { modbus_address: 1, driver: relay.driver, configuration_revision: relay.reload.configuration_revision } }, as: :json
       expect(response).to have_http_status(:ok)
-      expect(Device.exists?(temp.id)).to be(true)
-      post "/host_interfaces/#{bus.id}/apply", params: request, as: :json
-      expect(response).to have_http_status(:ok)
-      expect(Device.exists?(temp.id)).to be(false)
       expect(relay.reload.modbus_address).to eq(1)
       patch "/host_interfaces/#{bus.id}", params: { host_interface: { enabled: true, configuration_revision: bus.reload.configuration_revision } }
       expect(response).to have_http_status(:ok)

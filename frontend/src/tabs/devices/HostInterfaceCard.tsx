@@ -1,15 +1,17 @@
 import { useEffect, useState } from 'preact/hooks';
-import { AxiosClient } from '../../store';
+import { useTxn } from '../../components/useTxn';
+import { HostInterface, Store } from '../../store';
 import type { DeviceFields, HostInterfaceFields } from '../../store';
 import { DeviceScanPanel } from './DeviceScanPanel';
 import { ImpactView } from './HardwareForms';
-import type { Impact } from './HardwareForms';
-import { buttonClass as btn, errorMessage, scanActive } from './hardware';
+import { buttonClass as btn, scanActive, txnErrorMessage } from './hardware';
+import { useImpact } from './useImpact';
 
 export function HostInterfaceCard({ iface, devices, onEdit, onRefresh }: { iface: HostInterfaceFields; devices: DeviceFields[]; onEdit: () => void; onRefresh: () => void }) {
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const [impact, setImpact] = useState<Impact | null>(null);
+  const { start, busy, failure } = useTxn();
+  const error = failure ? txnErrorMessage(failure) : '';
+  const [reviewing, setReviewing] = useState(false);
+  const impact = useImpact(devices);
   const [verification, setVerification] = useState<Record<number, { last: string | null; count: number }> | null>(null);
   const [started, setStarted] = useState(0);
   useEffect(() => {
@@ -25,15 +27,12 @@ export function HostInterfaceCard({ iface, devices, onEdit, onRefresh }: { iface
     }
     if (changed) setVerification(next);
   }, [devices, iface.enabled, started]);
-  const run = async (action: () => Promise<void>) => {
-    setBusy(true); setError('');
-    try { await action(); } catch (e) { setError(errorMessage(e)); } finally { setBusy(false); }
-  };
-  const enable = () => run(async () => {
+  const setEnabled = (enabled: boolean, then: () => void) =>
+    start(Store.m(HostInterface).patch(iface.id, { enabled, configuration_revision: iface.configuration_revision }), () => { then(); onRefresh(); });
+  const enable = () => {
     const baseline = Object.fromEntries(devices.map(d => [d.id, { last: d.last_polled_at, count: 0 }]));
-    await AxiosClient.patch(`/host_interfaces/${iface.id}`, { host_interface: { enabled: true, configuration_revision: iface.configuration_revision } });
-    setStarted(Date.now()); setVerification(baseline); setImpact(null); onRefresh();
-  });
+    setEnabled(true, () => { setStarted(Date.now()); setVerification(baseline); setReviewing(false); });
+  };
   const verified = verification && Object.keys(verification).length > 0 && Object.values(verification).every(v => v.count >= 2);
   return <section class="rounded-lg border border-border bg-surface p-4 space-y-3">
     <div class="flex items-start justify-between"><h3 class="font-semibold">{iface.name}</h3><span class="text-sm">{!iface.port_present ? 'Missing · ' : ''}{iface.enabled ? iface.connection_state : 'Disabled'}{scanActive(iface.scan_state) ? ` · ${iface.scan_state}` : ''}</span></div>
@@ -43,18 +42,17 @@ export function HostInterfaceCard({ iface, devices, onEdit, onRefresh }: { iface
     {error && <p role="alert" class="text-error">{error}</p>}
     <div class="flex flex-wrap gap-2">
       <button class={btn} onClick={onEdit}>Edit / Replace port</button>
-      <button class={btn} disabled={busy || scanActive(iface.scan_state)} onClick={() => run(async () => {
-        if (!iface.enabled) { setImpact((await AxiosClient.get(`/host_interfaces/${iface.id}/impact`)).data); return; }
-        await AxiosClient.patch(`/host_interfaces/${iface.id}`, { host_interface: { enabled: false, configuration_revision: iface.configuration_revision } });
-        setVerification(null); onRefresh();
-      })}>{iface.enabled ? 'Disable' : 'Review and enable'}</button>
+      <button class={btn} disabled={busy || scanActive(iface.scan_state)} onClick={() => {
+        if (!iface.enabled) setReviewing(true);
+        else setEnabled(false, () => setVerification(null));
+      }}>{iface.enabled ? 'Disable' : 'Review and enable'}</button>
       {iface.enabled && <button class={btn} onClick={() => { setStarted(Date.now()); setVerification(Object.fromEntries(devices.map(d => [d.id, { last: d.last_polled_at, count: 0 }]))); }}>Verify fresh polls</button>}
     </div>
-    {impact && !iface.enabled && <div class="rounded border border-border p-3 space-y-2">
+    {reviewing && !iface.enabled && <div class="rounded border border-border p-3 space-y-2">
       <p>Enabling starts normal polling, driver configuration and any enabled output assignments. Relay configuration sets inputs and outputs to unrelated mode.</p>
-      <ImpactView impact={impact} />
+      {impact ? <ImpactView impact={impact} /> : <p class="text-sm">Checking dependencies…</p>}
       <button class={btn} disabled={busy || scanActive(iface.scan_state)} onClick={enable}>Enable operation</button>
-      <button class={btn} onClick={() => setImpact(null)}>Keep disabled</button>
+      <button class={btn} onClick={() => setReviewing(false)}>Keep disabled</button>
     </div>}
     {verification && iface.enabled && <p role="status" class="text-sm">{verified ? 'Verified: two successful fresh polls for every device.' : devices.length ? 'Waiting for two successful fresh polls per device…' : 'No devices configured to verify.'}</p>}
     <DeviceScanPanel iface={iface} devices={devices} onRefresh={onRefresh} />

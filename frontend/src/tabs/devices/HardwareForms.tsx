@@ -1,15 +1,16 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { ComponentChildren } from 'preact';
+import { useTxn } from '../../components/useTxn';
 import { useLoaders } from '../../lib/DataLoader2';
 import type { ExistingRecord, Identifiable, ModelDefinition } from '../../lib/RestfulModelStore';
-import { AxiosClient, Device, HostInterface, HostPort, Store } from '../../store';
-import type { DeviceIoLabels, HostInterfaceFields, HostPortFields } from '../../store';
+import { Device, HostInterface, HostPort, Store } from '../../store';
+import type { DeviceFields, DeviceIoLabels, HostInterfaceFields, HostPortFields } from '../../store';
 import { appTree } from '../../uxTree';
-import { buttonClass as btn, inputClass as input, errorMessage } from './hardware';
+import { buttonClass as btn, inputClass as input, txnErrorMessage } from './hardware';
+import type { Impact } from './hardware';
 import { useDrivers } from './useDrivers';
+import { useImpact } from './useImpact';
 
-interface Reference { id: number; name: string; logic_diagram_id: number; output_enable?: boolean }
-export interface Impact { devices: { id: number; name: string }[]; measurements: Reference[]; output_blocks: Reference[] }
 export function ImpactView({ impact }: { impact: Impact }) {
   return <div class="space-y-1 text-sm">
     <p>{impact.devices.length} device(s), {impact.measurements.length} measurement(s), {impact.output_blocks.length} output assignment(s).</p>
@@ -20,20 +21,21 @@ export function ImpactView({ impact }: { impact: Impact }) {
 }
 
 type Fields = Record<string, unknown>;
-function Editor({ model, editId, defaults, prepare, children, onClose, onRefresh }: {
+function Editor({ model, editId, defaults, deletes, prepare, children, onClose, onRefresh }: {
   model: ModelDefinition<Identifiable>; editId: number | null; defaults: Fields;
+  /** The devices deleting this record removes, to show what depends on them. */
+  deletes: { id: number; name: string }[];
   prepare?: (fields: Fields) => Fields;
   children: (fields: Fields, change: (key: string, value: unknown) => void) => ComponentChildren;
   onClose: () => void; onRefresh: () => void;
 }) {
   const [fields, setFields] = useState(defaults);
   const [loaded, setLoaded] = useState(editId === null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
+  const { start, busy, failure, clearFailure } = useTxn();
   const [comparing, setComparing] = useState(false);
-  const [impact, setImpact] = useState<Impact | null>(null);
+  const [reviewing, setReviewing] = useState(false);
+  const impact = useImpact(deletes);
   const singular = model.name;
-  const url = `/${model.inflections.plural}/${editId}`;
   const pick = (record: Fields) => Object.fromEntries([...Object.keys(defaults), 'configuration_revision'].map(k => [k, record[k]]));
   const { record } = useLoaders(() => ({ record: editId === null ? null : Store.m(model).fetch(editId) }), [Store], [editId]);
   // The saved configuration as the store currently has it; null while (re)loading.
@@ -42,16 +44,12 @@ function Editor({ model, editId, defaults, prepare, children, onClose, onRefresh
   // The draft captures the revision the form opened with; later store updates don't touch it.
   useEffect(() => { if (!loaded && current) { setFields(current); setLoaded(true); } }, [record]);
   const latest = comparing ? current : null;
-  const run = async (action: () => Promise<void>) => {
-    setBusy(true); setError('');
-    try { await action(); } catch (e) { setError(errorMessage(e)); } finally { setBusy(false); }
+  const done = () => { onRefresh(); onClose(); };
+  const save = () => {
+    const payload = (prepare ? prepare(fields) : fields) as Partial<Identifiable>;
+    start(editId === null ? Store.m(model).create(payload) : Store.m(model).patch(editId, payload), done);
   };
-  const save = () => run(async () => {
-    const payload = prepare ? prepare(fields) : fields;
-    if (editId === null) await AxiosClient.post(`/${model.inflections.plural}`, { [singular]: payload });
-    else await AxiosClient.patch(url, { [singular]: payload });
-    onRefresh(); onClose();
-  });
+  const error = failure ? txnErrorMessage(failure) : '';
   return <section class="rounded border border-border bg-surface-alt p-4 space-y-3">
     <h3 class="font-semibold">{editId === null ? 'New' : 'Edit'} {singular === 'device' ? 'Device' : 'Host Interface'}</h3>
     {missing && <p role="alert" class="text-error">This {singular === 'device' ? 'device' : 'interface'} no longer exists.</p>}
@@ -62,26 +60,23 @@ function Editor({ model, editId, defaults, prepare, children, onClose, onRefresh
     {latest && <div class="space-y-2 text-sm">
       <p>Your draft is preserved. Compare it with the current configuration before saving again.</p>
       <pre class="overflow-auto">{JSON.stringify(latest, null, 2)}</pre>
-      <button class={btn} onClick={() => { setFields({ ...fields, configuration_revision: latest.configuration_revision }); setComparing(false); setError(''); }}>Keep my draft against this revision</button>
-      <button class={btn} onClick={() => { setFields(latest); setComparing(false); setError(''); }}>Use current configuration</button>
+      <button class={btn} onClick={() => { setFields({ ...fields, configuration_revision: latest.configuration_revision }); setComparing(false); clearFailure(); }}>Keep my draft against this revision</button>
+      <button class={btn} onClick={() => { setFields(latest); setComparing(false); clearFailure(); }}>Use current configuration</button>
     </div>}
-    {!loaded ? <p>Loading…</p> : <fieldset disabled={busy} class="space-y-3">{children(fields, (key, value) => { setFields(current => ({ ...current, [key]: value })); setImpact(null); })}</fieldset>}
+    {!loaded ? <p>Loading…</p> : <fieldset disabled={busy} class="space-y-3">{children(fields, (key, value) => { setFields(current => ({ ...current, [key]: value })); setReviewing(false); })}</fieldset>}
     <div class="flex gap-2">
       <button class={btn} disabled={busy || !loaded} onClick={save}>{busy ? 'Working…' : 'Save'}</button>
       <button class={btn} disabled={busy} onClick={onClose}>Cancel</button>
-      {editId !== null && <button class={`${btn} ml-auto text-error`} disabled={busy || !loaded} onClick={() => run(async () => {
-        setImpact((await AxiosClient.get(`${url}/impact`)).data);
-      })}>Review deletion</button>}
+      {editId !== null && <button class={`${btn} ml-auto text-error`} disabled={busy || !loaded} onClick={() => setReviewing(true)}>Review deletion</button>}
     </div>
-    {impact && <div class="border border-error rounded p-3 space-y-2">
+    {reviewing && editId !== null && <div class="border border-error rounded p-3 space-y-2">
       <p>Delete this {singular === 'device' ? 'device' : 'interface and its devices'}?</p>
-      <ImpactView impact={impact} />
-      {impact.measurements.length + impact.output_blocks.length > 0 ? <p>Reassign or remove these dependencies in Logic before deleting.</p> :
-        <button class={`${btn} text-error`} disabled={busy} onClick={() => run(async () => {
-          await AxiosClient.delete(url, { params: { configuration_revision: fields.configuration_revision } });
-          onRefresh(); onClose();
-        })}>Confirm deletion</button>}
-      <button class={btn} disabled={busy} onClick={() => setImpact(null)}>Keep it</button>
+      {!impact ? <p class="text-sm">Checking dependencies…</p> : <>
+        <ImpactView impact={impact} />
+        {impact.measurements.length + impact.output_blocks.length > 0 ? <p>Reassign or remove these dependencies in Logic before deleting.</p> :
+          <button class={`${btn} text-error`} disabled={busy} onClick={() => start(Store.m(model).destroy(editId), done)}>Confirm deletion</button>}
+      </>}
+      <button class={btn} disabled={busy} onClick={() => setReviewing(false)}>Keep it</button>
     </div>}
   </section>;
 }
@@ -98,7 +93,9 @@ export function InterfaceEditor({ editId, prefill, onClose, onRefresh }: {
     return { ports: Store.m(HostPort).queryFor(null, {}, force) };
   }, [Store], [scanToken]);
   const foundPorts = ports.filter(p => p._found) as ExistingRecord<HostPortFields>[];
-  return <Editor model={HostInterface} editId={editId}
+  const { devices } = useLoaders(() => ({ devices: Store.m(Device).queryFor(null, {}) }), [Store], []);
+  const busDevices = (devices.filter(d => d._found) as ExistingRecord<DeviceFields>[]).filter(d => d.host_interface_id === editId);
+  return <Editor model={HostInterface} editId={editId} deletes={busDevices}
     defaults={{ name: prefill?.name || '', port: prefill?.port || '', baud_rate: 9600, data_bits: 8, stop_bits: 1, parity: 'none' }} onClose={onClose} onRefresh={onRefresh}>
     {(f, change) => <>
       <p class="text-sm text-text-muted">Disable the bus before replacing its port or serial settings. New buses start disabled.</p>
@@ -137,7 +134,8 @@ export function DeviceEditor({ editId, interfaces, onClose, onRefresh }: { editI
     }, {});
   };
   const prepare = (fields: Fields) => ({ ...fields, io_labels: compactLabels(fields.io_labels) });
-  return <Editor model={Device} editId={editId}
+  const { existing } = useLoaders(() => ({ existing: editId === null ? null : Store.m(Device).fetch(editId) }), [Store], [editId]);
+  return <Editor model={Device} editId={editId} deletes={existing?._found ? [existing as ExistingRecord<DeviceFields>] : []}
     defaults={{ name: '', host_interface_id: interfaces[0]?.id || '', modbus_address: 1, driver: '', io_labels: {} }}
     prepare={prepare} onClose={onClose} onRefresh={onRefresh}>
     {(f, change) => <>

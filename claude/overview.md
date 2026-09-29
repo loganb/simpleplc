@@ -35,7 +35,7 @@ HVAC PLC controller application — a web interface for monitoring and controlli
 - `lib/restful_api_controller.rb` — controller mixin providing REST actions.
 - `frontend/src/App.tsx` — main Preact dashboard component.
 - `frontend/src/store.ts` — RestfulModelStore instance + model definitions.
-- **Frontend I/O rule:** all server I/O goes through RestfulModelStore, and the API has no actions — only create/patch (an "action" becomes a field mutation or a new record). Devices-tab legacy direct axios calls and verb endpoints (`scan`, `cancel_scan`, `preview`, `apply`, `impact`) are being migrated in two phases; see `claude/store-io-cleanup.md`.
+- **Frontend I/O rule:** all server I/O goes through RestfulModelStore (`AxiosClient` is private to `store.ts`), and the API has no actions — only create/patch (an "action" becomes a field mutation or a new record). Components run store transactions through `useTxn`. See `claude/store-io-cleanup.md`.
 - `frontend/src/lib/` — RestfulModelStore, DataLoader2, TreeStore, RateLimiter, MemoryStore (ported from BioTrack). RestfulModelStore has two-generation record/query caches; `query_version` is the separate per-model query invalidation counter.
 - `frontend/build.mjs` — esbuild config + Tailwind CLI subprocess + `public/` → `dist/` copy. Dev server on port 5174 serving `dist/`; static build writes to `dist/`.
 
@@ -74,11 +74,11 @@ Using only the UX HTTP API, repaired interface 1 as `RS-485 Relay Bus` on FTDI s
 
 ## Hardware setup UX — implemented locally
 
-The approved hardware-setup plan is implemented; see `claude/hardware-setup.md` for API design and validation. A disabled HostInterface holds one scan state machine, request token, options, JSON results and cancellation state. The poller executes the whole read-only scan synchronously; other interfaces wait. Per-interface threading remains future work.
+The approved hardware-setup plan is implemented; see `claude/hardware-setup.md` for API design and validation, as simplified by `claude/store-io-cleanup.md`. A disabled HostInterface holds one scan state machine (`idle → requested → scanning → [cancelling →] completed | failed | cancelled | interrupted`), a server-generated scan id, options and JSON results. Clients move it only by patching `scan_state` to `requested` (with `scan_options`) or `cancelling`. The poller executes the whole read-only scan synchronously; other interfaces wait. Per-interface threading remains future work.
 
-Driver constructors have no hardware IO. The poller calls configure! before caching a normal-operation driver; scans never configure devices. Each driver implements device_support (yes/no/maybe plus evidence). The UX lists all verdicts and lets the operator choose and match a driver before applying configuration.
+Driver constructors have no hardware IO. The poller calls configure! before caching a normal-operation driver; scans never configure devices. Each driver implements device_support (yes/no/maybe plus evidence). The UX lists all verdicts; the operator picks a driver and either creates a new Device from a result or patches an existing one to it.
 
-Devices supports port replacement, scan/cancel, reviewed atomic configuration changes, dependency-aware deletion, structured errors/conflict recovery and two-fresh-poll verification after enable. Configuration revisions protect operator edits independently of heartbeat/scan updates. Shared serial locks and unique adapter claims prevent cooperating processes or aliases from owning the same bus. Stale connection-error text still clears on the next poll.
+Devices supports port replacement, scan/cancel, plain device CRUD from scan results, dependency-aware deletion (impact computed client-side from the store's Measurement/OutputBlock queries; the server's `deletable!` still enforces it), structured errors/conflict recovery and two-fresh-poll verification after enable. Configuration revisions protect operator edits independently of heartbeat/scan updates. Shared serial locks and unique adapter claims prevent cooperating processes or aliases from owning the same bus. Stale connection-error text still clears on the next poll.
 
 Validation: 181 RSpec examples and 33 frontend tests pass; TypeScript and frontend build pass. Includes an API/poller journey against a fake RTU endpoint and Preact component tests. Real Chromium smoke checking timed out; visual browser verification remains unconfirmed. Development/test databases migrated; restart development API/poller to load the schema/code. Production is unchanged, and implementation changes remain uncommitted and undeployed.
 

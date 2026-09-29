@@ -263,3 +263,22 @@ No commit or production deployment was performed for this implementation. A futu
 ## Production deployment — 2026-09-26
 
 User authorized commit, push, and deployment. Implementation commit 894cdcf was pushed to origin/main and deployed with bin/deploy. Production migration and frontend build succeeded; web and poller are active. Homepage, health, driver metadata and device API returned 200. Relay device 3 at address 1 resumed successful polling with all eight inputs and outputs false, no errors, and the interface online. Real-browser visual verification remains outstanding.
+
+## Simplified — 2026-09-29 (`store-io-cleanup` phase 2)
+
+Parts of the design above are superseded; see `claude/store-io-cleanup.md`.
+
+- **Scan:** no `scan`/`cancel_scan` endpoints. Clients PATCH the HostInterface
+  `scan_state` to `requested` (with `scan_options`) or `cancelling`. A
+  `cancelling` state replaces `scan_cancel_requested`. The server generates
+  `scan_request_id`; the client-token idempotency and token-scoped cancel are gone.
+- **Reconciliation removed:** no `preview`/`apply`, no `last_apply`, no
+  `validate_scan_choice!`, no deferred address swaps. Scan results become
+  devices through ordinary Device create/patch; an address swap is
+  delete-then-move.
+- **Impact:** no impact endpoints; the UI computes dependencies from the
+  Measurement/OutputBlock records it already loads. `deletable!` still blocks
+  deleting referenced devices server-side.
+- **DELETE** no longer takes `configuration_revision`; `quiet!` and
+  `deletable!` remain the guards. Update revisions and `compatible!` are unchanged.
+

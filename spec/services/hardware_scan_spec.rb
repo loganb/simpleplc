@@ -3,22 +3,39 @@ require "rails_helper"
 RSpec.describe "Hardware scanning" do
   let(:interface) { HostInterface.create!(name: "Bus", port: "/dev/missing", enabled: false) }
 
-  it "requires a disabled bus, protects active work, and cancels by attempt" do
+  it "requires a disabled bus, protects active work, and cancels a pending scan outright" do
     interface.update!(enabled: true)
-    expect { HardwareScan.request(interface, "a", {}) }.to raise_error(HardwareError)
+    expect { HardwareScan.request(interface, {}) }.to raise_error(HardwareError)
     interface.update!(enabled: false)
-    HardwareScan.request(interface, "a", { "first_address" => 1, "last_address" => 2 })
+    HardwareScan.request(interface, { "first_address" => 1, "last_address" => 2 })
     expect(interface.reload.scan_state).to eq("requested")
-    HardwareScan.request(interface, "a", {})
-    expect { HardwareScan.request(interface, "b", {}) }.to raise_error(HardwareError)
-    expect { HardwareScan.cancel(interface, "b") }.to raise_error(HardwareError)
-    HardwareScan.cancel(interface, "a")
+    expect(interface.scan_request_id).to be_present
+    expect { HardwareScan.request(interface, {}) }.to raise_error(HardwareError, /already pending/)
+    HardwareScan.cancel(interface)
+    expect(interface.reload.scan_state).to eq("cancelled")
+    HardwareScan.cancel(interface)
     expect(interface.reload.scan_state).to eq("cancelled")
     expect(interface.enabled).to be(false)
   end
 
+  it "gives each new scan its own server-generated id" do
+    HardwareScan.request(interface, {})
+    first = interface.reload.scan_request_id
+    interface.update!(scan_state: "completed")
+    HardwareScan.request(interface, {})
+    expect(interface.reload.scan_request_id).not_to eq(first)
+  end
+
+  it "only lets clients request or cancel" do
+    expect { HardwareScan.transition(interface, "completed", {}) }.to raise_error(HardwareError, /requested or cancelling/)
+    HardwareScan.transition(interface, "requested", {})
+    expect(interface.reload.scan_state).to eq("requested")
+    HardwareScan.transition(interface, "cancelling", {})
+    expect(interface.reload.scan_state).to eq("cancelled")
+  end
+
   it "records all driver verdicts and never configures a discovered board" do
-    HardwareScan.request(interface, "a", { "first_address" => 1, "last_address" => 2 })
+    HardwareScan.request(interface, { "first_address" => 1, "last_address" => 2 })
     registers = Object.new
     def registers.[](range)
       return 2532 if range == 247
@@ -52,7 +69,7 @@ RSpec.describe "Hardware scanning" do
     expect(Drivers::NT48C32.device_support(Drivers::Probe.new(slave))[:support]).to eq("no")
   end
   it "marks an abandoned running scan interrupted, retaining results" do
-    HardwareScan.request(interface, "a", {})
+    HardwareScan.request(interface, {})
     interface.update!(scan_state: "scanning", scan_results: { devices: [ { address: 1 } ] })
     HardwareScan.new(interface).run
     expect(interface.reload.scan_state).to eq("interrupted")
@@ -60,27 +77,39 @@ RSpec.describe "Hardware scanning" do
     expect(interface.enabled).to be(false)
   end
 
+  it "finishes an abandoned cancelling scan as cancelled, retaining results" do
+    HardwareScan.request(interface, {})
+    interface.update!(scan_state: "cancelling", scan_results: { devices: [ { address: 1 } ] })
+    HardwareScan.new(interface).run
+    expect(interface.reload.scan_state).to eq("cancelled")
+    expect(interface.scan_results["devices"]).to eq([ { "address" => 1 } ])
+  end
+
   it "cancels between serial transactions and closes the client" do
-    HardwareScan.request(interface, "a", { "first_address" => 1, "last_address" => 5 })
+    HardwareScan.request(interface, { "first_address" => 1, "last_address" => 5 })
     registers = double
     slave = double(holding_registers: registers)
     client = FakeRtuClient.new
     allow(client).to receive(:with_slave).and_return(slave)
+    states = []
     allow(registers).to receive(:[]) do
-      HardwareScan.cancel(HostInterface.find(interface.id), "a")
+      bus = HostInterface.find(interface.id)
+      HardwareScan.cancel(bus)
+      states << bus.reload.scan_state
       0
     end
     allow(SerialBusLock).to receive(:acquire).and_return(double(close: nil))
     allow(ModBus::RTUClient).to receive(:connect).and_return(client)
     HardwareScan.new(interface).run
+    expect(states.first).to eq("cancelling")
     expect(interface.reload.scan_state).to eq("cancelled")
     expect(client).to be_closed
     expect(interface.scan_results["devices"].first["driver_support"]).to all(include("support" => "maybe"))
   end
 
   it "bounds address/profile options and does not accept a malformed request" do
-    expect { HardwareScan.request(interface, "a", { "first_address" => 0 }) }.to raise_error(HardwareError)
-    expect { HardwareScan.request(interface, "a", { "profiles" => [] }) }.to raise_error(HardwareError)
+    expect { HardwareScan.request(interface, { "first_address" => 0 }) }.to raise_error(HardwareError)
+    expect { HardwareScan.request(interface, { "profiles" => [] }) }.to raise_error(HardwareError)
     expect(interface.reload.scan_state).to eq("idle")
   end
   it "rechecks adapter ownership when a previously missing port appears" do
@@ -91,11 +120,10 @@ RSpec.describe "Hardware scanning" do
       File.write(port, "")
       first.identify_port
       first.save!
-      HardwareScan.request(second, "claim-test", { "first_address" => 1, "last_address" => 1 })
+      HardwareScan.request(second, { "first_address" => 1, "last_address" => 1 })
       expect(ModBus::RTUClient).not_to receive(:connect)
       HardwareScan.new(second).run
       expect(second.reload.scan_state).to eq("failed")
     end
   end
-
 end

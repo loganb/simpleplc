@@ -186,6 +186,32 @@ bypasses. Replacement:
    dev server on a spare port (not 3001, which is production); update
    `claude/overview.md` and `claude/hardware-setup.md` (reconciliation removed).
 
+## Phase 2 result
+
+Implemented as planned, with these notes:
+
+- The migration is `20260929100000_simplify_hardware_setup`. `20260929000000` was
+  already taken by the I/O labels migration. It converts a
+  `scanning` + cancel-requested row to `cancelling` before dropping the flag.
+- `HostInterface#scan_active?` includes `cancelling`, so the poller still
+  picks the scan up to finish it, and edits stay blocked while it may hold the port.
+- `HardwareConfiguration.impact` remains as the query behind `deletable!`'s
+  error details; it just has no endpoint.
+- The scan-result card refuses a result found at serial settings the bus
+  doesn't use (UI-only; this replaces the dropped server check).
+- `useTxn` (`frontend/src/components/useTxn.ts`) runs one store transaction per
+  component with busy/failure state and an on-success callback.
+- Test gotcha: with `preact/compat` loaded (it is, via `DataLoader2`),
+  `@testing-library/preact`'s `fireEvent.change` sends an `input` event. That's
+  wrong for a `<select>`, whose `onChange` still listens for `change`. Set the
+  value and dispatch `new Event('change')` yourself.
+- Browser check against a dev server on port 3002 (no poller): disable, request
+  scan, cancel, delete review and re-enable all went out as PATCHes. The dev
+  interface's scan fields were reset to idle afterwards.
+- **Deploying** needs the migration and a restart of both web and poller
+  together: the old poller reads `scan_cancel_requested`, and old clients call
+  the removed endpoints.
+
 ## Implementation plan (phase 1)
 
 1. Baseline: run frontend tests + typecheck; run the hardware request specs.

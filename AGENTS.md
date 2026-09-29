@@ -79,5 +79,5 @@ something, extend the store rather than going around it.
 The API has no actions. State changes are a **create** or a **patch** of a
 resource — never a verb endpoint like `POST /things/:id/do_something`. Model
 an "action" as a field mutation (e.g. a flag) or as creating a different
-record. The Devices tab still has legacy direct calls and verb endpoints being
-migrated; see `claude/store-io-cleanup.md`. Don't add more.
+record. For example, a hardware scan is `PATCH /host_interfaces/:id` with
+`scan_state: "requested"`, not `POST …/scan`. See `claude/store-io-cleanup.md`.

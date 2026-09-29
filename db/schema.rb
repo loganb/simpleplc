@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_29_000000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_29_100000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -37,7 +37,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_29_000000) do
     t.datetime "created_at", null: false
     t.integer "data_bits", default: 8, null: false
     t.boolean "enabled", default: true, null: false
-    t.jsonb "last_apply", default: {}, null: false
     t.integer "lock_version", default: 0, null: false
     t.string "name", null: false
     t.boolean "online", default: false, null: false
@@ -45,7 +44,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_29_000000) do
     t.datetime "poller_reported_at"
     t.string "port", null: false
     t.string "port_identity"
-    t.boolean "scan_cancel_requested", default: false, null: false
     t.datetime "scan_finished_at"
     t.jsonb "scan_options", default: {}, null: false
     t.string "scan_request_id"
