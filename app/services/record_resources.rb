@@ -14,7 +14,8 @@ module RecordResources
     "Device" => "device", "HostInterface" => "host_interface",
     "LogicDiagram" => "logic_diagram", "Measurement" => "measurement",
     "LogicBlock" => "logic_block", "HysteresisLogicBlock" => "logic_block",
-    "LatchLogicBlock" => "logic_block", "OutputBlock" => "output_block",
+    "LatchLogicBlock" => "logic_block", "TimerCounterLogicBlock" => "logic_block",
+    "OutputBlock" => "output_block",
     "Trace" => "trace"
   }.freeze
 

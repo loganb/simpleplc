@@ -177,4 +177,15 @@ RSpec.describe Logic::BlockEvaluator do
     expect(result["input_values"]).to include("set" => false)
     expect(result["value"]).to eq(0.0)
   end
+
+  it "passes numeric block values through" do
+    block = TimerCounterLogicBlock.create!(logic_diagram: diagram, name: "Fan_Timer", stratum: 1, input_expressions: { "input" => "true" })
+    t0 = Time.zone.parse("2026-09-30 12:00:00")
+    Trace.create!(logic_diagram: diagram, recorded_at: t0)
+    trace = Trace.create!(logic_diagram: diagram, recorded_at: t0 + 42)
+
+    result = described_class.evaluate!(block, trace: trace)
+
+    expect(result["value"]).to eq(42.0)
+  end
 end

@@ -1,7 +1,8 @@
 class LogicBlockApi < RestfulApi
   TYPES_BY_BLOCK_TYPE = {
     "hysteresis" => "HysteresisLogicBlock",
-    "latch" => "LatchLogicBlock"
+    "latch" => "LatchLogicBlock",
+    "timer_counter" => "TimerCounterLogicBlock"
   }.freeze
   BLOCK_TYPES_BY_TYPE = TYPES_BY_BLOCK_TYPE.invert.freeze
 
@@ -98,6 +99,11 @@ class LogicBlockApi < RestfulApi
       {
         set:    block.set,
         reset:  block.reset,
+        output: block.output
+      }
+    when TimerCounterLogicBlock
+      {
+        input:  block.input,
         output: block.output
       }
     else

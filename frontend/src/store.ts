@@ -208,7 +208,6 @@ export interface BaseLogicBlockFields {
   config: Record<string, unknown>;
   latest_value: number | null;
   latest_state: Record<string, unknown> | null;
-  output: boolean | null;
   created_at: string;
   updated_at: string;
 }
@@ -216,6 +215,7 @@ export interface BaseLogicBlockFields {
 export interface HysteresisLogicBlockFields extends BaseLogicBlockFields {
   type: 'HysteresisLogicBlock';
   block_type: 'hysteresis';
+  output: boolean | null;
   value: number | null;
   low_limit: number | null;
   high_limit: number | null;
@@ -224,11 +224,19 @@ export interface HysteresisLogicBlockFields extends BaseLogicBlockFields {
 export interface LatchLogicBlockFields extends BaseLogicBlockFields {
   type: 'LatchLogicBlock';
   block_type: 'latch';
+  output: boolean | null;
   set: boolean | null;
   reset: boolean | null;
 }
 
-export type LogicBlockFields = HysteresisLogicBlockFields | LatchLogicBlockFields;
+export interface TimerCounterLogicBlockFields extends BaseLogicBlockFields {
+  type: 'TimerCounterLogicBlock';
+  block_type: 'timer_counter';
+  output: number | null; // seconds the input has been active; 0 while inactive
+  input: number | boolean | null;
+}
+
+export type LogicBlockFields = HysteresisLogicBlockFields | LatchLogicBlockFields | TimerCounterLogicBlockFields;
 
 export const LogicBlock: ModelDefinition<LogicBlockFields> = {
   name: 'logic_block',

@@ -16,7 +16,7 @@ module Logic
         Expression.evaluate(expression, context: context)
       end
       previous_state = previous_result&.fetch("state", nil) || {}
-      value, state = block.evaluate_logic(input_values, previous_state)
+      value, state = block.evaluate_logic(input_values, previous_state, recorded_at: recorded_at)
 
       result_payload(result_value(value), state, input_values).tap { block.clear_memery_cache! }
     end
@@ -45,6 +45,7 @@ module Logic
 
     def result_value(value)
       return nil if value.nil?
+      return value.to_f if value.is_a?(Numeric)
 
       value ? 1.0 : 0.0
     end

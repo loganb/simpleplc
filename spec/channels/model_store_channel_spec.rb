@@ -43,6 +43,7 @@ RSpec.describe ModelStoreChannel, type: :channel do
   it "maps STI identities to their API resource" do
     expect(RecordResources.resource_for("HysteresisLogicBlock")).to eq("logic_block")
     expect(RecordResources.resource_for("LatchLogicBlock")).to eq("logic_block")
+    expect(RecordResources.resource_for("TimerCounterLogicBlock")).to eq("logic_block")
     expect(RecordResources.resource_for("HostPort")).to be_nil
   end
 end

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { FormButtons } from '../../components/FormButtons';
-import { formatComputedValue, formatNullableBool } from '../../components/format';
+import { formatComputedValue, formatElapsedSeconds, formatNullableBool } from '../../components/format';
 import { useTxnStatus } from '../../components/useTxnStatus';
 import { useLoaders } from '../../lib/DataLoader2';
 import { Store, Measurement, LogicDiagram, LogicBlock, OutputBlock, Trace } from '../../store';
@@ -410,23 +410,27 @@ function LogicBlockCard({ block, onEdit }: {
       <div class="flex items-center justify-between rounded bg-surface-alt px-2 py-1.5">
         <span class="text-xs text-text-muted">Output</span>
         <span class="font-mono text-sm font-semibold">
-          {block.output === null ? 'No data' : block.output ? 'true' : 'false'}
+          {block.block_type === 'timer_counter' ? formatElapsedSeconds(block.output) : formatNullableBool(block.output)}
         </span>
       </div>
 
       <div class="space-y-1 text-xs text-text-muted">
         <p class="font-mono">{block.name}</p>
-        {block.block_type === 'hysteresis' ? (
+        {block.block_type === 'hysteresis' && (
           <>
             <p><span class="font-medium">value</span>: {formatComputedValue(block.value)}</p>
             <p><span class="font-medium">low_limit</span>: {formatComputedValue(block.low_limit)}</p>
             <p><span class="font-medium">high_limit</span>: {formatComputedValue(block.high_limit)}</p>
           </>
-        ) : (
+        )}
+        {block.block_type === 'latch' && (
           <>
             <p><span class="font-medium">set</span>: {formatComputedValue(block.set)}</p>
             <p><span class="font-medium">reset</span>: {formatComputedValue(block.reset)}</p>
           </>
+        )}
+        {block.block_type === 'timer_counter' && (
+          <p><span class="font-medium">input</span>: {formatComputedValue(block.input)}</p>
         )}
         {Object.entries(block.input_expressions).map(([name, expression]) => (
           <p key={name} class="truncate"><span class="font-medium">{name}</span>: {expression}</p>
@@ -484,7 +488,13 @@ function LogicDiagramForm({ onClose }: { onClose: () => void }) {
   );
 }
 
-function LogicBlockForm({ diagram, editId, blocks, onClose }: {
+const MODES_BY_TYPE: Record<LogicBlockFields['block_type'], { value: string; label: string }[]> = {
+  hysteresis: [{ value: 'active_high', label: 'Active High' }, { value: 'active_low', label: 'Active Low' }],
+  latch: [{ value: 'latch_high', label: 'Latch High' }, { value: 'latch_low', label: 'Latch Low' }],
+  timer_counter: [{ value: 'active_high', label: 'Active High' }, { value: 'active_low', label: 'Active Low' }],
+};
+
+export function LogicBlockForm({ diagram, editId, blocks, onClose }: {
   diagram: ExistingRecord<LogicDiagramFields>;
   editId: number | null;
   blocks: ExistingRecord<LogicBlockFields>[];
@@ -511,10 +521,9 @@ function LogicBlockForm({ diagram, editId, blocks, onClose }: {
 
   const handleTypeChange = (nextType: LogicBlockFields['block_type']) => {
     setBlockType(nextType);
-    if (!found) {
-      setExpressionsText(expressionsToText(defaultExpressionsForType(nextType)));
-      setMode(nextType === 'hysteresis' ? 'active_high' : 'latch_high');
-    }
+    const modes = MODES_BY_TYPE[nextType];
+    if (!found) setExpressionsText(expressionsToText(defaultExpressionsForType(nextType)));
+    if (!found || !modes.some((option) => option.value === mode)) setMode(modes[0].value);
   };
 
   const handleSave = () => {
@@ -530,9 +539,9 @@ function LogicBlockForm({ diagram, editId, blocks, onClose }: {
       .filter((block) => editId === null || block.id !== editId)
       .map((block) => ({ id: block.id, name: block.name, input_expressions: block.input_expressions }));
     const stratum = nextStratumForExpressions(existingBlocks, input_expressions);
-    const config: Record<string, unknown> = blockType === 'hysteresis'
-      ? { mode }
-      : { mode, dominance };
+    const config: Record<string, unknown> = blockType === 'latch'
+      ? { mode, dominance }
+      : { mode };
 
     setError(null);
     const fields = {
@@ -576,6 +585,7 @@ function LogicBlockForm({ diagram, editId, blocks, onClose }: {
           >
             <option value="hysteresis">Hysteresis</option>
             <option value="latch">Latch</option>
+            <option value="timer_counter">Timer Counter</option>
           </select>
         </label>
         <label class="block">
@@ -585,17 +595,9 @@ function LogicBlockForm({ diagram, editId, blocks, onClose }: {
             value={mode}
             onChange={(e) => setMode((e.target as HTMLSelectElement).value)}
           >
-            {blockType === 'hysteresis' ? (
-              <>
-                <option value="active_high">Active High</option>
-                <option value="active_low">Active Low</option>
-              </>
-            ) : (
-              <>
-                <option value="latch_high">Latch High</option>
-                <option value="latch_low">Latch Low</option>
-              </>
-            )}
+            {MODES_BY_TYPE[blockType].map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
           </select>
         </label>
         {blockType === 'latch' && (
@@ -636,9 +638,11 @@ function LogicBlockForm({ diagram, editId, blocks, onClose }: {
 }
 
 function defaultExpressionsForType(blockType: LogicBlockFields['block_type']): Record<string, string> {
-  return blockType === 'hysteresis'
-    ? { value: '', low_limit: '', high_limit: '' }
-    : { set: '', reset: '' };
+  switch (blockType) {
+    case 'hysteresis': return { value: '', low_limit: '', high_limit: '' };
+    case 'latch': return { set: '', reset: '' };
+    case 'timer_counter': return { input: '' };
+  }
 }
 
 function expressionsToText(expressions: Record<string, string>) {

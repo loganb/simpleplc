@@ -165,3 +165,23 @@ known `false` operand of `&&` drives it off. Production has no logic blocks.
 3. Frontend: types, form and card, plus a small vitest test if the form logic
    warrants one. Then `tsc` and the build.
 4. Update the overview and `claude/logic-diagram.md`.
+
+### Status — implemented 2026-09-30 (uncommitted, undeployed)
+
+- Backend: `TimerCounterLogicBlock`. `evaluate_logic` now takes `**` options,
+  and the evaluator passes `recorded_at:`. `BlockEvaluator` passes numeric
+  values through. The block is registered in `LogicBlockApi` (`input`,
+  numeric `output`), `Trace::RESULT_BUCKETS` and `RecordResources`. The full
+  suite passes with 240 examples. The one rubocop offense in
+  `block_evaluator.rb` (a trailing blank line) was already there.
+- Frontend: `TimerCounterLogicBlockFields`, and `output` moved from the base
+  fields to each block type. The block form now takes its mode lists from
+  `MODES_BY_TYPE`, and switching type while editing resets the mode if the
+  current one is invalid for the new type. The card shows
+  `formatElapsedSeconds` (e.g. `754 s (12m 34s)`). Vitest passes with 50
+  tests, and tsc and the build are clean.
+- Test gotcha: once any `preact/compat` vnode has rendered,
+  `@testing-library/preact` turns `fireEvent.change` into an `input` event, so
+  `<select onChange>` never fires. `LogicBlockForm.test.tsx` dispatches a real
+  `change` event through its `choose()` helper.
+- The UI hasn't been checked in a real browser.

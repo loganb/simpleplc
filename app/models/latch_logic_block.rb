@@ -33,7 +33,7 @@ class LatchLogicBlock < LogicBlock
     latest_input_value("reset")
   end
 
-  def evaluate_logic(input_values, previous_state)
+  def evaluate_logic(input_values, previous_state, **)
     prior_value = previous_state.key?("output") ? previous_state["output"] : initial_output
     prior_value = initial_output if prior_value.nil?
     prior_output = truthy?(prior_value)

@@ -13,8 +13,8 @@ Add a new concept named **LogicDiagram**: a saved container that maps existing M
 - `LogicBlock`
   - belongs to `logic_diagram`
   - `name`
-  - uses Rails STI via `type`, initially `HysteresisLogicBlock` and `LatchLogicBlock`
-  - API/frontend still expose friendly `block_type` values, initially `hysteresis` and `latch`
+  - uses Rails STI via `type`, initially `HysteresisLogicBlock` and `LatchLogicBlock` (now also `TimerCounterLogicBlock`)
+  - API/frontend still expose friendly `block_type` values, initially `hysteresis` and `latch` (now also `timer_counter`)
   - `stratum`, an integer column representing the frontend-computed topological column. Computation runs in ascending `stratum`.
   - `input_expressions`, JSON object keyed by input name. Expressions can reference Measurements and upstream LogicBlocks.
   - `config`, JSON object for block-specific settings.
@@ -85,6 +85,25 @@ Behavior:
   - else if set expression is true, output becomes true and remains true
   - otherwise output retains prior state
 - `latch_low` is the polarity-inverted variant. Implementation should normalize internally to a latched boolean and apply polarity at the output boundary, so tests stay readable.
+
+#### Timer Counter
+
+Added later; see `claude/timer-counter.md`.
+
+Inputs:
+
+- `input`
+
+Config:
+
+- `mode`: `active_high` (default) or `active_low`
+
+Behavior:
+
+- The output is a number: seconds since the input went active, measured
+  between trace `recorded_at` times. It is 0 on the first active trace and 0
+  while inactive.
+- A null input outputs null but keeps the retained `active_since` state.
 
 ### Dependency Ordering
 

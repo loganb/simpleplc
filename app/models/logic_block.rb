@@ -35,7 +35,7 @@ class LogicBlock < ApplicationRecord
     []
   end
 
-  def evaluate_logic(_input_values, _previous_state)
+  def evaluate_logic(_input_values, _previous_state, **)
     raise NotImplementedError, "#{self.class} must implement #evaluate_logic"
   end
 

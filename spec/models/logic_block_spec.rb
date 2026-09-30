@@ -228,4 +228,66 @@ RSpec.describe LogicBlock, type: :model do
     expect(block).not_to be_valid
     expect(block.errors[:input_expressions].join).to include("unknown name Other")
   end
+
+  describe TimerCounterLogicBlock do
+    let(:t0) { Time.zone.parse("2026-09-30 12:00:00.250") }
+
+    def timer(mode: nil)
+      config = mode ? { "mode" => mode } : {}
+      described_class.new(logic_diagram: diagram, name: "Fan_Timer", stratum: 1, input_expressions: { "input" => "true" }, config: config)
+    end
+
+    it "requires an input and a known mode" do
+      expect(timer).to be_valid
+      expect(timer.mode).to eq("active_high")
+      expect(timer(mode: "active_low")).to be_valid
+      expect(timer(mode: "sideways")).not_to be_valid
+
+      missing = timer.tap { |b| b.input_expressions = {} }
+      expect(missing).not_to be_valid
+      expect(missing.errors[:input_expressions].join).to include("missing input")
+    end
+
+    it "outputs 0 and clears the start time while inactive" do
+      value, state = timer.evaluate_logic({ "input" => false }, { "active_since" => t0.iso8601(6) }, recorded_at: t0 + 5)
+
+      expect(value).to eq(0.0)
+      expect(state).to eq("active_since" => nil)
+    end
+
+    it "starts at 0 on the first active trace" do
+      value, state = timer.evaluate_logic({ "input" => true }, {}, recorded_at: t0)
+
+      expect(value).to eq(0.0)
+      expect(state).to eq("active_since" => t0.iso8601(6))
+    end
+
+    it "counts seconds since the input went active" do
+      value, state = timer.evaluate_logic({ "input" => 1.0 }, { "active_since" => t0.iso8601(6) }, recorded_at: t0 + 90.5)
+
+      expect(value).to eq(90.5)
+      expect(state).to eq("active_since" => t0.iso8601(6))
+    end
+
+    it "treats a false input as active in active_low mode" do
+      block = timer(mode: "active_low")
+
+      expect(block.evaluate_logic({ "input" => 0.0 }, {}, recorded_at: t0).first).to eq(0.0)
+      expect(block.evaluate_logic({ "input" => false }, { "active_since" => t0.iso8601(6) }, recorded_at: t0 + 30).first).to eq(30.0)
+      expect(block.evaluate_logic({ "input" => true }, { "active_since" => t0.iso8601(6) }, recorded_at: t0 + 30)).to eq([ 0.0, { "active_since" => nil } ])
+    end
+
+    it "outputs null but keeps the start time when the input is null" do
+      value, state = timer.evaluate_logic({ "input" => nil }, { "active_since" => t0.iso8601(6) }, recorded_at: t0 + 30)
+
+      expect(value).to be_nil
+      expect(state).to eq("active_since" => t0.iso8601(6))
+    end
+
+    it "never counts negative time" do
+      value, = timer.evaluate_logic({ "input" => true }, { "active_since" => t0.iso8601(6) }, recorded_at: t0 - 10)
+
+      expect(value).to eq(0.0)
+    end
+  end
 end

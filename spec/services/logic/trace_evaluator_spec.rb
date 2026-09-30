@@ -151,4 +151,37 @@ RSpec.describe Logic::TraceEvaluator do
     expect(output_result["input_values"]).to include("input" => nil)
     expect(output_result["state"]).to include("write_pending" => false)
   end
+
+  it "counts active time across traces and drives outputs from it" do
+    call = Measurement.create!(logic_diagram: diagram, name: "Fan_Call", mode: "simulation", simulation_value: 1.0)
+    block = TimerCounterLogicBlock.create!(
+      logic_diagram: diagram,
+      name: "Fan_Timer",
+      stratum: 1,
+      input_expressions: { "input" => "Fan_Call" }
+    )
+    host = HostInterface.create!(name: "Test Bus", port: "/dev/ttyUSB0")
+    device = Device.create!(name: "Relay board", host_interface: host, driver: "Drivers::N4D8B08", modbus_address: 3)
+    output = OutputBlock.create!(
+      logic_diagram: diagram,
+      name: "Fan_Relay",
+      device: device,
+      channel: 1,
+      input_expression: "Fan_Timer > 60",
+      output_enable: false
+    )
+    t0 = Time.zone.parse("2026-09-30 12:00:00")
+
+    values = [ 0, 30, 90 ].map do |offset|
+      Trace.create!(logic_diagram: diagram, recorded_at: t0 + offset)
+    end
+    expect(values.map { |trace| trace.value_for(block) }).to eq([ 0.0, 30.0, 90.0 ])
+    expect(values.last.result_for(output)["state"]).to include("desired_output" => true)
+
+    call.update!(simulation_value: 0.0)
+    trace = Trace.create!(logic_diagram: diagram, recorded_at: t0 + 120)
+
+    expect(trace.value_for(block)).to eq(0.0)
+    expect(trace.result_for(output)["state"]).to include("desired_output" => false)
+  end
 end

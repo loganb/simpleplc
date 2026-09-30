@@ -65,4 +65,35 @@ RSpec.describe "Logic blocks API", type: :request do
       "output" => nil
     )
   end
+
+  it "creates and serializes a timer counter block" do
+    diagram = LogicDiagram.create!(name: "Boiler")
+
+    post "/logic_blocks", params: {
+      logic_block: {
+        logic_diagram_id: diagram.id,
+        name: "Fan_Timer",
+        block_type: "timer_counter",
+        stratum: 1,
+        input_expressions: { input: "true" },
+        config: { mode: "active_high" }
+      }
+    }
+
+    expect(response).to have_http_status(:created)
+
+    t0 = Time.zone.parse("2026-09-30 12:00:00")
+    Trace.create!(logic_diagram: diagram, recorded_at: t0)
+    Trace.create!(logic_diagram: diagram, recorded_at: t0 + 45)
+
+    get "/logic_blocks", params: { logic_diagram_id: diagram.id }
+
+    expect(response.parsed_body.fetch("logic_blocks").first).to include(
+      "type" => "TimerCounterLogicBlock",
+      "block_type" => "timer_counter",
+      "input" => true,
+      "output" => 45.0,
+      "latest_value" => 45.0
+    )
+  end
 end
