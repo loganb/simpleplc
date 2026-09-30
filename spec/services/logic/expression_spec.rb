@@ -1,6 +1,10 @@
 require "rails_helper"
 
 RSpec.describe Logic::Expression do
+  def evaluate(source)
+    described_class.evaluate(source, context: Logic::EvaluationContext.empty)
+  end
+
   it "evaluates arithmetic, comparisons, and booleans" do
     result = described_class.evaluate("(2 + 3) * 4 >= 20 && !false", context: Logic::EvaluationContext.empty)
 
@@ -19,7 +23,6 @@ RSpec.describe Logic::Expression do
 
   it "propagates null through regular operators" do
     expect(described_class.evaluate("null + 1", context: Logic::EvaluationContext.empty)).to be_nil
-    expect(described_class.evaluate("null && true", context: Logic::EvaluationContext.empty)).to be_nil
     expect(described_class.evaluate("5 > null", context: Logic::EvaluationContext.empty)).to be_nil
     expect(described_class.evaluate("!null", context: Logic::EvaluationContext.empty)).to be_nil
   end
@@ -33,6 +36,85 @@ RSpec.describe Logic::Expression do
     expect(described_class.evaluate("null === null", context: Logic::EvaluationContext.empty)).to eq(true)
     expect(described_class.evaluate("null == 0", context: Logic::EvaluationContext.empty)).to be_nil
     expect(described_class.evaluate("null != false", context: Logic::EvaluationContext.empty)).to be_nil
+  end
+
+  describe "SQL three-valued logic for && and ||" do
+    {
+      "false && null" => false, "null && false" => false,
+      "true && null" => nil, "null && true" => nil, "null && null" => nil,
+      "true || null" => true, "null || true" => true,
+      "false || null" => nil, "null || false" => nil, "null || null" => nil,
+      "0 && null" => false, "5 || null" => true
+    }.each do |source, expected|
+      it "evaluates #{source} to #{expected.inspect}" do
+        expect(evaluate(source)).to eq(expected)
+      end
+    end
+
+    it "keeps !null as null" do
+      expect(evaluate("!(null && true)")).to be_nil
+      expect(evaluate("!(null && false)")).to eq(true)
+    end
+  end
+
+  describe "?? operator" do
+    it "returns the left side unless it is null" do
+      expect(evaluate("null ?? 3")).to eq(3.0)
+      expect(evaluate("2 ?? 3")).to eq(2.0)
+      expect(evaluate("false ?? true")).to eq(false)
+      expect(evaluate("null ?? null")).to be_nil
+    end
+
+    it "chains" do
+      expect(evaluate("null ?? null ?? 4")).to eq(4.0)
+    end
+
+    it "binds more loosely than every other operator" do
+      expect(evaluate("null > 1 ?? false")).to eq(false)
+      expect(evaluate("null || false ?? true")).to eq(true)
+      expect(evaluate("1 + (null ?? 2)")).to eq(3.0)
+    end
+
+    it "does not evaluate the right side when the left is not null" do
+      expect(evaluate("1 ?? unknown_name")).to eq(1.0)
+    end
+  end
+
+  describe "coalesce()" do
+    it "returns the first non-null argument" do
+      expect(evaluate("coalesce(null, 2, 3)")).to eq(2.0)
+      expect(evaluate("coalesce(false, 2)")).to eq(false)
+      expect(evaluate("coalesce(7)")).to eq(7.0)
+    end
+
+    it "returns null when every argument is null" do
+      expect(evaluate("coalesce(null, null)")).to be_nil
+    end
+
+    it "is case-insensitive" do
+      expect(evaluate("COALESCE(null, 1)")).to eq(1.0)
+    end
+
+    it "evaluates arguments lazily" do
+      expect(evaluate("coalesce(1, unknown_name)")).to eq(1.0)
+    end
+
+    it "composes with other operators" do
+      expect(evaluate("coalesce(null, 2) * 3")).to eq(6.0)
+      expect(evaluate("coalesce(null, 1 + 1, 5)")).to eq(2.0)
+      expect(evaluate("coalesce(coalesce(null), null ?? 4)")).to eq(4.0)
+    end
+
+    it "rejects unknown functions and empty calls" do
+      expect { evaluate("foo(1)") }.to raise_error(Logic::Expression::Error)
+      expect { evaluate("coalesce()") }.to raise_error(Logic::Expression::Error)
+      expect { evaluate("coalesce(1,)") }.to raise_error(Logic::Expression::Error)
+      expect { evaluate("coalesce(1") }.to raise_error(Logic::Expression::Error)
+    end
+
+    it "does not report the function name as a reference" do
+      expect(described_class.references("coalesce(a, b) ?? c")).to eq(identifiers: %w[a b c])
+    end
   end
 
   it "extracts name references" do

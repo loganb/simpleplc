@@ -86,3 +86,20 @@ Implementation notes:
 - `HysteresisLogicBlock` and `LatchLogicBlock` emit null when required inputs are null but preserve the retained `"output"` state from the last non-null cycle.
 - `Logic::OutputEvaluator` records null desired/effective output and `write_pending: false` when an output input is null.
 - `OutputBlock` and `Logic::OutputWriter` skip hardware writes for null desired output.
+
+## Null handling additions — 2026-09-30
+
+Added as Phase 1 of `claude/timer-counter.md`:
+
+- `a ?? b` returns `a` unless it is null, otherwise `b`. It has the lowest
+  precedence (below `||`) and only evaluates the right side when needed.
+- `coalesce(a, b, ...)` returns the first non-null argument, or null if every
+  argument is null. It evaluates arguments lazily. This is the first
+  function-call form: an identifier directly followed by `(` is a call, names
+  are case-insensitive, and only functions listed in
+  `Logic::Expression::FUNCTIONS` exist. Function names are not reported as
+  references.
+- `&&`/`||` now follow SQL three-valued logic: `false && null` is `false`,
+  `true || null` is `true`, and the other combinations with null stay null.
+  `!null` is still null. Every other operator still propagates null as
+  described above.

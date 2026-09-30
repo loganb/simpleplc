@@ -7,13 +7,15 @@ module Logic
     Token = Struct.new(:type, :value, keyword_init: true)
 
     PRECEDENCE = {
-      "||" => 1,
-      "&&" => 2,
-      "==" => 3, "!=" => 3, "===" => 3, "!==" => 3,
-      "<" => 4, "<=" => 4, ">" => 4, ">=" => 4,
-      "+" => 5, "-" => 5,
-      "*" => 6, "/" => 6
+      "??" => 1,
+      "||" => 2,
+      "&&" => 3,
+      "==" => 4, "!=" => 4, "===" => 4, "!==" => 4,
+      "<" => 5, "<=" => 5, ">" => 5, ">=" => 5,
+      "+" => 6, "-" => 6,
+      "*" => 7, "/" => 7
     }.freeze
+    FUNCTIONS = %w[coalesce].freeze
 
     def self.evaluate(source, context:)
       new(source, context: context).evaluate
@@ -60,7 +62,7 @@ module Logic
           tokens << Token.new(type: :nil, value: nil)
         elsif scanner.scan(/[A-Za-z_]\w*/)
           tokens << Token.new(type: :identifier, value: scanner.matched)
-        elsif scanner.scan(/&&|\|\||===|!==|==|!=|<=|>=|[+\-*\/()!<>]/)
+        elsif scanner.scan(/&&|\|\||\?\?|===|!==|==|!=|<=|>=|[+\-*\/()!<>,]/)
           tokens << Token.new(type: :operator, value: scanner.matched)
         else
           raise Error, "unexpected token near #{scanner.rest.inspect}"
@@ -98,6 +100,8 @@ module Logic
       when :number, :boolean, :nil
         [ :literal, token.value ]
       when :identifier
+        return parse_call(token.value) if peek&.type == :operator && peek.value == "("
+
         references[:identifiers] |= [ token.value ]
         [ :identifier, token.value ]
       when :operator
@@ -114,6 +118,21 @@ module Logic
       end
     end
 
+    def parse_call(name)
+      function = name.downcase
+      raise Error, "unknown function #{name}" unless FUNCTIONS.include?(function)
+
+      advance
+      arguments = [ parse_expression ]
+      while peek&.value == ","
+        advance
+        arguments << parse_expression
+      end
+      raise Error, "expected closing parenthesis" unless advance&.value == ")"
+
+      [ :call, function, arguments ]
+    end
+
     def evaluate_node(node)
       case node[0]
       when :literal
@@ -123,8 +142,20 @@ module Logic
       when :unary
         evaluate_unary(node[1], evaluate_node(node[2]))
       when :binary
+        return evaluate_coalesce(node[2..3]) if node[1] == "??"
+
         evaluate_binary(node[1], evaluate_node(node[2]), evaluate_node(node[3]))
+      when :call
+        evaluate_coalesce(node[2])
       end
+    end
+
+    def evaluate_coalesce(nodes)
+      nodes.each do |argument|
+        value = evaluate_node(argument)
+        return value unless value.nil?
+      end
+      nil
     end
 
     def evaluate_unary(operator, value)
@@ -139,11 +170,11 @@ module Logic
     def evaluate_binary(operator, left, right)
       return left == right if operator == "==="
       return left != right if operator == "!=="
+      return logical_and(left, right) if operator == "&&"
+      return logical_or(left, right) if operator == "||"
       return nil if left.nil? || right.nil?
 
       case operator
-      when "||" then boolean(left) || boolean(right)
-      when "&&" then boolean(left) && boolean(right)
       when "==" then comparable(left) == comparable(right)
       when "!=" then comparable(left) != comparable(right)
       when "<" then numeric(left) < numeric(right)
@@ -155,6 +186,26 @@ module Logic
       when "*" then numeric(left) * numeric(right)
       when "/" then numeric(left) / numeric(right)
       end
+    end
+
+    # SQL three-valued logic: null is "unknown", so a known false (for &&) or
+    # a known true (for ||) decides the result on its own.
+    def logical_and(left, right)
+      left = boolean(left) unless left.nil?
+      right = boolean(right) unless right.nil?
+      return false if left == false || right == false
+      return nil if left.nil? || right.nil?
+
+      true
+    end
+
+    def logical_or(left, right)
+      left = boolean(left) unless left.nil?
+      right = boolean(right) unless right.nil?
+      return true if left == true || right == true
+      return nil if left.nil? || right.nil?
+
+      false
     end
 
     def boolean(value)

@@ -26,6 +26,22 @@ RSpec.describe LogicBlock, type: :model do
     expect(block).to be_valid
   end
 
+  it "accepts coalesce and ?? in input expressions" do
+    measurement
+    block = HysteresisLogicBlock.new(
+      logic_diagram: diagram,
+      name: "DHW_Call",
+      stratum: 1,
+      input_expressions: {
+        "value" => "coalesce(DHW_Temp, 150)",
+        "low_limit" => "DHW_Temp ?? 140",
+        "high_limit" => "160"
+      }
+    )
+
+    expect(block).to be_valid
+  end
+
   it "exposes hysteresis config through typed accessors" do
     block = HysteresisLogicBlock.new(config: { "mode" => "active_low", "initial_output" => true })
 
