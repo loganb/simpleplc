@@ -209,3 +209,12 @@ are active with zero restarts, `/up` returns 200, `/logic_blocks.json` returns
 Notes field. `Heat Control Logic` kept tracing (22:11:33, 22:12:03 UTC), the
 relay bus is online, and devices 3 and 4 polled at 22:12:15 UTC with no errors.
 npm audit still reports the same nine existing findings.
+
+## Logic card cleanup deployed — 2026-09-30
+
+Pushed and deployed `39fe407` (frontend only, no migration) at the user's
+direction. The target, web, poller and logic-runner services are active with
+zero restarts, `/up` returns 200, and the served `app.js` has the new
+single Output box and no longer contains "Pending poller write". Traces kept
+arriving (latest 22:55:23 UTC), and relay devices 3 and 4 polled at
+22:55:17–18 UTC. npm audit still reports the same nine existing findings.
