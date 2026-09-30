@@ -407,6 +407,10 @@ function LogicBlockCard({ block, onEdit }: {
         </button>
       </div>
 
+      {block.notes?.trim() && (
+        <p class="whitespace-pre-wrap break-words text-xs text-text">{block.notes}</p>
+      )}
+
       <div class="flex items-center justify-between rounded bg-surface-alt px-2 py-1.5">
         <span class="text-xs text-text-muted">Output</span>
         <span class="font-mono text-sm font-semibold">
@@ -521,6 +525,7 @@ export function LogicBlockForm({ diagram, editId, blocks, onClose }: {
   const [mode, setMode] = useState(String(found?.config?.mode ?? 'active_high'));
   const [dominance, setDominance] = useState(String(found?.config?.dominance ?? 'reset'));
   const [expressionsText, setExpressionsText] = useState(expressionsToText(defaultExpressions));
+  const [notes, setNotes] = useState(found?.notes ?? '');
   const [saveTxn, setSaveTxn] = useState<Txn | undefined>();
   const [error, setError] = useState<string | null>(null);
   const { txnResult, saving } = useTxnStatus(saveTxn);
@@ -563,6 +568,7 @@ export function LogicBlockForm({ diagram, editId, blocks, onClose }: {
       stratum,
       input_expressions,
       config,
+      notes,
     };
     setSaveTxn(editId !== null
       ? Store.m(LogicBlock).patch(editId, fields)
@@ -635,6 +641,14 @@ export function LogicBlockForm({ diagram, editId, blocks, onClose }: {
           class="mt-1 block min-h-28 w-full rounded border border-border bg-surface px-2 py-1.5 font-mono text-sm"
           value={expressionsText}
           onInput={(e) => setExpressionsText((e.target as HTMLTextAreaElement).value)}
+        />
+      </label>
+      <label class="block">
+        <span class="text-xs text-text-muted">Notes</span>
+        <textarea
+          class="mt-1 block min-h-20 w-full rounded border border-border bg-surface px-2 py-1.5 text-sm"
+          value={notes}
+          onInput={(e) => setNotes((e.target as HTMLTextAreaElement).value)}
         />
       </label>
       <div class="flex gap-2">

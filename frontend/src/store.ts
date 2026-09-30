@@ -206,6 +206,7 @@ export interface BaseLogicBlockFields {
   stratum: number;
   input_expressions: Record<string, string>;
   config: Record<string, unknown>;
+  notes: string;
   latest_value: number | boolean | null; // only expression blocks store booleans
   latest_state: Record<string, unknown> | null;
   created_at: string;

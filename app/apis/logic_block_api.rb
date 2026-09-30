@@ -28,6 +28,7 @@ class LogicBlockApi < RestfulApi
       stratum:           block.stratum,
       input_expressions: block.input_expressions,
       config:            block.config,
+      notes:             block.notes,
       latest_value:      latest&.fetch("value", nil),
       latest_state:      latest&.fetch("state", nil),
       created_at:        block.created_at.iso8601,
@@ -63,6 +64,7 @@ class LogicBlockApi < RestfulApi
       :name,
       :block_type,
       :stratum,
+      :notes,
       input_expressions: {},
       config: {}
     )

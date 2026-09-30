@@ -71,4 +71,20 @@ describe('LogicBlockForm', () => {
       config: {},
     }));
   });
+
+  it('sends freeform notes with the block', () => {
+    const create = vi.spyOn(Store.m(LogicBlock), 'create').mockReturnValue(undefined as never);
+    render(<LogicBlockForm diagram={diagram} editId={null} blocks={[]} onClose={vi.fn()} />);
+
+    fireEvent.input(screen.getByLabelText('Name'), { target: { value: 'BOT_Ready' } });
+    fireEvent.input(screen.getByLabelText('Input Expressions'), {
+      target: { value: 'value = 145\nlow_limit = 130\nhigh_limit = 140' },
+    });
+    fireEvent.input(screen.getByLabelText('Notes'), { target: { value: 'Boiler outlet ready.\nDeadband avoids cycling.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({
+      notes: 'Boiler outlet ready.\nDeadband avoids cycling.',
+    }));
+  });
 });

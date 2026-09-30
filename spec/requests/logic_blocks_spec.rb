@@ -11,7 +11,8 @@ RSpec.describe "Logic blocks API", type: :request do
         block_type: "hysteresis",
         stratum: 1,
         input_expressions: { value: "145", low_limit: "130", high_limit: "140" },
-        config: { mode: "active_high" }
+        config: { mode: "active_high" },
+        notes: "Boiler outlet ready.\nDeadband keeps the pump from cycling."
       }
     }
 
@@ -28,6 +29,7 @@ RSpec.describe "Logic blocks API", type: :request do
       "type" => "HysteresisLogicBlock",
       "block_type" => "hysteresis",
       "stratum" => 1,
+      "notes" => "Boiler outlet ready.\nDeadband keeps the pump from cycling.",
       "value" => 145.0,
       "low_limit" => 130.0,
       "high_limit" => 140.0,
@@ -51,7 +53,8 @@ RSpec.describe "Logic blocks API", type: :request do
         block_type: "latch",
         stratum: 1,
         input_expressions: { set: "true", reset: "false" },
-        config: { mode: "latch_high", dominance: "reset" }
+        config: { mode: "latch_high", dominance: "reset" },
+        notes: "Locks out heat until reset."
       }
     }
 
@@ -60,6 +63,7 @@ RSpec.describe "Logic blocks API", type: :request do
     expect(response.parsed_body.fetch("logic_blocks").first).to include(
       "type" => "LatchLogicBlock",
       "block_type" => "latch",
+      "notes" => "Locks out heat until reset.",
       "set" => nil,
       "reset" => nil,
       "output" => nil

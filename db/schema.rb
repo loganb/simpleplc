@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_29_100000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_30_000000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -64,6 +64,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_29_100000) do
     t.integer "lock_version", default: 0, null: false
     t.bigint "logic_diagram_id", null: false
     t.string "name", null: false
+    t.text "notes", default: "", null: false
     t.integer "stratum", default: 1, null: false
     t.string "type", null: false
     t.datetime "updated_at", null: false
