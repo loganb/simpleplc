@@ -186,3 +186,15 @@ ThirdFloorRadValve/ThirdFloorFCUValve changes seen after the deploy came from a
 real `ThirdFloorCall` of 1.0 with every measurement non-null. No timer counter
 blocks exist in production yet. npm audit still reports the same nine
 existing findings.
+
+## Expression block deployed — 2026-09-30
+
+Pushed and deployed `bfe5af0` (`ExpressionLogicBlock`, division by zero →
+null, boolean Hysteresis inputs) at the user's direction. The auto-mode
+classifier blocked the first `bin/deploy` attempt, and it went ahead after the
+user explicitly approved it. No migration was needed. The target, web, poller
+and logic-runner services are active with zero restarts, `/up` returns 200,
+and the served `app.js` includes the expression block form. `Heat Control Logic`
+kept tracing every 30 s (latest 21:49:13 UTC, no null measurements), and relay
+devices 3 and 4 polled `ok` at 21:49:14 UTC. Production had no logic blocks,
+so the change to how block values are stored couldn't affect live traces.

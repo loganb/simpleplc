@@ -63,7 +63,7 @@ matches the rest of the null-propagation rules. This goes in
 3. Update `claude/logic-diagram.md`, `claude/expression-types.md` and
    `claude/overview.md`.
 
-## Status — implemented 2026-09-30 (uncommitted, undeployed)
+## Status — implemented 2026-09-30, deployed in `bfe5af0`
 
 The backend specs and frontend tests were written first and failed, then
 passed once implemented: RSpec 246 examples, vitest 51. tsc and the build are
