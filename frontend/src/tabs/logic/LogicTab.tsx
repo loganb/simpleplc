@@ -1,3 +1,4 @@
+import type { ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { FormButtons } from '../../components/FormButtons';
 import { formatComputedValue, formatElapsedSeconds, formatNullableBool } from '../../components/format';
@@ -309,15 +310,10 @@ function LogicDiagramsSection({
           <div class="overflow-x-auto pb-2">
             <div class="flex min-w-max gap-4">
               <div class="w-64 shrink-0">
-                <div class="mb-2 flex items-center justify-between">
-                  <ColumnHeader title="Measurements" />
-                  <button
-                    class="rounded bg-active px-2 py-1 text-xs font-medium text-white hover:opacity-90"
-                    onClick={() => onShowMeasurementForm('new')}
-                  >
-                    + New
-                  </button>
-                </div>
+                <ColumnHeader
+                  title="Measurements"
+                  action={<NewButton onClick={() => onShowMeasurementForm('new')} />}
+                />
                 <div class="space-y-2">
                   {foundMeasurements.length === 0 ? (
                     <div class="rounded-lg border border-dashed border-border bg-surface-alt p-4 text-sm text-text-muted">
@@ -327,7 +323,6 @@ function LogicDiagramsSection({
                     <MeasurementCard
                       key={measurement.id}
                       measurement={measurement}
-                      devices={devices}
                       onEdit={(id) => onShowMeasurementForm(id)}
                     />
                   ))}
@@ -350,15 +345,10 @@ function LogicDiagramsSection({
               ))}
 
               <div class="w-64 shrink-0">
-                <div class="mb-2 flex items-center justify-between">
-                  <ColumnHeader title="Outputs" />
-                  <button
-                    class="rounded bg-active px-2 py-1 text-xs font-medium text-white hover:opacity-90"
-                    onClick={() => onShowOutputForm('new')}
-                  >
-                    + New
-                  </button>
-                </div>
+                <ColumnHeader
+                  title="Outputs"
+                  action={<NewButton onClick={() => onShowOutputForm('new')} />}
+                />
                 <div class="space-y-2">
                   {currentOutputs.length === 0 ? (
                     <div class="rounded-lg border border-dashed border-border bg-surface-alt p-4 text-sm text-text-muted">
@@ -382,18 +372,34 @@ function LogicDiagramsSection({
   );
 }
 
-function ColumnHeader({ title }: { title: string }) {
-  return <h3 class="mb-2 text-xs font-semibold uppercase text-text-muted">{title}</h3>;
+// Every column's header is the same fixed-height row, with or without an
+// action, so the first cards of all columns line up.
+export function ColumnHeader({ title, action }: { title: string; action?: ComponentChildren }) {
+  return (
+    <div class="mb-2 flex h-7 items-center justify-between">
+      <h3 class="text-xs font-semibold uppercase text-text-muted">{title}</h3>
+      {action}
+    </div>
+  );
 }
 
-function LogicBlockCard({ block, onEdit }: {
+function NewButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      class="rounded bg-active px-2 py-1 text-xs font-medium text-white hover:opacity-90"
+      onClick={onClick}
+    >
+      + New
+    </button>
+  );
+}
+
+export function LogicBlockCard({ block, onEdit }: {
   block: ExistingRecord<LogicBlockFields>;
   onEdit: (id: number) => void;
 }) {
-  const state = block.latest_state ?? {};
-
   return (
-    <div class="rounded-lg border border-border bg-surface p-4 space-y-3">
+    <div class="rounded-lg border border-border bg-surface p-3 space-y-2">
       <div class="flex items-start justify-between gap-3">
         <div>
           <h3 class="text-sm font-semibold">{block.name}</h3>
@@ -411,40 +417,16 @@ function LogicBlockCard({ block, onEdit }: {
         <p class="whitespace-pre-wrap break-words text-xs text-text">{block.notes}</p>
       )}
 
-      <div class="flex items-center justify-between rounded bg-surface-alt px-2 py-1.5">
+      <div
+        class="flex items-center justify-between rounded bg-surface-alt px-2 py-1.5"
+        title={block.block_type === 'expression'
+          ? block.input_expressions.value
+          : expressionsToText(block.input_expressions)}
+      >
         <span class="text-xs text-text-muted">Output</span>
         <span class="font-mono text-sm font-semibold">
           {formatBlockOutput(block)}
         </span>
-      </div>
-
-      <div class="space-y-1 text-xs text-text-muted">
-        <p class="font-mono">{block.name}</p>
-        {block.block_type === 'hysteresis' && (
-          <>
-            <p><span class="font-medium">value</span>: {formatComputedValue(block.value)}</p>
-            <p><span class="font-medium">low_limit</span>: {formatComputedValue(block.low_limit)}</p>
-            <p><span class="font-medium">high_limit</span>: {formatComputedValue(block.high_limit)}</p>
-          </>
-        )}
-        {block.block_type === 'latch' && (
-          <>
-            <p><span class="font-medium">set</span>: {formatComputedValue(block.set)}</p>
-            <p><span class="font-medium">reset</span>: {formatComputedValue(block.reset)}</p>
-          </>
-        )}
-        {block.block_type === 'expression' && (
-          <p><span class="font-medium">value</span>: {formatComputedValue(block.value)}</p>
-        )}
-        {block.block_type === 'timer_counter' && (
-          <p><span class="font-medium">input</span>: {formatComputedValue(block.input)}</p>
-        )}
-        {Object.entries(block.input_expressions).map(([name, expression]) => (
-          <p key={name} class="truncate"><span class="font-medium">{name}</span>: {expression}</p>
-        ))}
-        {Object.keys(state).length > 0 && (
-          <p class="font-mono">state {JSON.stringify(state)}</p>
-        )}
       </div>
     </div>
   );
@@ -695,9 +677,8 @@ function textToExpressions(text: string) {
 // Measurement components
 // ---------------------------------------------------------------------------
 
-function MeasurementCard({ measurement, devices, onEdit }: {
+export function MeasurementCard({ measurement, onEdit }: {
   measurement: ExistingRecord<MeasurementFields>;
-  devices: ReifiedQueryResult<DeviceFields>;
   onEdit: (id: number) => void;
 }) {
   const m = measurement;
@@ -708,10 +689,6 @@ function MeasurementCard({ measurement, devices, onEdit }: {
   const valueSaveStarted = useRef(false);
   const { txnResult, saving } = useTxnStatus(saveTxn);
 
-  const device = devices.find((d) => d._found && (d as ExistingRecord<DeviceFields>).id === m.device_id);
-  const foundDevice = device?._found ? device as ExistingRecord<DeviceFields> : null;
-  const deviceName = foundDevice?.name ?? null;
-  const source = foundDevice?.inputs.find(input => input.path === m.source_path);
   const displayValue = m.mode === 'simulation' ? m.simulation_value : m.latest_value;
 
   useEffect(() => {
@@ -808,11 +785,8 @@ function MeasurementCard({ measurement, devices, onEdit }: {
           <span class="relative h-5 w-9 shrink-0 rounded-full bg-border transition-colors after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:shadow after:transition-transform peer-checked:bg-active peer-checked:after:translate-x-4 peer-disabled:opacity-50" />
           <span class={m.mode === 'simulation' ? 'font-medium text-text' : ''}>Simulation</span>
         </label>
-        {m.mode === 'acquisition' && deviceName && <p>Source: {deviceName}{source ? ` · ${source.label}` : ''}</p>}
-        {m.mode === 'acquisition' && m.source_path && <p>Path: {m.source_path}</p>}
         {saving && <p>Saving...</p>}
         {error && <p class="text-error">{error}</p>}
-        <p class="font-mono">{m.name}</p>
       </div>
     </div>
   );
@@ -822,7 +796,7 @@ function MeasurementCard({ measurement, devices, onEdit }: {
 // Output components
 // ---------------------------------------------------------------------------
 
-function OutputBlockCard({ output, devices, onEdit }: {
+export function OutputBlockCard({ output, devices, onEdit }: {
   output: ExistingRecord<OutputBlockFields>;
   devices: ReifiedQueryResult<DeviceFields>;
   onEdit: (id: number) => void;
@@ -834,8 +808,6 @@ function OutputBlockCard({ output, devices, onEdit }: {
   const foundDevice = device?._found ? device as ExistingRecord<DeviceFields> : null;
   const deviceName = foundDevice?.name ?? 'Unknown device';
   const assignedOutput = foundDevice?.outputs.find(candidate => candidate.channel === output.channel);
-  const state = output.latest_state ?? {};
-  const skippedReason = typeof state.write_skipped_reason === 'string' ? state.write_skipped_reason : null;
 
   useEffect(() => {
     if (!txnResult) return;
@@ -857,15 +829,14 @@ function OutputBlockCard({ output, devices, onEdit }: {
         </button>
       </div>
 
-      <div class="grid grid-cols-2 gap-2 text-xs">
-        <div class="rounded bg-surface-alt px-2 py-1.5">
-          <p class="text-text-muted">Desired</p>
-          <p class="font-mono font-semibold">{formatNullableBool(output.desired_output)}</p>
-        </div>
-        <div class="rounded bg-surface-alt px-2 py-1.5">
-          <p class="text-text-muted">Effective</p>
-          <p class="font-mono font-semibold">{formatNullableBool(output.effective_output)}</p>
-        </div>
+      <div
+        class={`flex items-center justify-between rounded px-2 py-1.5 ${outputBoxClass(output)}`}
+        title={output.input_expression}
+      >
+        <span class="text-xs text-text-muted">Output</span>
+        <span class="font-mono text-sm font-semibold">
+          {formatNullableBool(output.desired_output)}
+        </span>
       </div>
 
       <label class="flex items-center justify-between gap-2 rounded bg-surface-alt px-2 py-1 text-xs text-text-muted">
@@ -883,13 +854,15 @@ function OutputBlockCard({ output, devices, onEdit }: {
         <span class="relative h-5 w-9 shrink-0 rounded-full bg-border transition-colors after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:shadow after:transition-transform peer-checked:bg-active peer-checked:after:translate-x-4 peer-disabled:opacity-50" />
       </label>
 
-      <div class="text-xs text-text-muted space-y-0.5">
-        <p class="font-mono truncate">{output.input_expression}</p>
-        {skippedReason && <p>Skipped: {skippedReason}</p>}
-        {output.write_pending && <p>Pending poller write</p>}
-        {saving && <p>Saving...</p>}
-        {error && <p class="text-error">{error}</p>}
-      </div>
+      {saving && <p class="text-xs text-text-muted">Saving...</p>}
+      {error && <p class="text-xs text-error">{error}</p>}
     </div>
   );
+}
+
+// The card shows only what it computes, styled by whether this card drives
+// it. The diagram-level Outputs toggle deliberately doesn't factor in.
+function outputBoxClass(output: OutputBlockFields) {
+  if (!output.output_enable || output.desired_output === null) return 'bg-surface-alt opacity-50';
+  return output.desired_output ? 'bg-ok-bg text-ok' : 'bg-surface-alt text-text';
 }
