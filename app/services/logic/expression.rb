@@ -184,7 +184,7 @@ module Logic
       when "+" then numeric(left) + numeric(right)
       when "-" then numeric(left) - numeric(right)
       when "*" then numeric(left) * numeric(right)
-      when "/" then numeric(left) / numeric(right)
+      when "/" then numeric(right).zero? ? nil : numeric(left) / numeric(right)
       end
     end
 

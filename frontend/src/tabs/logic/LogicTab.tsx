@@ -410,7 +410,7 @@ function LogicBlockCard({ block, onEdit }: {
       <div class="flex items-center justify-between rounded bg-surface-alt px-2 py-1.5">
         <span class="text-xs text-text-muted">Output</span>
         <span class="font-mono text-sm font-semibold">
-          {block.block_type === 'timer_counter' ? formatElapsedSeconds(block.output) : formatNullableBool(block.output)}
+          {formatBlockOutput(block)}
         </span>
       </div>
 
@@ -428,6 +428,9 @@ function LogicBlockCard({ block, onEdit }: {
             <p><span class="font-medium">set</span>: {formatComputedValue(block.set)}</p>
             <p><span class="font-medium">reset</span>: {formatComputedValue(block.reset)}</p>
           </>
+        )}
+        {block.block_type === 'expression' && (
+          <p><span class="font-medium">value</span>: {formatComputedValue(block.value)}</p>
         )}
         {block.block_type === 'timer_counter' && (
           <p><span class="font-medium">input</span>: {formatComputedValue(block.input)}</p>
@@ -488,10 +491,19 @@ function LogicDiagramForm({ onClose }: { onClose: () => void }) {
   );
 }
 
+function formatBlockOutput(block: LogicBlockFields) {
+  switch (block.block_type) {
+    case 'timer_counter': return formatElapsedSeconds(block.output);
+    case 'expression': return formatComputedValue(block.output);
+    default: return formatNullableBool(block.output);
+  }
+}
+
 const MODES_BY_TYPE: Record<LogicBlockFields['block_type'], { value: string; label: string }[]> = {
   hysteresis: [{ value: 'active_high', label: 'Active High' }, { value: 'active_low', label: 'Active Low' }],
   latch: [{ value: 'latch_high', label: 'Latch High' }, { value: 'latch_low', label: 'Latch Low' }],
   timer_counter: [{ value: 'active_high', label: 'Active High' }, { value: 'active_low', label: 'Active Low' }],
+  expression: [],
 };
 
 export function LogicBlockForm({ diagram, editId, blocks, onClose }: {
@@ -523,7 +535,7 @@ export function LogicBlockForm({ diagram, editId, blocks, onClose }: {
     setBlockType(nextType);
     const modes = MODES_BY_TYPE[nextType];
     if (!found) setExpressionsText(expressionsToText(defaultExpressionsForType(nextType)));
-    if (!found || !modes.some((option) => option.value === mode)) setMode(modes[0].value);
+    if (modes.length > 0 && (!found || !modes.some((option) => option.value === mode))) setMode(modes[0].value);
   };
 
   const handleSave = () => {
@@ -539,8 +551,8 @@ export function LogicBlockForm({ diagram, editId, blocks, onClose }: {
       .filter((block) => editId === null || block.id !== editId)
       .map((block) => ({ id: block.id, name: block.name, input_expressions: block.input_expressions }));
     const stratum = nextStratumForExpressions(existingBlocks, input_expressions);
-    const config: Record<string, unknown> = blockType === 'latch'
-      ? { mode, dominance }
+    const config: Record<string, unknown> = blockType === 'latch' ? { mode, dominance }
+      : blockType === 'expression' ? {}
       : { mode };
 
     setError(null);
@@ -586,20 +598,23 @@ export function LogicBlockForm({ diagram, editId, blocks, onClose }: {
             <option value="hysteresis">Hysteresis</option>
             <option value="latch">Latch</option>
             <option value="timer_counter">Timer Counter</option>
+            <option value="expression">Expression</option>
           </select>
         </label>
-        <label class="block">
-          <span class="text-xs text-text-muted">Mode</span>
-          <select
-            class="mt-1 block w-full rounded border border-border bg-surface px-2 py-1.5 text-sm"
-            value={mode}
-            onChange={(e) => setMode((e.target as HTMLSelectElement).value)}
-          >
-            {MODES_BY_TYPE[blockType].map((option) => (
-              <option key={option.value} value={option.value}>{option.label}</option>
-            ))}
-          </select>
-        </label>
+        {MODES_BY_TYPE[blockType].length > 0 && (
+          <label class="block">
+            <span class="text-xs text-text-muted">Mode</span>
+            <select
+              class="mt-1 block w-full rounded border border-border bg-surface px-2 py-1.5 text-sm"
+              value={mode}
+              onChange={(e) => setMode((e.target as HTMLSelectElement).value)}
+            >
+              {MODES_BY_TYPE[blockType].map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+          </label>
+        )}
         {blockType === 'latch' && (
           <label class="block">
             <span class="text-xs text-text-muted">Dominance</span>
@@ -642,6 +657,7 @@ function defaultExpressionsForType(blockType: LogicBlockFields['block_type']): R
     case 'hysteresis': return { value: '', low_limit: '', high_limit: '' };
     case 'latch': return { set: '', reset: '' };
     case 'timer_counter': return { input: '' };
+    case 'expression': return { value: '' };
   }
 }
 

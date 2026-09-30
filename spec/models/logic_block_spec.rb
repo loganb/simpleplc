@@ -229,6 +229,13 @@ RSpec.describe LogicBlock, type: :model do
     expect(block.errors[:input_expressions].join).to include("unknown name Other")
   end
 
+  it "treats boolean hysteresis inputs as 1/0" do
+    block = HysteresisLogicBlock.new
+
+    expect(block.evaluate_logic({ "value" => true, "low_limit" => 0.2, "high_limit" => 0.8 }, {}).first).to eq(true)
+    expect(block.evaluate_logic({ "value" => false, "low_limit" => 0.2, "high_limit" => 0.8 }, {}).first).to eq(false)
+  end
+
   describe TimerCounterLogicBlock do
     let(:t0) { Time.zone.parse("2026-09-30 12:00:00.250") }
 
@@ -288,6 +295,25 @@ RSpec.describe LogicBlock, type: :model do
       value, = timer.evaluate_logic({ "input" => true }, { "active_since" => t0.iso8601(6) }, recorded_at: t0 - 10)
 
       expect(value).to eq(0.0)
+    end
+  end
+
+  describe ExpressionLogicBlock do
+    it "requires a value input" do
+      block = described_class.new(logic_diagram: diagram, name: "Doubled", stratum: 1, input_expressions: { "value" => "2 * 3" })
+      expect(block).to be_valid
+
+      block.input_expressions = {}
+      expect(block).not_to be_valid
+      expect(block.errors[:input_expressions].join).to include("missing value")
+    end
+
+    it "passes the evaluated value through without keeping state" do
+      block = described_class.new
+
+      [ 4.5, true, false, nil ].each do |value|
+        expect(block.evaluate_logic({ "value" => value }, { "stale" => 99.0 })).to eq([ value, {} ])
+      end
     end
   end
 end

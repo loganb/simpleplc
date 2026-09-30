@@ -57,6 +57,13 @@ RSpec.describe Logic::Expression do
     end
   end
 
+  it "returns null for division by zero" do
+    expect(evaluate("1 / 0")).to be_nil
+    expect(evaluate("0 / 0")).to be_nil
+    expect(evaluate("1 / 0 ?? 5")).to eq(5.0)
+    expect(evaluate("6 / 3")).to eq(2.0)
+  end
+
   describe "?? operator" do
     it "returns the left side unless it is null" do
       expect(evaluate("null ?? 3")).to eq(3.0)

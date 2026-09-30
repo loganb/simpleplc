@@ -37,9 +37,9 @@ class HysteresisLogicBlock < LogicBlock
     retained_state = previous_state.merge("output" => truthy?(prior_output))
     return [ nil, retained_state ] if input_values.values_at("value", "low_limit", "high_limit").any?(&:nil?)
 
-    value = input_values["value"].to_f
-    low_limit = input_values["low_limit"].to_f
-    high_limit = input_values["high_limit"].to_f
+    value = numeric(input_values["value"])
+    low_limit = numeric(input_values["low_limit"])
+    high_limit = numeric(input_values["high_limit"])
 
     output = if active_low?
       if value <= low_limit

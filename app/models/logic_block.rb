@@ -39,6 +39,22 @@ class LogicBlock < ApplicationRecord
     raise NotImplementedError, "#{self.class} must implement #evaluate_logic"
   end
 
+  # How a result is stored in the trace `value`. Booleans become 1.0/0.0 unless
+  # the block type opts to keep them.
+  def trace_value(value)
+    return nil if value.nil?
+    return value.to_f if value.is_a?(Numeric)
+
+    value ? 1.0 : 0.0
+  end
+
+  def numeric(value)
+    return 1.0 if value == true
+    return 0.0 if value == false
+
+    value.to_f
+  end
+
   def truthy?(value)
     return nil if value.nil?
 

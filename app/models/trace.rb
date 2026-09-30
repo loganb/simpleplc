@@ -5,6 +5,7 @@ class Trace < ApplicationRecord
     "HysteresisLogicBlock" => "logic_blocks",
     "LatchLogicBlock" => "logic_blocks",
     "TimerCounterLogicBlock" => "logic_blocks",
+    "ExpressionLogicBlock" => "logic_blocks",
     "LogicBlock" => "logic_blocks",
     "OutputBlock" => "output_blocks"
   }.freeze

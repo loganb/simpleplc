@@ -52,4 +52,23 @@ describe('LogicBlockForm', () => {
     choose(screen.getByLabelText('Type'), 'timer_counter');
     expect((screen.getByLabelText('Mode') as HTMLSelectElement).value).toBe('active_high');
   });
+
+  it('creates an expression block with a value input and no mode', () => {
+    const create = vi.spyOn(Store.m(LogicBlock), 'create').mockReturnValue(undefined as never);
+    render(<LogicBlockForm diagram={diagram} editId={null} blocks={[]} onClose={vi.fn()} />);
+
+    choose(screen.getByLabelText('Type'), 'expression');
+    expect(screen.queryByLabelText('Mode')).toBeNull();
+    const inputs = screen.getByLabelText('Input Expressions') as HTMLTextAreaElement;
+    expect(inputs.value).toBe('value = ');
+    fireEvent.input(screen.getByLabelText('Name'), { target: { value: 'Ready' } });
+    fireEvent.input(inputs, { target: { value: 'value = HeatCall && IsHeat' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({
+      block_type: 'expression',
+      input_expressions: { value: 'HeatCall && IsHeat' },
+      config: {},
+    }));
+  });
 });

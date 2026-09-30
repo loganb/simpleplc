@@ -44,6 +44,7 @@ RSpec.describe ModelStoreChannel, type: :channel do
     expect(RecordResources.resource_for("HysteresisLogicBlock")).to eq("logic_block")
     expect(RecordResources.resource_for("LatchLogicBlock")).to eq("logic_block")
     expect(RecordResources.resource_for("TimerCounterLogicBlock")).to eq("logic_block")
+    expect(RecordResources.resource_for("ExpressionLogicBlock")).to eq("logic_block")
     expect(RecordResources.resource_for("HostPort")).to be_nil
   end
 end

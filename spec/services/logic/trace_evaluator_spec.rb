@@ -184,4 +184,23 @@ RSpec.describe Logic::TraceEvaluator do
     expect(trace.value_for(block)).to eq(0.0)
     expect(trace.result_for(output)["state"]).to include("desired_output" => false)
   end
+
+  it "evaluates expression blocks as named values" do
+    Measurement.create!(logic_diagram: diagram, name: "Supply", mode: "simulation", simulation_value: 3.0)
+    doubled = ExpressionLogicBlock.create!(logic_diagram: diagram, name: "Doubled", stratum: 1, input_expressions: { "value" => "Supply * 2" })
+    ready = ExpressionLogicBlock.create!(logic_diagram: diagram, name: "Ready", stratum: 1, input_expressions: { "value" => "Supply > 1 && true" })
+    downstream = ExpressionLogicBlock.create!(logic_diagram: diagram, name: "Downstream", stratum: 2, input_expressions: { "value" => "Doubled + Ready" })
+    host = HostInterface.create!(name: "Test Bus", port: "/dev/ttyUSB0")
+    device = Device.create!(name: "Relay board", host_interface: host, driver: "Drivers::N4D8B08", modbus_address: 3)
+    output = OutputBlock.create!(logic_diagram: diagram, name: "Pump", device: device, channel: 1, input_expression: "Ready && Doubled > 5", output_enable: false)
+
+    trace = Trace.create!(logic_diagram: diagram)
+
+    expect(trace.value_for(doubled)).to eq(6.0)
+    expect(trace.value_for(ready)).to eq(true)
+    expect(trace.result_for(ready)["state"]).to eq({})
+    expect(trace.value_for(downstream)).to eq(7.0)
+    expect(trace.result_for(output)["state"]).to include("desired_output" => true)
+    expect(trace.reload.value_for(ready)).to eq(true)
+  end
 end

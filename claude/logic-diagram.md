@@ -13,8 +13,8 @@ Add a new concept named **LogicDiagram**: a saved container that maps existing M
 - `LogicBlock`
   - belongs to `logic_diagram`
   - `name`
-  - uses Rails STI via `type`, initially `HysteresisLogicBlock` and `LatchLogicBlock` (now also `TimerCounterLogicBlock`)
-  - API/frontend still expose friendly `block_type` values, initially `hysteresis` and `latch` (now also `timer_counter`)
+  - uses Rails STI via `type`, initially `HysteresisLogicBlock` and `LatchLogicBlock` (now also `TimerCounterLogicBlock` and `ExpressionLogicBlock`)
+  - API/frontend still expose friendly `block_type` values, initially `hysteresis` and `latch` (now also `timer_counter` and `expression`)
   - `stratum`, an integer column representing the frontend-computed topological column. Computation runs in ascending `stratum`.
   - `input_expressions`, JSON object keyed by input name. Expressions can reference Measurements and upstream LogicBlocks.
   - `config`, JSON object for block-specific settings.
@@ -104,6 +104,14 @@ Behavior:
   between trace `recorded_at` times. It is 0 on the first active trace and 0
   while inactive.
 - A null input outputs null but keeps the retained `active_since` state.
+
+#### Expression
+
+Added later; see `claude/expression-block.md`.
+
+- One input, `value`, and no config. A named expression: its value is `value`'s
+  result, stored as-is (numbers, `true`/`false`, null). It is the only block that
+  stores booleans rather than 1.0/0.0. It is stateless.
 
 ### Dependency Ordering
 

@@ -103,3 +103,10 @@ Added as Phase 1 of `claude/timer-counter.md`:
   `true || null` is `true`, and the other combinations with null stay null.
   `!null` is still null. Every other operator still propagates null as
   described above.
+
+## Division by zero — 2026-09-30
+
+`x / 0` (including `0 / 0`) returns null instead of `Infinity`/`NaN`. The
+JSONB column already stored non-finite floats as null, while downstream
+expressions in the same trace saw the in-memory `Infinity`; the two now
+agree. See `claude/expression-block.md`.

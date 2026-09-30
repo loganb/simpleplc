@@ -15,6 +15,7 @@ module RecordResources
     "LogicDiagram" => "logic_diagram", "Measurement" => "measurement",
     "LogicBlock" => "logic_block", "HysteresisLogicBlock" => "logic_block",
     "LatchLogicBlock" => "logic_block", "TimerCounterLogicBlock" => "logic_block",
+    "ExpressionLogicBlock" => "logic_block",
     "OutputBlock" => "output_block",
     "Trace" => "trace"
   }.freeze

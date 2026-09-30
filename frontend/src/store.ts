@@ -206,7 +206,7 @@ export interface BaseLogicBlockFields {
   stratum: number;
   input_expressions: Record<string, string>;
   config: Record<string, unknown>;
-  latest_value: number | null;
+  latest_value: number | boolean | null; // only expression blocks store booleans
   latest_state: Record<string, unknown> | null;
   created_at: string;
   updated_at: string;
@@ -236,7 +236,18 @@ export interface TimerCounterLogicBlockFields extends BaseLogicBlockFields {
   input: number | boolean | null;
 }
 
-export type LogicBlockFields = HysteresisLogicBlockFields | LatchLogicBlockFields | TimerCounterLogicBlockFields;
+export interface ExpressionLogicBlockFields extends BaseLogicBlockFields {
+  type: 'ExpressionLogicBlock';
+  block_type: 'expression';
+  output: number | boolean | null;
+  value: number | boolean | null;
+}
+
+export type LogicBlockFields =
+  | HysteresisLogicBlockFields
+  | LatchLogicBlockFields
+  | TimerCounterLogicBlockFields
+  | ExpressionLogicBlockFields;
 
 export const LogicBlock: ModelDefinition<LogicBlockFields> = {
   name: 'logic_block',

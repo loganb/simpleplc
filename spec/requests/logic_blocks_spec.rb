@@ -96,4 +96,27 @@ RSpec.describe "Logic blocks API", type: :request do
       "latest_value" => 45.0
     )
   end
+
+  it "creates and serializes expression blocks" do
+    diagram = LogicDiagram.create!(name: "Boiler")
+
+    post "/logic_blocks", params: {
+      logic_block: {
+        logic_diagram_id: diagram.id,
+        name: "Ready",
+        block_type: "expression",
+        stratum: 1,
+        input_expressions: { value: "2 > 1" }
+      }
+    }
+    expect(response).to have_http_status(:created)
+    ExpressionLogicBlock.create!(logic_diagram: diagram, name: "Sum", stratum: 1, input_expressions: { "value" => "2 + 0.5" })
+
+    Trace.create!(logic_diagram: diagram)
+    get "/logic_blocks", params: { logic_diagram_id: diagram.id }
+
+    blocks = response.parsed_body.fetch("logic_blocks").index_by { |block| block["name"] }
+    expect(blocks["Ready"]).to include("type" => "ExpressionLogicBlock", "block_type" => "expression", "value" => true, "output" => true, "latest_value" => true)
+    expect(blocks["Sum"]).to include("value" => 2.5, "output" => 2.5)
+  end
 end
