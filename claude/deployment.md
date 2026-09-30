@@ -171,3 +171,18 @@ details, and paired input/output label fields rendered correctly.
 The push to `origin/main` was rejected by the execution environment because it
 requires separate explicit approval for repository-source egress. Production is
 therefore at local commit `cf38150` while the remote branch remains unchanged.
+
+## Null handling and timer counter deployed — 2026-09-30
+
+Pushed and deployed `492271d`: `??`/`coalesce` with SQL three-valued `&&`/`||`
+(`389e7e7`), and `TimerCounterLogicBlock`. No migration was needed. The target,
+web, poller and logic-runner services are active with zero restarts, `/up`
+returns 200, and the served `app.js` includes the timer counter form. `Heat
+Control Logic` kept tracing every 30 s (latest 18:55:12 UTC), and relay devices
+3 and 4 polled `ok` at 18:55:2x UTC. Before the deploy, none of the four
+`&&`/`||` outputs (ThirdFloorRadValve, FCUPump, BoilerCH, RadCirc) had null
+inputs, so the new logic rules didn't change any relay. The
+ThirdFloorRadValve/ThirdFloorFCUValve changes seen after the deploy came from a
+real `ThirdFloorCall` of 1.0 with every measurement non-null. No timer counter
+blocks exist in production yet. npm audit still reports the same nine
+existing findings.

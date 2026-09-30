@@ -91,7 +91,7 @@ any, should mention `??` and `coalesce`.
 4. Update `claude/expression-types.md` and the overview.
 5. Run the whole rspec suite and rubocop on the touched files.
 
-### Status — implemented 2026-09-30 (uncommitted, undeployed)
+### Status — implemented 2026-09-30, deployed in `492271d`
 
 Specs went red (18 failures) and then green; the full suite passes with 230
 examples, and rubocop is clean on the touched files. The frontend has no
@@ -166,7 +166,7 @@ known `false` operand of `&&` drives it off. Production has no logic blocks.
    warrants one. Then `tsc` and the build.
 4. Update the overview and `claude/logic-diagram.md`.
 
-### Status — implemented 2026-09-30 (uncommitted, undeployed)
+### Status — implemented 2026-09-30, deployed in `492271d`
 
 - Backend: `TimerCounterLogicBlock`. `evaluate_logic` now takes `**` options,
   and the evaluator passes `recorded_at:`. `BlockEvaluator` passes numeric
