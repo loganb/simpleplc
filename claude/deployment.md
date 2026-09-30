@@ -198,3 +198,14 @@ and the served `app.js` includes the expression block form. `Heat Control Logic`
 kept tracing every 30 s (latest 21:49:13 UTC, no null measurements), and relay
 devices 3 and 4 polled `ok` at 21:49:14 UTC. Production had no logic blocks,
 so the change to how block values are stored couldn't affect live traces.
+
+## Logic block notes deployed — 2026-09-30
+
+Deployed `c117593` after the user's explicit authorization (the auto-mode
+classifier blocked the first attempt). The `logic_blocks.notes` migration and
+frontend build succeeded. The target, web, poller and logic-runner services
+are active with zero restarts, `/up` returns 200, `/logic_blocks.json` returns
+`notes` on all three production blocks, and the served `app.js` includes the
+Notes field. `Heat Control Logic` kept tracing (22:11:33, 22:12:03 UTC), the
+relay bus is online, and devices 3 and 4 polled at 22:12:15 UTC with no errors.
+npm audit still reports the same nine existing findings.
