@@ -1,6 +1,6 @@
 module Drivers
   module Registry
-    def self.all = [ N4DSC08, NT48C32, N4D8B08 ]
+    def self.all = [ N4DSC08, NT48C32, N4D8B08, WJ150 ]
     def self.find(key) = all.find { |driver| driver.name == key }
     def self.fetch(key) = find(key) || raise(ArgumentError, "Unsupported driver #{key}")
     def self.metadata
@@ -12,7 +12,8 @@ module Drivers
           inputs: driver.inputs,
           outputs: driver.outputs,
           binary_outputs: driver.outputs.any? { |output| output[:value_type] == "boolean" },
-          configuration_effects: driver == N4D8B08 ? "Sets inputs and outputs to unrelated mode when normal polling starts." : "None" }
+          settings: driver.settings_schema,
+          configuration_effects: driver.configuration_effects }
       end
     end
   end

@@ -2,7 +2,7 @@ class Device < ApplicationRecord
   include ObservesRecordChanges
   include PersistsObservations
   include HardwareRevision
-  CONFIGURATION_FIELDS = %w[name host_interface_id modbus_address driver io_labels].freeze
+  CONFIGURATION_FIELDS = %w[name host_interface_id modbus_address driver io_labels settings].freeze
   BUS_CONFIGURATION_FIELDS = %w[name host_interface_id modbus_address driver].freeze
   MAX_IO_LABEL_LENGTH = 100
   validates :driver, inclusion: { in: ->(_) { Drivers::Registry.all.map(&:name) } }
@@ -11,6 +11,7 @@ class Device < ApplicationRecord
   after_save :bump_bus_revision
   after_destroy :bump_bus_revision
   before_validation :normalize_io_labels
+  validate :settings_valid
 
   def bump_bus_revision
     return if destroyed_by_association
@@ -55,6 +56,14 @@ class Device < ApplicationRecord
   end
 
   private
+
+  def settings_valid
+    catalog = Drivers::Registry.find(driver)
+    return unless catalog
+    self.settings = catalog.normalize_settings(settings)
+  rescue ArgumentError => e
+    errors.add(:settings, e.message)
+  end
 
   def normalize_io_labels
     raw = io_labels

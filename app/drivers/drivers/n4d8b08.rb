@@ -53,6 +53,7 @@ module Drivers
     end
 
     def self.display_name  = "N4D8B08 8-Ch RS485 Relay I/O"
+    def self.configuration_effects = "Sets inputs and outputs to unrelated mode when normal polling starts."
     def self.channel_count = CHANNEL_COUNT
     def self.inputs
       CHANNEL_COUNT.times.map do |index|

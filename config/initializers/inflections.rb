@@ -15,4 +15,5 @@ ActiveSupport::Inflector.inflections(:en) do |inflect|
   inflect.acronym "N4DSC08"
   inflect.acronym "NT48C32"
   inflect.acronym "N4D8B08"
+  inflect.acronym "WJ150"
 end

@@ -22,10 +22,15 @@ const drivers = [
   { id: 'relay', name: 'Relay board', channel_count: 2, fields: ['inputs', 'outputs'], binary_outputs: true, configuration_effects: 'None',
     inputs: [{ path: 'inputs[0]', label: 'Input 1', value_type: 'boolean', units: null }, { path: 'inputs[1]', label: 'Input 2', value_type: 'boolean', units: null }],
     outputs: [{ channel: 1, label: 'Relay 1', value_type: 'boolean', units: null }, { channel: 2, label: 'Relay 2', value_type: 'boolean', units: null }] },
+  { id: 'counter', name: 'Pulse counter', channel_count: 2, fields: ['counts'], binary_outputs: false, configuration_effects: 'None', inputs: [], outputs: [],
+    settings: [{ key: 'address', label: 'Module address', type: 'integer', min: 1, max: 247, requires_power_cycle: true },
+      { key: 'pull_up', label: 'Input pull-up', type: 'boolean', requires_power_cycle: false }] },
   { id: 'ntc', name: 'NTC board', channel_count: 1, fields: ['temperatures'], binary_outputs: false, configuration_effects: 'None', inputs: [], outputs: [] },
 ];
 const relayDevice = { id: 3, name: 'Relay', host_interface_id: 1, modbus_address: 3, driver: 'relay', configuration_revision: 7,
   io_labels: { inputs: { 'inputs[0]': 'Boiler enable' }, outputs: {} }, inputs: drivers[0].inputs, outputs: drivers[0].outputs } as unknown as DeviceFields;
+const counterDevice = { id: 4, name: 'Flow', host_interface_id: 1, modbus_address: 2, driver: 'counter', configuration_revision: 2,
+  io_labels: {}, settings: { pull_up: true }, inputs: [], outputs: [] } as unknown as DeviceFields;
 const interfaces = Object.assign([{ ...bus, _found: true }], { _loaded: true }) as unknown as ReifiedQueryResult<HostInterfaceFields>;
 let current: { bus: HostInterfaceFields; inputBindings: Partial<LogicInputBindingFields>[] };
 const index = <T extends { id: unknown },>(plural: string, rows: T[]) => ({ [plural]: rows, query: rows.map(r => r.id) });
@@ -68,6 +73,26 @@ describe('hardware editors', () => {
     await waitFor(() => expect(close).toHaveBeenCalled());
     expect(api.patch).toHaveBeenCalledWith('/devices/3', {
       device: expect.objectContaining({ configuration_revision: 7, io_labels: { outputs: { '2': 'Alarm relay' } } }),
+    }, expect.anything());
+  });
+
+  it('edits driver settings, leaving blank ones unmanaged', async () => {
+    api.get.mockImplementation(async (url: string) => ({ data: url.startsWith('/drivers.json') ? index('drivers', drivers)
+      : url.startsWith('/devices/4') ? { devices: [counterDevice] } : index('devices', [counterDevice]) }));
+    const close = vi.fn();
+    render(<DeviceForm editId={4} interfaces={interfaces} onClose={close} onRefresh={vi.fn()} />);
+    expect(await screen.findByText('power cycle required')).toBeTruthy();
+    expect((screen.getByLabelText(/Input pull-up/) as HTMLSelectElement).value).toBe('true');
+    fireEvent.input(screen.getByLabelText(/Module address/), { target: { value: '9' } });
+    await waitFor(() => expect((screen.getByLabelText(/Module address/) as HTMLInputElement).value).toBe('9'));
+    const pullUp = screen.getByLabelText(/Input pull-up/) as HTMLSelectElement;
+    pullUp.value = ''; // fireEvent.change would send `input` here; see the scan-result test below.
+    fireEvent(pullUp, new Event('change', { bubbles: true }));
+    await waitFor(() => expect((screen.getByLabelText(/Input pull-up/) as HTMLSelectElement).value).toBe(''));
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(close).toHaveBeenCalled());
+    expect(api.patch).toHaveBeenCalledWith('/devices/4', {
+      device: expect.objectContaining({ settings: { address: 9 } }),
     }, expect.anything());
   });
 

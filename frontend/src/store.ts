@@ -44,6 +44,8 @@ export interface DeviceFields {
     data: Record<string, unknown>;
   } | null;
   io_labels: DeviceIoLabels;
+  /** Desired driver settings; a key that is absent is unmanaged by the driver. */
+  settings: DeviceSettings;
   inputs: DeviceInput[];
   outputs: DeviceOutput[];
 }
@@ -73,9 +75,15 @@ export const Device: ModelDefinition<DeviceFields> = {
   singleton: false,
 };
 
+export type DeviceSettings = Record<string, number | boolean>;
+export interface DriverSetting {
+  key: string; label: string; type: 'boolean' | 'integer'; min?: number; max?: number;
+  requires_power_cycle: boolean; help?: string;
+}
+
 export interface DriverFields {
   id: string; name: string; channel_count: number; fields: string[];
-  binary_outputs: boolean; configuration_effects: string;
+  binary_outputs: boolean; configuration_effects: string; settings: DriverSetting[];
   inputs: DeviceInput[]; outputs: DeviceOutput[];
 }
 

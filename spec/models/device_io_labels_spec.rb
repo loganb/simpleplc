@@ -79,4 +79,26 @@ RSpec.describe Device do
     expect(input_binding.reload.source_path).to eq("inputs[0]")
     expect(output_binding.reload.channel).to eq(1)
   end
+
+  describe "settings" do
+    it "defaults to empty and accepts settings the driver defines" do
+      wj150 = Device.create!(host_interface: interface, name: "Flow", driver: "Drivers::WJ150", modbus_address: 2)
+      expect(wj150.settings).to eq({})
+      expect(wj150.update(settings: { "address" => 9 })).to be(true)
+      expect(wj150.update(settings: { "address" => 0 })).to be(false)
+      expect(wj150.errors[:settings].first).to match(/between 1 and 247/)
+    end
+
+    it "rejects settings the driver does not define" do
+      expect(device.update(settings: { "address" => 9 })).to be(false)
+      expect(device.errors[:settings].first).to match(/unknown setting address/)
+    end
+
+    it "advances configuration_revision without counting as a bus change" do
+      wj150 = Device.create!(host_interface: interface, name: "Flow", driver: "Drivers::WJ150", modbus_address: 2)
+      bus_revision = interface.reload.configuration_revision
+      expect { wj150.update!(settings: { "pull_up" => true }) }.to change { wj150.configuration_revision }.by(1)
+      expect(interface.reload.configuration_revision).to eq(bus_revision)
+    end
+  end
 end

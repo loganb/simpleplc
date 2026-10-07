@@ -156,6 +156,7 @@ class Poller
 
   def poll_device(device, connection, output_writer, output_commands_by_device_id)
     identity = device.attributes.symbolize_keys.slice(:host_interface_id, :driver, :modbus_address)
+    driver = nil
     state = begin
       driver = connection.driver_for(device)
       data = driver.read
@@ -185,9 +186,26 @@ class Poller
       raise
     rescue => e
       Rails.logger.warn "Poller: error reading device #{device.id} (addr #{device.modbus_address}): #{e.message}"
+      relocate(device, connection, driver)
       { polled_at: Time.now.utc.iso8601, status: "error", error: e.message, data: nil }
     end
 
     device.persist_observation({ current_state: state, last_polled_at: Time.current }, identity: identity)
+  end
+
+  # A driver that reprogrammed its module's address reports where the module
+  # now answers (after a power cycle). Commit that and clear the address
+  # setting, so a later manual correction of the address isn't overwritten by
+  # the driver programming the stale value again.
+  def relocate(device, connection, driver)
+    address = driver&.relocated_address(connection.client)
+    return unless address
+
+    device.update!(modbus_address: address, settings: device.settings.except("address"))
+    Rails.logger.info "Poller: device #{device.id} moved to address #{address}"
+  rescue *CONNECTION_ERRORS
+    raise
+  rescue => e
+    Rails.logger.warn "Poller: could not relocate device #{device.id}: #{e.message}"
   end
 end

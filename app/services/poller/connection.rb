@@ -56,7 +56,7 @@ class Poller
     # board every 10 seconds; cached here, it happens once when the bus comes
     # online, which is also when a power-cycled board needs it.
     def driver_for(device)
-      fingerprint = [ device.driver, device.modbus_address ]
+      fingerprint = [ device.driver, device.modbus_address, device.settings ]
       cached = @drivers[device.id]
       return cached.last if cached && cached.first == fingerprint
 

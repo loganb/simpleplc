@@ -4,7 +4,7 @@ import { useTxn } from '../../components/useTxn';
 import { useLoaders } from '../../lib/DataLoader2';
 import type { ExistingRecord, Identifiable, ModelDefinition } from '../../lib/RestfulModelStore';
 import { Device, HostInterface, HostPort, Store } from '../../store';
-import type { DeviceFields, DeviceIoLabels, HostInterfaceFields, HostPortFields } from '../../store';
+import type { DeviceFields, DeviceIoLabels, DeviceSettings, DriverFields, HostInterfaceFields, HostPortFields } from '../../store';
 import { appTree } from '../../uxTree';
 import { buttonClass as btn, inputClass as input, txnErrorMessage } from './hardware';
 import type { Impact } from './hardware';
@@ -119,6 +119,29 @@ export function InterfaceEditor({ editId, prefill, onClose, onRefresh }: {
   </Editor>;
 }
 
+/** Renders a driver's settings schema. A blank field leaves that setting unmanaged. */
+function DriverSettings({ driver, values, onChange }: { driver: DriverFields; values: DeviceSettings; onChange: (values: DeviceSettings) => void }) {
+  const set = (key: string, value: number | boolean | undefined) => {
+    const { [key]: _removed, ...rest } = values;
+    onChange(value === undefined ? rest : { ...rest, [key]: value });
+  };
+  return <section class="space-y-2 border-t border-border pt-4">
+    <h4 class="font-semibold">Device settings</h4>
+    <p class="text-sm text-text-muted">The driver writes these to the module when they differ. Leave a field blank to leave that setting as the module has it.</p>
+    {driver.settings.map(setting => <label key={setting.key} class="block text-sm">
+      <span class="flex justify-between gap-2"><span>{setting.label}</span>{setting.requires_power_cycle && <span class="text-xs text-text-muted">power cycle required</span>}</span>
+      {setting.type === 'boolean'
+        ? <select class={input} value={values[setting.key] === undefined ? '' : String(values[setting.key])}
+          onChange={e => set(setting.key, e.currentTarget.value === '' ? undefined : e.currentTarget.value === 'true')}>
+          <option value="">Leave as is</option><option value="true">On</option><option value="false">Off</option>
+        </select>
+        : <input type="number" class={input} min={setting.min} max={setting.max} placeholder="Leave as is" value={values[setting.key] === undefined ? '' : Number(values[setting.key])}
+          onInput={e => set(setting.key, e.currentTarget.value === '' ? undefined : Number(e.currentTarget.value))} />}
+      {setting.help && <span class="text-xs text-text-muted">{setting.help}</span>}
+    </label>)}
+  </section>;
+}
+
 export function DeviceEditor({ editId, interfaces, onClose, onRefresh }: { editId: number | null; interfaces: HostInterfaceFields[]; onClose: () => void; onRefresh: () => void }) {
   const drivers = useDrivers();
   const labelsFor = (value: unknown): DeviceIoLabels => value && typeof value === 'object' ? value as DeviceIoLabels : {};
@@ -136,7 +159,7 @@ export function DeviceEditor({ editId, interfaces, onClose, onRefresh }: { editI
   const prepare = (fields: Fields) => ({ ...fields, io_labels: compactLabels(fields.io_labels) });
   const { existing } = useLoaders(() => ({ existing: editId === null ? null : Store.m(Device).fetch(editId) }), [Store], [editId]);
   return <Editor model={Device} editId={editId} deletes={existing?._found ? [existing as ExistingRecord<DeviceFields>] : []}
-    defaults={{ name: '', host_interface_id: interfaces[0]?.id || '', modbus_address: 1, driver: '', io_labels: {} }}
+    defaults={{ name: '', host_interface_id: interfaces[0]?.id || '', modbus_address: 1, driver: '', io_labels: {}, settings: {} }}
     prepare={prepare} onClose={onClose} onRefresh={onRefresh}>
     {(f, change) => <>
       <p class="text-sm text-text-muted">For discovered hardware, select a driver from its scan results. Manual setup has no compatibility evidence.</p>
@@ -151,6 +174,7 @@ export function DeviceEditor({ editId, interfaces, onClose, onRefresh }: { editI
         const allowedInputs = new Set(driver?.inputs.map(item => item.path) ?? []);
         const allowedOutputs = new Set(driver?.outputs.map(item => String(item.channel)) ?? []);
         change('driver', e.currentTarget.value);
+        change('settings', {});
         change('io_labels', {
           inputs: Object.fromEntries(Object.entries(labels.inputs ?? {}).filter(([key]) => allowedInputs.has(key))),
           outputs: Object.fromEntries(Object.entries(labels.outputs ?? {}).filter(([key]) => allowedOutputs.has(key))),
@@ -159,6 +183,8 @@ export function DeviceEditor({ editId, interfaces, onClose, onRefresh }: { editI
         <option value="">Select driver</option>{drivers.map(d => <option value={d.id}>{d.name}</option>)}
       </select></label>
       {drivers.filter(d => d.id === f.driver).map(d => <p class="text-sm text-text-muted">{d.channel_count} channels · {d.fields.join(', ')}. Configuration: {d.configuration_effects}</p>)}
+      {drivers.filter(d => d.id === f.driver && d.settings?.length).map(driver =>
+        <DriverSettings key={driver.id} driver={driver} values={(f.settings ?? {}) as DeviceSettings} onChange={value => change('settings', value)} />)}
       {drivers.filter(d => d.id === f.driver).map(driver => {
         const labels = labelsFor(f.io_labels);
         const changeLabel = (section: 'inputs' | 'outputs', key: string, value: string) => change('io_labels', {

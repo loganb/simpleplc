@@ -7,7 +7,10 @@ RSpec.describe "Hardware setup API", type: :request do
   it "lists friendly drivers and rejects arbitrary Ruby classes" do
     get "/drivers"
     expect(response).to have_http_status(:ok)
-    expect(response.parsed_body.fetch("drivers").size).to eq(3)
+    expect(response.parsed_body.fetch("drivers").size).to eq(4)
+    counter = response.parsed_body.fetch("drivers").find { |driver| driver.fetch("id") == "Drivers::WJ150" }
+    expect(counter.fetch("settings").map { |setting| setting.fetch("key") }).to eq(%w[address pull_up filter_a_ms filter_b_ms])
+    expect(counter.fetch("inputs").map { |input| input.fetch("path") }).to include("counts[0]", "frequencies[1]")
     relay = response.parsed_body.fetch("drivers").find { |driver| driver.fetch("id") == "Drivers::N4D8B08" }
     expect(relay.fetch("inputs").first).to include("path" => "inputs[0]", "label" => "Input 1")
     expect(relay.fetch("outputs").first).to include("channel" => 1, "label" => "Relay 1")

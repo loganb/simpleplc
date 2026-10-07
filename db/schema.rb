@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_07_000000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_07_100000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -25,6 +25,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_07_000000) do
     t.integer "lock_version", default: 0, null: false
     t.integer "modbus_address", null: false
     t.string "name"
+    t.jsonb "settings", default: {}, null: false
     t.datetime "updated_at", null: false
     t.index ["host_interface_id"], name: "index_devices_on_host_interface_id"
     t.unique_constraint ["host_interface_id", "modbus_address"], deferrable: :immediate, name: "devices_bus_address"

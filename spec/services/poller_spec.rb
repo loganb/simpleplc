@@ -185,6 +185,35 @@ RSpec.describe Poller do
     end
   end
 
+  describe "address relocation" do
+    before do
+      device.update!(settings: {}) # FakePollerDriver defines no settings
+      FakePollerDriver.read_behaviour = -> { raise ModBus::Errors::ModBusTimeout, "no answer" }
+    end
+
+    it "commits the new address and clears the address setting once the driver finds the module there" do
+      allow_any_instance_of(FakePollerDriver).to receive(:relocated_address).and_return(9)
+      device.update_columns(settings: { "address" => 9 })
+      poller.run_cycle
+
+      expect(device.reload).to have_attributes(modbus_address: 9, settings: {})
+    end
+
+    it "leaves the device alone while the driver reports nothing" do
+      poller.run_cycle
+
+      expect(device.reload.modbus_address).to eq(3)
+    end
+
+    it "keeps polling the other devices when the commit is refused" do
+      Device.create!(name: "Taken", host_interface: interface, driver: "FakePollerDriver", modbus_address: 9)
+      allow_any_instance_of(FakePollerDriver).to receive(:relocated_address).and_return(9)
+      expect { poller.run_cycle }.not_to raise_error
+
+      expect(device.reload.modbus_address).to eq(3)
+    end
+  end
+
   describe "releasing ports" do
     it "closes the port of an interface deleted between cycles" do
       poller.run_cycle
