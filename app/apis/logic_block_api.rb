@@ -18,7 +18,6 @@ class LogicBlockApi < RestfulApi
   end
 
   def serialize(block)
-    latest = block.latest_result
     {
       id:                block.id,
       logic_diagram_id:  block.logic_diagram_id,
@@ -29,11 +28,9 @@ class LogicBlockApi < RestfulApi
       input_expressions: block.input_expressions,
       config:            block.config,
       notes:             block.notes,
-      latest_value:      latest&.fetch("value", nil),
-      latest_state:      latest&.fetch("state", nil),
       created_at:        block.created_at.iso8601,
       updated_at:        block.updated_at.iso8601
-    }.merge(value_fields_for(block))
+    }
   end
 
   def can_create(_params) = true
@@ -86,36 +83,4 @@ class LogicBlockApi < RestfulApi
     BLOCK_TYPES_BY_TYPE.fetch(block.type)
   end
 
-  def value_fields_for(block)
-    expected_class = block.type.constantize
-    block = block.becomes(expected_class) if block.class != expected_class
-
-    case block
-    when HysteresisLogicBlock
-      {
-        value:      block.value,
-        low_limit:  block.low_limit,
-        high_limit: block.high_limit,
-        output:     block.output
-      }
-    when LatchLogicBlock
-      {
-        set:    block.set,
-        reset:  block.reset,
-        output: block.output
-      }
-    when ExpressionLogicBlock
-      {
-        value:  block.value,
-        output: block.output
-      }
-    when TimerCounterLogicBlock
-      {
-        input:  block.input,
-        output: block.output
-      }
-    else
-      {}
-    end
-  end
 end

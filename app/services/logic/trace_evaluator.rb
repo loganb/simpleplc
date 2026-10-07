@@ -6,13 +6,14 @@ module Logic
 
     def initialize(trace)
       @trace = trace
-      @diagram = trace.logic_diagram
+      @instance = trace.logic_instance
+      @diagram = instance.logic_diagram
     end
 
     def evaluate!
       ActiveRecord::Base.transaction do
         @results = Trace.empty_results
-        snapshot_measurements!
+        snapshot_inputs!
         evaluate_blocks!
         evaluate_outputs!
         trace.update!(results: results)
@@ -22,14 +23,22 @@ module Logic
 
     private
 
-    attr_reader :trace, :diagram, :results
+    attr_reader :trace, :instance, :diagram, :results
 
-    def snapshot_measurements!
-      diagram.measurements.order(:id).each do |measurement|
-        results["measurements"][measurement.id.to_s] = result_payload(
-          measurement,
-          value: measurement.trace_value,
-          state: { "mode" => measurement.mode },
+    def snapshot_inputs!
+      # Instances are long-lived in the runner. Query bindings for every trace
+      # so a live edit takes effect on the next evaluation rather than waiting
+      # for an association cache to be discarded.
+      bindings = LogicInputBinding.where(logic_instance_id: instance.id).index_by(&:logic_input_id)
+      diagram.logic_inputs.order(:id).each do |input|
+        binding = bindings[input.id]
+        results["logic_inputs"][input.id.to_s] = result_payload(
+          input,
+          value: binding&.trace_value,
+          state: {
+            "binding_id" => binding&.id,
+            "source_kind" => binding&.source_kind
+          },
           input_values: {}
         )
       end
@@ -44,8 +53,8 @@ module Logic
 
     def evaluate_outputs!
       context = EvaluationContext.new(trace: trace, results: results)
-      diagram.output_blocks.order(:id).each do |output|
-        results["output_blocks"][output.id.to_s] = OutputEvaluator.evaluate!(output, trace: trace, context: context)
+      diagram.logic_outputs.order(:id).each do |output|
+        results["logic_outputs"][output.id.to_s] = OutputEvaluator.evaluate!(output, trace: trace, context: context)
       end
     end
 

@@ -12,9 +12,12 @@ Rails.application.routes.draw do
   # Ids are base64url-encoded paths, so no route constraint is needed.
   resources :host_ports, only: [ :index, :show ]
   resources :devices
-  resources :measurements
+  resources :logic_inputs
   resources :logic_diagrams
   resources :logic_blocks
-  resources :output_blocks
+  resources :logic_outputs
+  resources :logic_instances
+  resources :logic_input_bindings
+  resources :logic_output_bindings
   resources :traces
 end

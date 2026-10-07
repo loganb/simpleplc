@@ -5,7 +5,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/pr
 const api = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() }));
 vi.mock('axios', () => ({ default: { create: () => api } }));
 import { Store } from '../../store';
-import type { DeviceFields, HostInterfaceFields, MeasurementFields } from '../../store';
+import type { DeviceFields, HostInterfaceFields, LogicInputBindingFields } from '../../store';
 import type { ReifiedQueryResult } from '../../lib/RestfulModelStore';
 import { InterfaceEditor } from './HardwareForms';
 import { DeviceForm } from './DeviceForm';
@@ -27,19 +27,22 @@ const drivers = [
 const relayDevice = { id: 3, name: 'Relay', host_interface_id: 1, modbus_address: 3, driver: 'relay', configuration_revision: 7,
   io_labels: { inputs: { 'inputs[0]': 'Boiler enable' }, outputs: {} }, inputs: drivers[0].inputs, outputs: drivers[0].outputs } as unknown as DeviceFields;
 const interfaces = Object.assign([{ ...bus, _found: true }], { _loaded: true }) as unknown as ReifiedQueryResult<HostInterfaceFields>;
-let current: { bus: HostInterfaceFields; measurements: Partial<MeasurementFields>[] };
-const index = (plural: string, rows: { id: unknown }[]) => ({ [plural]: rows, query: rows.map(r => r.id) });
+let current: { bus: HostInterfaceFields; inputBindings: Partial<LogicInputBindingFields>[] };
+const index = <T extends { id: unknown },>(plural: string, rows: T[]) => ({ [plural]: rows, query: rows.map(r => r.id) });
 beforeEach(() => {
   Store.models = {}; // Fresh caches per test; models are recreated lazily by Store.m().
-  current = { bus, measurements: [] };
+  current = { bus, inputBindings: [] };
   for (const method of [api.post, api.patch, api.delete]) method.mockReset().mockResolvedValue({ data: {} });
   api.get.mockReset().mockImplementation(async (url: string) => ({ data:
     url.startsWith('/drivers.json') ? index('drivers', drivers) :
     url.startsWith('/host_ports.json') ? index('host_ports', []) :
-    url.startsWith('/measurements.json') ? index('measurements', current.measurements as { id: number }[]) :
-    url.startsWith('/output_blocks.json') ? index('output_blocks', []) :
+    url.startsWith('/logic_input_bindings.json') ? index('logic_input_bindings', current.inputBindings as { id: number }[]) :
+    url.startsWith('/logic_output_bindings.json') ? index('logic_output_bindings', []) :
+    url.startsWith('/logic_inputs.json') ? index('logic_inputs', [{ id: 12, name: 'Supply temp' }]) :
+    url.startsWith('/logic_outputs.json') ? index('logic_outputs', []) :
+    url.startsWith('/logic_instances.json') ? index('logic_instances', [{ id: 2, name: 'Boiler room' }]) :
     url.startsWith('/devices.json') ? index('devices', [relayDevice]) :
-    url === '/devices/3' ? { devices: [relayDevice] } :
+    url.startsWith('/devices/3') ? { devices: [relayDevice] } :
     url === '/host_interfaces/1' ? { host_interfaces: [current.bus] } : {} }));
 });
 afterEach(cleanup);
@@ -112,12 +115,12 @@ describe('hardware editors', () => {
   });
 
   it('shows what depends on the bus devices and offers no deletion while they do', async () => {
-    current.measurements = [{ id: 5, name: 'Supply temp', device_id: 3, logic_diagram_id: 2 }];
+    current.inputBindings = [{ id: 5, device_id: 3, logic_instance_id: 2, logic_input_id: 12 }];
     render(<InterfaceEditor editId={1} onClose={vi.fn()} onRefresh={vi.fn()} />);
     await screen.findByLabelText('Name');
     fireEvent.click(screen.getByRole('button', { name: 'Review deletion' }));
-    await screen.findByText('Supply temp — open diagram 2');
-    expect(screen.getByText('Reassign or remove these dependencies in Logic before deleting.')).toBeTruthy();
+    await screen.findByText('Boiler room · Supply temp — open instance');
+    expect(screen.getByText('Reassign or remove these connections in Instances before deleting.')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Confirm deletion' })).toBeNull();
   });
 });

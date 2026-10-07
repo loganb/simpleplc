@@ -12,6 +12,10 @@ Rails.application.configure do
   # Show full error reports.
   config.consider_all_requests_local = true
 
+  # Permit the explicitly configured development hostname while retaining
+  # Rails' default localhost/IP host protections.
+  config.hosts << ENV["PLC_DEV_HOST"] if ENV["PLC_DEV_HOST"].present?
+
   # Enable server timing.
   config.server_timing = true
 

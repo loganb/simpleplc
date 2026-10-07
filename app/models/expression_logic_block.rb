@@ -3,14 +3,6 @@ class ExpressionLogicBlock < LogicBlock
     %w[value]
   end
 
-  def value
-    latest_input_value("value")
-  end
-
-  def output
-    latest_result&.fetch("value", nil)
-  end
-
   # Booleans are valid expression results, so keep them as true/false.
   def trace_value(value)
     value.is_a?(Numeric) ? value.to_f : value

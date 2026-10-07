@@ -16,7 +16,7 @@ class LogicRunner
     Rails.logger.info "LogicRunner starting (check interval: #{CHECK_INTERVAL}s)"
     trap_signals
 
-    LogicDiagram.connection_pool.with_connection do |connection|
+    LogicInstance.connection_pool.with_connection do |connection|
       with_advisory_lock(connection) do
         until @stopping
           cycle_started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
@@ -30,22 +30,22 @@ class LogicRunner
   end
 
   def run_cycle(now: Time.current)
-    diagrams = LogicDiagram.order(:id).to_a
-    discard_retries_for_deleted_diagrams(diagrams)
+    instances = LogicInstance.order(:id).to_a
+    discard_retries_for_deleted_instances(instances)
 
-    diagrams.each do |diagram|
-      next if retry_delayed?(diagram, now)
+    instances.each do |instance|
+      next if retry_delayed?(instance, now)
 
-      diagram.reload
-      next unless due?(diagram, now)
+      instance.reload
+      next unless due?(instance, now)
 
-      Logic::DiagramEvaluator.evaluate!(diagram, recorded_at: now)
-      @retry_after.delete(diagram.id)
+      Logic::InstanceEvaluator.evaluate!(instance, recorded_at: now)
+      @retry_after.delete(instance.id)
     rescue ActiveRecord::RecordNotFound
-      @retry_after.delete(diagram.id)
+      @retry_after.delete(instance.id)
     rescue StandardError => e
-      @retry_after[diagram.id] = now + ERROR_RETRY_INTERVAL
-      Rails.logger.error "LogicRunner: error evaluating diagram #{diagram.id} (#{diagram.name}): #{e.class}: #{e.message}"
+      @retry_after[instance.id] = now + ERROR_RETRY_INTERVAL
+      Rails.logger.error "LogicRunner: error evaluating instance #{instance.id} (#{instance.name}): #{e.class}: #{e.message}"
     end
   end
 
@@ -55,17 +55,17 @@ class LogicRunner
 
   private
 
-  def due?(diagram, now)
-    latest_trace = diagram.latest_trace
-    latest_trace.nil? || latest_trace.recorded_at + diagram.update_period.seconds <= now
+  def due?(instance, now)
+    latest_trace = instance.latest_trace
+    latest_trace.nil? || latest_trace.recorded_at + instance.update_period.seconds <= now
   end
 
-  def retry_delayed?(diagram, now)
-    @retry_after.fetch(diagram.id, now) > now
+  def retry_delayed?(instance, now)
+    @retry_after.fetch(instance.id, now) > now
   end
 
-  def discard_retries_for_deleted_diagrams(diagrams)
-    @retry_after.slice!(*diagrams.map(&:id))
+  def discard_retries_for_deleted_instances(instances)
+    @retry_after.slice!(*instances.map(&:id))
   end
 
   def with_advisory_lock(connection)

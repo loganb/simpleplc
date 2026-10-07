@@ -5,18 +5,23 @@ module RecordResources
     "device" => "DeviceApi",
     "host_interface" => "HostInterfaceApi",
     "logic_diagram" => "LogicDiagramApi",
-    "measurement" => "MeasurementApi",
+    "logic_input" => "LogicInputApi",
     "logic_block" => "LogicBlockApi",
-    "output_block" => "OutputBlockApi",
+    "logic_output" => "LogicOutputApi",
+    "logic_instance" => "LogicInstanceApi",
+    "logic_input_binding" => "LogicInputBindingApi",
+    "logic_output_binding" => "LogicOutputBindingApi",
     "trace" => "TraceApi"
   }.freeze
   MODELS = {
     "Device" => "device", "HostInterface" => "host_interface",
-    "LogicDiagram" => "logic_diagram", "Measurement" => "measurement",
+    "LogicDiagram" => "logic_diagram", "LogicInput" => "logic_input",
     "LogicBlock" => "logic_block", "HysteresisLogicBlock" => "logic_block",
     "LatchLogicBlock" => "logic_block", "TimerCounterLogicBlock" => "logic_block",
     "ExpressionLogicBlock" => "logic_block",
-    "OutputBlock" => "output_block",
+    "LogicOutput" => "logic_output", "LogicInstance" => "logic_instance",
+    "LogicInputBinding" => "logic_input_binding",
+    "LogicOutputBinding" => "logic_output_binding",
     "Trace" => "trace"
   }.freeze
 

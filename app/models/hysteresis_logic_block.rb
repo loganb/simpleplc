@@ -19,18 +19,6 @@ class HysteresisLogicBlock < LogicBlock
     config.key?("initial_output") ? config["initial_output"] : false
   end
 
-  def value
-    latest_input_value("value")
-  end
-
-  def low_limit
-    latest_input_value("low_limit")
-  end
-
-  def high_limit
-    latest_input_value("high_limit")
-  end
-
   def evaluate_logic(input_values, previous_state, **)
     prior_output = previous_state.key?("output") ? previous_state["output"] : initial_output
     prior_output = initial_output if prior_output.nil?

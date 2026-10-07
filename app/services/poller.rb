@@ -167,9 +167,9 @@ class Poller
         rescue *CONNECTION_ERRORS
           raise
         rescue => e
-          Rails.logger.warn "Poller: error writing output #{command.output_block.id} to device #{device.id} channel #{command.channel}: #{e.message}"
+          Rails.logger.warn "Poller: error writing output binding #{command.output_binding.id} to device #{device.id} channel #{command.channel}: #{e.message}"
           output_errors << {
-            output_block_id: command.output_block.id,
+            logic_output_binding_id: command.output_binding.id,
             channel: command.channel,
             desired_output: command.desired_output,
             error: e.message

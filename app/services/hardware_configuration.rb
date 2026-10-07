@@ -22,22 +22,31 @@ class HardwareConfiguration
   # The dependencies that block deleting these devices, returned as error details.
   def self.impact(ids)
     { devices: Device.where(id: ids).map { |d| { id: d.id, name: d.name } },
-      measurements: Measurement.where(device_id: ids).map { |m| m.slice(:id, :name, :device_id, :logic_diagram_id) },
-      output_blocks: OutputBlock.where(device_id: ids).map { |o| o.slice(:id, :name, :device_id, :logic_diagram_id, :channel, :output_enable) } }
+      logic_input_bindings: LogicInputBinding.includes(:logic_input).where(device_id: ids).map do |binding|
+        binding.slice(:id, :device_id, :logic_instance_id).merge(name: binding.logic_input.name)
+      end,
+      logic_output_bindings: LogicOutputBinding.includes(:logic_output).where(device_id: ids).map do |binding|
+        binding.slice(:id, :device_id, :logic_instance_id, :channel, :output_enable).merge(name: binding.logic_output.name)
+      end }
   end
 
   def self.deletable!(ids)
     data = impact(ids)
-    if data[:measurements].any? || data[:output_blocks].any?
-      raise HardwareError.new("Reassign or remove dependent measurements and outputs before deleting", code: "dependencies", details: data)
+    if data[:logic_input_bindings].any? || data[:logic_output_bindings].any?
+      raise HardwareError.new("Reassign or remove dependent instance connections before deleting", code: "dependencies", details: data)
     end
   end
 
   def self.compatible!(device)
-    bad_outputs = OutputBlock.where(device_id: device.id).any? { |o| !device.supports_binary_output?(o.channel) }
-    bad_inputs = Measurement.where(device_id: device.id, mode: "acquisition").where.not(source_path: [ nil, "" ]).any? do |m|
-      !device.supports_input?(m.source_path)
+    bad_outputs = LogicOutputBinding.includes(:logic_output).where(device_id: device.id).any? do |binding|
+      output = device.outputs.find { |candidate| candidate[:channel] == binding.channel }
+      output.nil? || output[:value_type] != binding.logic_output.value_type
     end
-    raise HardwareError, "Selected driver is incompatible with existing measurements or outputs" if bad_outputs || bad_inputs
+    bad_inputs = LogicInputBinding.includes(:logic_input).where(device_id: device.id, source_kind: "device_input").any? do |binding|
+      input = device.inputs.find { |candidate| candidate[:path] == binding.source_path }
+      input.nil? || (input[:value_type] != binding.logic_input.value_type &&
+        !(binding.logic_input.value_type == "number" && input[:value_type] == "boolean"))
+    end
+    raise HardwareError, "Selected driver is incompatible with existing instance connections" if bad_outputs || bad_inputs
   end
 end

@@ -4,31 +4,46 @@ import type {
   DeviceFields,
   HostInterfaceFields,
   LogicDiagramFields,
-  MeasurementFields,
-  OutputBlockFields,
+  LogicInputBindingFields,
+  LogicInputFields,
+  LogicInstanceFields,
+  LogicOutputBindingFields,
+  LogicOutputFields,
 } from '../../store';
 import type { DashboardUXState } from '../../uxTree';
-import { DashboardLogicSummary } from './DashboardLogicSummary';
+import { DashboardInstanceSummary } from './DashboardLogicSummary';
 import { DeviceStateCard } from './DeviceStateCard';
 
 export function DashboardTab({
   devices,
   interfaces,
   logicDiagrams,
-  measurements,
-  outputBlocks,
+  logicInstances,
+  logicInputs,
+  logicOutputs,
+  inputBindings,
+  outputBindings,
   ux: _ux,
 }: {
   devices: ReifiedQueryResult<DeviceFields>;
   interfaces: ReifiedQueryResult<HostInterfaceFields>;
   logicDiagrams: ReifiedQueryResult<LogicDiagramFields>;
-  measurements: ReifiedQueryResult<MeasurementFields>;
-  outputBlocks: ReifiedQueryResult<OutputBlockFields>;
+  logicInstances: ReifiedQueryResult<LogicInstanceFields>;
+  logicInputs: ReifiedQueryResult<LogicInputFields>;
+  logicOutputs: ReifiedQueryResult<LogicOutputFields>;
+  inputBindings: ReifiedQueryResult<LogicInputBindingFields>;
+  outputBindings: ReifiedQueryResult<LogicOutputBindingFields>;
   ux: DashboardUXState;
 }) {
-  const foundDiagrams = logicDiagrams._loaded
-    ? logicDiagrams.filter((d) => d._found) as ExistingRecord<LogicDiagramFields>[]
+  const found = <T extends { id: number }>(query: ReifiedQueryResult<T>) => query._loaded
+    ? query.filter((record) => record._found) as ExistingRecord<T>[]
     : [];
+  const foundDiagrams = found(logicDiagrams);
+  const foundInstances = found(logicInstances);
+  const foundInputs = found(logicInputs);
+  const foundOutputs = found(logicOutputs);
+  const foundInputBindings = found(inputBindings);
+  const foundOutputBindings = found(outputBindings);
 
   return (
     <div class="space-y-8">
@@ -46,19 +61,22 @@ export function DashboardTab({
       </section>
 
       <section>
-        <h2 class="mb-4 text-lg font-semibold">Logic</h2>
-        {!logicDiagrams._loaded ? (
-          <p class="text-text-muted">Loading logic diagrams...</p>
-        ) : foundDiagrams.length === 0 ? (
-          <p class="text-text-muted">No logic diagrams configured yet.</p>
+        <h2 class="mb-4 text-lg font-semibold">Instances</h2>
+        {!logicInstances._loaded ? (
+          <p class="text-text-muted">Loading logic instances...</p>
+        ) : foundInstances.length === 0 ? (
+          <p class="text-text-muted">No logic instances configured yet.</p>
         ) : (
           <div class="grid gap-4 xl:grid-cols-2">
-            {foundDiagrams.map((diagram) => (
-              <DashboardLogicSummary
-                key={diagram.id as number}
-                diagram={diagram}
-                measurements={measurements}
-                outputBlocks={outputBlocks}
+            {foundInstances.map((instance) => (
+              <DashboardInstanceSummary
+                key={instance.id}
+                instance={instance}
+                diagram={foundDiagrams.find((diagram) => diagram.id === instance.logic_diagram_id) ?? null}
+                inputs={foundInputs.filter((input) => input.logic_diagram_id === instance.logic_diagram_id)}
+                outputs={foundOutputs.filter((output) => output.logic_diagram_id === instance.logic_diagram_id)}
+                inputBindings={foundInputBindings.filter((binding) => binding.logic_instance_id === instance.id)}
+                outputBindings={foundOutputBindings.filter((binding) => binding.logic_instance_id === instance.id)}
               />
             ))}
           </div>

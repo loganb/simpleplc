@@ -1,4 +1,4 @@
-api:      bin/rails server -b 0.0.0.0 -p 3000
+api:      PLC_DEV_HOST=executivealpha.hamlet-vibes.ts.net bin/rails server -b 0.0.0.0 -p 3000
 frontend: PLC_DEV_HOST=executivealpha.hamlet-vibes.ts.net npm --prefix frontend run dev
 poller:   bin/poller
 logic_runner: bin/logic_runner

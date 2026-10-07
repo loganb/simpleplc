@@ -1,77 +1,48 @@
 require "rails_helper"
 
 RSpec.describe "Logic diagrams API", type: :request do
-  it "creates and lists diagrams using the flat RestfulApi wire format" do
-    post "/logic_diagrams", params: { logic_diagram: { name: "Boiler", update_period: 45, output_enable: true } }
+  it "creates and lists hardware-independent definitions" do
+    post "/logic_diagrams", params: { logic_diagram: { name: "Boiler" } }
 
     expect(response).to have_http_status(:created)
     id = response.parsed_body.fetch("id")
-    Measurement.create!(
-      logic_diagram_id: id,
-      name: "SimTemp",
-      mode: "simulation",
-      simulation_value: 10.0
-    )
+    LogicInput.create!(logic_diagram_id: id, name: "RoomTemp", value_type: "number", units: "°C")
 
     get "/logic_diagrams"
 
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body.fetch("query")).to include(id)
-    expect(response.parsed_body.fetch("logic_diagrams").first).to include(
-      "name" => "Boiler",
-      "update_period" => 45,
-      "output_enable" => true
-    )
-    expect(response.parsed_body.fetch("measurements").first).to include(
+    expect(response.parsed_body.fetch("logic_diagrams").first).to include("name" => "Boiler")
+    expect(response.parsed_body.fetch("logic_diagrams").first).not_to have_key("update_period")
+    expect(response.parsed_body.fetch("logic_inputs").first).to include(
       "logic_diagram_id" => id,
-      "name" => "SimTemp",
-      "mode" => "simulation",
-      "simulation_value" => 10.0
+      "name" => "RoomTemp",
+      "value_type" => "number"
     )
   end
 
-  it "deletes a diagram and its dependent records" do
+  it "deletes a diagram and all definition and instance records" do
     diagram = LogicDiagram.create!(name: "Boiler")
-    host = HostInterface.create!(name: "Test Bus", port: "/dev/ttyUSB0")
-    device = Device.create!(
-      name: "Relay board",
-      host_interface: host,
-      driver: "Drivers::N4D8B08",
-      modbus_address: 3
-    )
-
-    Measurement.create!(
-      logic_diagram: diagram,
-      name: "Temp",
-      mode: "simulation",
-      simulation_value: 70.0
-    )
+    input = LogicInput.create!(logic_diagram: diagram, name: "Temp")
     HysteresisLogicBlock.create!(
       logic_diagram: diagram,
       name: "Heat_Call",
       stratum: 1,
-      input_expressions: {
-        "value" => "Temp",
-        "low_limit" => "68",
-        "high_limit" => "72"
-      },
+      input_expressions: { "value" => "Temp", "low_limit" => "68", "high_limit" => "72" },
       config: { "mode" => "active_high" }
     )
-    OutputBlock.create!(
-      logic_diagram: diagram,
-      name: "Boiler_Enable",
-      device: device,
-      channel: 1,
-      input_expression: "Heat_Call"
-    )
-    Trace.create!(logic_diagram: diagram, recorded_at: Time.zone.parse("2026-05-11 10:00:00"))
+    LogicOutput.create!(logic_diagram: diagram, name: "Boiler_Enable", value_type: "boolean", input_expression: "Heat_Call")
+    instance = LogicInstance.create!(logic_diagram: diagram, name: "Boiler room")
+    LogicInputBinding.create!(logic_instance: instance, logic_input: input, source_kind: "fixed_value", fixed_value: 70)
+    Trace.create!(logic_instance: instance)
 
     expect do
       delete "/logic_diagrams/#{diagram.id}"
     end.to change(LogicDiagram, :count).by(-1)
-      .and change(Measurement, :count).by(-1)
+      .and change(LogicInput, :count).by(-1)
       .and change(LogicBlock, :count).by(-1)
-      .and change(OutputBlock, :count).by(-1)
+      .and change(LogicOutput, :count).by(-1)
+      .and change(LogicInstance, :count).by(-1)
       .and change(Trace, :count).by(-1)
 
     expect(response).to have_http_status(:no_content)

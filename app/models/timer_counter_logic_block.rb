@@ -15,15 +15,6 @@ class TimerCounterLogicBlock < LogicBlock
     mode == "active_low"
   end
 
-  def input
-    latest_input_value("input")
-  end
-
-  # Seconds the input has been active, rather than LogicBlock's boolean output.
-  def output
-    latest_result&.fetch("value", nil)
-  end
-
   def evaluate_logic(input_values, previous_state, recorded_at:)
     active_since = previous_state["active_since"]
     return [ nil, previous_state.merge("active_since" => active_since) ] if input_values["input"].nil?

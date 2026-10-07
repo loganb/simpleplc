@@ -1,5 +1,14 @@
 import type { TxnResult } from '../../lib/RestfulModelStore';
-import type { DriverSupport, HostInterfaceFields, MeasurementFields, OutputBlockFields, SerialProfile } from '../../store';
+import type {
+  DriverSupport,
+  HostInterfaceFields,
+  LogicInputBindingFields,
+  LogicInputFields,
+  LogicInstanceFields,
+  LogicOutputBindingFields,
+  LogicOutputFields,
+  SerialProfile,
+} from '../../store';
 
 /** A failed store transaction as operator-facing text: field errors when the server sent them. */
 export function txnErrorMessage(result: Pick<TxnResult, 'errors' | 'httpStatus'>): string {
@@ -10,16 +19,36 @@ export function txnErrorMessage(result: Pick<TxnResult, 'errors' | 'httpStatus'>
   return result.httpStatus ? `Request failed (${result.httpStatus}). Please retry.` : 'Could not reach the server. Please retry.';
 }
 
-interface Reference { id: number; name: string; logic_diagram_id: number; output_enable?: boolean }
-export interface Impact { devices: { id: number; name: string }[]; measurements: Reference[]; output_blocks: Reference[] }
+interface Reference { id: number; name: string; logic_instance_id: number; output_enable?: boolean }
+export interface Impact {
+  devices: { id: number; name: string }[];
+  logic_input_bindings: Reference[];
+  logic_output_bindings: Reference[];
+}
 /** What depends on these devices: the same dependencies the server refuses to delete through. */
-export function computeImpact(devices: { id: number; name: string }[], measurements: Pick<MeasurementFields, 'id' | 'name' | 'device_id' | 'logic_diagram_id'>[],
-  outputBlocks: Pick<OutputBlockFields, 'id' | 'name' | 'device_id' | 'logic_diagram_id' | 'output_enable'>[]): Impact {
+export function computeImpact(
+  devices: { id: number; name: string }[],
+  inputBindings: Pick<LogicInputBindingFields, 'id' | 'device_id' | 'logic_instance_id' | 'logic_input_id'>[],
+  outputBindings: Pick<LogicOutputBindingFields, 'id' | 'device_id' | 'logic_instance_id' | 'logic_output_id' | 'output_enable'>[],
+  inputs: Pick<LogicInputFields, 'id' | 'name'>[],
+  outputs: Pick<LogicOutputFields, 'id' | 'name'>[],
+  instances: Pick<LogicInstanceFields, 'id' | 'name'>[],
+): Impact {
   const ids = new Set(devices.map(d => d.id));
+  const instanceName = (id: number) => instances.find(instance => instance.id === id)?.name ?? `Instance ${id}`;
   return {
     devices: devices.map(({ id, name }) => ({ id, name })),
-    measurements: measurements.filter(m => m.device_id !== null && ids.has(m.device_id)).map(({ id, name, logic_diagram_id }) => ({ id, name, logic_diagram_id })),
-    output_blocks: outputBlocks.filter(o => ids.has(o.device_id)).map(({ id, name, logic_diagram_id, output_enable }) => ({ id, name, logic_diagram_id, output_enable })),
+    logic_input_bindings: inputBindings.filter(binding => binding.device_id !== null && ids.has(binding.device_id)).map(binding => ({
+      id: binding.id,
+      name: `${instanceName(binding.logic_instance_id)} · ${inputs.find(input => input.id === binding.logic_input_id)?.name ?? `Input ${binding.logic_input_id}`}`,
+      logic_instance_id: binding.logic_instance_id,
+    })),
+    logic_output_bindings: outputBindings.filter(binding => ids.has(binding.device_id)).map(binding => ({
+      id: binding.id,
+      name: `${instanceName(binding.logic_instance_id)} · ${outputs.find(output => output.id === binding.logic_output_id)?.name ?? `Output ${binding.logic_output_id}`}`,
+      logic_instance_id: binding.logic_instance_id,
+      output_enable: binding.output_enable,
+    })),
   };
 }
 

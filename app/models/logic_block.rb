@@ -1,6 +1,5 @@
 class LogicBlock < ApplicationRecord
   include ObservesRecordChanges
-  include Memery
 
   def self.api_class_name
     "LogicBlock"
@@ -19,17 +18,6 @@ class LogicBlock < ApplicationRecord
   validate :input_expressions_are_valid
   validate :required_inputs_are_present
   validate :referenced_logic_blocks_are_upstream
-
-  memoize def latest_result
-    logic_diagram.latest_trace&.result_for(self)
-  end
-
-  def output
-    value = latest_result&.fetch("value", nil)
-    return nil if value.nil?
-
-    value.nonzero? ? true : false
-  end
 
   def required_input_names
     []
@@ -63,10 +51,6 @@ class LogicBlock < ApplicationRecord
 
   private
 
-  def latest_input_value(input_name)
-    latest_result&.dig("input_values", input_name)
-  end
-
   def required_inputs_are_present
     return unless input_expressions.is_a?(Hash)
 
@@ -94,17 +78,17 @@ class LogicBlock < ApplicationRecord
     return if all_names.empty?
 
     blocks_by_name = logic_diagram ? logic_diagram.logic_blocks.where(name: all_names).index_by(&:name) : {}
-    measurements_by_name = logic_diagram ? logic_diagram.measurements.where(name: all_names).index_by(&:name) : {}
+    inputs_by_name = logic_diagram ? logic_diagram.logic_inputs.where(name: all_names).index_by(&:name) : {}
 
     all_names.each do |name|
       referenced_block = blocks_by_name[name]
-      referenced_measurement = measurements_by_name[name]
+      referenced_input = inputs_by_name[name]
 
-      if referenced_block && referenced_measurement
+      if referenced_block && referenced_input
         errors.add(:input_expressions, "reference #{name} is ambiguous")
       elsif referenced_block
         validate_referenced_logic_block(referenced_block, name)
-      elsif referenced_measurement.nil?
+      elsif referenced_input.nil?
         errors.add(:input_expressions, "references unknown name #{name}")
       end
     end

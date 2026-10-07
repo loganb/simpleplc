@@ -61,11 +61,14 @@ RSpec.describe "Hardware setup API", type: :request do
   it "deletes without a revision but still blocks referenced devices" do
     device = Device.create!(host_interface: interface, name: "Relay", driver: "Drivers::N4D8B08", modbus_address: 1)
     spare = Device.create!(host_interface: interface, name: "Spare", driver: "Drivers::N4D8B08", modbus_address: 2)
-    diagram = LogicDiagram.create!(name: "D", update_period: 60)
-    Measurement.create!(logic_diagram: diagram, device: device, name: "input", mode: "acquisition", source_path: "inputs[0]")
+    diagram = LogicDiagram.create!(name: "D")
+    input = LogicInput.create!(logic_diagram: diagram, name: "input", value_type: "boolean")
+    instance = LogicInstance.create!(logic_diagram: diagram, name: "D instance")
+    LogicInputBinding.create!(logic_instance: instance, logic_input: input, device: device,
+      source_kind: "device_input", source_path: "inputs[0]")
     delete "/devices/#{device.id}"
     expect(response).to have_http_status(:conflict)
-    expect(response.parsed_body.dig("details", "measurements").size).to eq(1)
+    expect(response.parsed_body.dig("details", "logic_input_bindings").size).to eq(1)
     expect(Device.exists?(device.id)).to be(true)
     delete "/devices/#{spare.id}"
     expect(response).to have_http_status(:no_content)
@@ -82,8 +85,10 @@ RSpec.describe "Hardware setup API", type: :request do
 
   it "blocks a driver change that would break output references" do
     device = Device.create!(host_interface: interface, name: "Relay", driver: "Drivers::N4D8B08", modbus_address: 1)
-    diagram = LogicDiagram.create!(name: "D", update_period: 60)
-    OutputBlock.create!(logic_diagram: diagram, device: device, name: "relay", input_expression: "1", channel: 1)
+    diagram = LogicDiagram.create!(name: "D")
+    output = LogicOutput.create!(logic_diagram: diagram, name: "relay", value_type: "boolean", input_expression: "1")
+    instance = LogicInstance.create!(logic_diagram: diagram, name: "D instance")
+    LogicOutputBinding.create!(logic_instance: instance, logic_output: output, device: device, channel: 1)
     patch "/devices/#{device.id}", params: { device: { driver: "Drivers::NT48C32", configuration_revision: device.configuration_revision } }
     expect(response).to have_http_status(:conflict)
     expect(device.reload.driver).to eq("Drivers::N4D8B08")

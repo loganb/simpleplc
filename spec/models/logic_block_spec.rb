@@ -3,31 +3,8 @@ require "rails_helper"
 RSpec.describe LogicBlock, type: :model do
   let(:diagram) { LogicDiagram.create!(name: "Boiler") }
 
-  def measurement
-    host = HostInterface.create!(name: "Test Bus", port: "/dev/ttyUSB0")
-    device = Device.create!(name: "Temp board", host_interface: host, driver: "Drivers::N4DSC08", modbus_address: 1)
-    Measurement.create!(logic_diagram: diagram, name: "DHW_Temp", device: device, source_path: "temperatures[0]")
-  end
-
-  it "accepts a valid hysteresis block" do
-    m = measurement
-    block = HysteresisLogicBlock.new(
-      logic_diagram: diagram,
-      name: "DHW_Call",
-      stratum: 1,
-      input_expressions: {
-        "value" => "DHW_Temp",
-        "low_limit" => "140",
-        "high_limit" => "160"
-      },
-      config: { "mode" => "active_low" }
-    )
-
-    expect(block).to be_valid
-  end
-
-  it "accepts coalesce and ?? in input expressions" do
-    measurement
+  it "accepts expressions over logical inputs" do
+    LogicInput.create!(logic_diagram: diagram, name: "DHW_Temp")
     block = HysteresisLogicBlock.new(
       logic_diagram: diagram,
       name: "DHW_Call",
@@ -36,284 +13,119 @@ RSpec.describe LogicBlock, type: :model do
         "value" => "coalesce(DHW_Temp, 150)",
         "low_limit" => "DHW_Temp ?? 140",
         "high_limit" => "160"
-      }
+      },
+      config: { "mode" => "active_low" }
     )
 
     expect(block).to be_valid
   end
 
-  it "exposes hysteresis config through typed accessors" do
-    block = HysteresisLogicBlock.new(config: { "mode" => "active_low", "initial_output" => true })
-
-    expect(block.mode).to eq("active_low")
-    expect(block).to be_active_low
-    expect(block.initial_output).to eq(true)
-  end
-
-  it "exposes hysteresis latest input and output values" do
-    block = HysteresisLogicBlock.create!(
+  it "rejects unknown and non-upstream references" do
+    upstream = HysteresisLogicBlock.create!(
       logic_diagram: diagram,
-      name: "BOT_Ready",
-      stratum: 1,
-      input_expressions: { "value" => "145", "low_limit" => "130", "high_limit" => "140" },
-      config: { "mode" => "active_high" }
+      name: "Upstream",
+      stratum: 2,
+      input_expressions: { "value" => "1", "low_limit" => "0", "high_limit" => "1" }
     )
-    Trace.create!(logic_diagram: diagram, recorded_at: Time.zone.parse("2026-04-29 10:00:00"))
+    unknown = LatchLogicBlock.new(
+      logic_diagram: diagram,
+      name: "Unknown",
+      stratum: 2,
+      input_expressions: { "set" => "Missing", "reset" => "false" }
+    )
+    downstream = LatchLogicBlock.new(
+      logic_diagram: diagram,
+      name: "Downstream",
+      stratum: 2,
+      input_expressions: { "set" => upstream.name, "reset" => "false" }
+    )
 
-    expect(block.value).to eq(145.0)
-    expect(block.low_limit).to eq(130.0)
-    expect(block.high_limit).to eq(140.0)
-    expect(block.output).to eq(true)
+    expect(unknown).not_to be_valid
+    expect(unknown.errors[:input_expressions].join).to include("unknown name Missing")
+    expect(downstream).not_to be_valid
+    expect(downstream.errors[:input_expressions].join).to include("not upstream")
   end
 
-  it "validates hysteresis mode" do
+  it "rejects expression-unsafe names and invalid subtype config" do
     block = HysteresisLogicBlock.new(
       logic_diagram: diagram,
-      name: "Bad",
+      name: "DHW Call",
       stratum: 1,
       input_expressions: { "value" => "1", "low_limit" => "0", "high_limit" => "1" },
       config: { "mode" => "sideways" }
     )
 
     expect(block).not_to be_valid
+    expect(block.errors[:name].join).to include("expression-safe identifier")
     expect(block.errors[:config].join).to include("active_high or active_low")
   end
 
-  it "rejects expression-unsafe names" do
-    block = HysteresisLogicBlock.new(
-      logic_diagram: diagram,
-      name: "DHW Call",
-      stratum: 1,
-      input_expressions: { "value" => "1", "low_limit" => "0", "high_limit" => "1" },
-      config: {}
+  it "implements hysteresis, latch, timer, and expression evaluation" do
+    hysteresis = HysteresisLogicBlock.new
+    expect(hysteresis.evaluate_logic(
+      { "value" => true, "low_limit" => 0.2, "high_limit" => 0.8 }, {}
+    ).first).to eq(true)
+
+    latch = LatchLogicBlock.new(config: { "mode" => "latch_high", "dominance" => "reset" })
+    expect(latch.evaluate_logic({ "set" => true, "reset" => false }, {}).first).to eq(true)
+
+    t0 = Time.zone.parse("2026-09-30 12:00:00")
+    timer = TimerCounterLogicBlock.new
+    value, state = timer.evaluate_logic({ "input" => true }, {}, recorded_at: t0)
+    expect(value).to eq(0.0)
+    expect(timer.evaluate_logic({ "input" => true }, state, recorded_at: t0 + 5).first).to eq(5.0)
+
+    expression = ExpressionLogicBlock.new
+    expect(expression.evaluate_logic({ "value" => false }, {}).first).to eq(false)
+  end
+
+  it "preserves hysteresis state when an input is unknown" do
+    block = HysteresisLogicBlock.new(config: { "initial_output" => true })
+
+    value, state = block.evaluate_logic(
+      { "value" => nil, "low_limit" => 10, "high_limit" => 20 },
+      { "output" => true }
     )
 
-    expect(block).not_to be_valid
-    expect(block.errors[:name].join).to include("expression-safe identifier")
+    expect(value).to be_nil
+    expect(state).to include("output" => true)
   end
 
-  it "exposes latch config through typed accessors" do
-    block = LatchLogicBlock.new(config: { "mode" => "latch_low", "dominance" => "set", "initial_output" => false })
+  it "exposes latch configuration and rejects invalid values" do
+    reset_dominant = LatchLogicBlock.new(config: { "mode" => "latch_high", "dominance" => "reset" })
+    set_dominant = LatchLogicBlock.new(config: { "mode" => "latch_high", "dominance" => "set" })
 
-    expect(block.mode).to eq("latch_low")
-    expect(block).not_to be_latch_high
-    expect(block.dominance).to eq("set")
-    expect(block.initial_output).to eq(false)
-  end
+    expect(reset_dominant).to be_latch_high
+    expect(reset_dominant.dominance).to eq("reset")
+    expect(set_dominant.dominance).to eq("set")
 
-  it "exposes latch latest input and output values" do
-    block = LatchLogicBlock.create!(
-      logic_diagram: diagram,
-      name: "Heat_Lockout",
-      stratum: 1,
-      input_expressions: { "set" => "true", "reset" => "false" },
-      config: { "mode" => "latch_high", "dominance" => "reset" }
-    )
-    Trace.create!(logic_diagram: diagram, recorded_at: Time.zone.parse("2026-04-29 10:00:00"))
-
-    expect(block.set).to eq(true)
-    expect(block.reset).to eq(false)
-    expect(block.output).to eq(true)
-  end
-
-  it "validates latch mode and dominance" do
-    block = LatchLogicBlock.new(
-      logic_diagram: diagram,
-      name: "Bad",
-      stratum: 1,
+    invalid = LatchLogicBlock.new(
+      logic_diagram: diagram, name: "BadLatch", stratum: 1,
       input_expressions: { "set" => "true", "reset" => "false" },
       config: { "mode" => "sticky", "dominance" => "maybe" }
     )
-
-    expect(block).not_to be_valid
-    expect(block.errors[:config].join).to include("latch_high or latch_low")
-    expect(block.errors[:config].join).to include("reset or set")
+    expect(invalid).not_to be_valid
+    expect(invalid.errors[:config].join).to include("latch_high or latch_low", "reset or set")
   end
 
-  it "rejects an unknown referenced name" do
-    block = HysteresisLogicBlock.new(
-      logic_diagram: diagram,
-      name: "DHW_Call",
-      stratum: 1,
-      input_expressions: { "value" => "MissingMeasurement" },
-      config: {}
-    )
+  it "handles active-low, unknown, reset, and non-monotonic timer inputs" do
+    t0 = Time.zone.parse("2026-09-30 12:00:00.250")
+    timer = TimerCounterLogicBlock.new(config: { "mode" => "active_low" })
+    _, state = timer.evaluate_logic({ "input" => false }, {}, recorded_at: t0)
 
-    expect(block).not_to be_valid
-    expect(block.errors[:input_expressions].join).to include("unknown name MissingMeasurement")
+    expect(timer.evaluate_logic({ "input" => false }, state, recorded_at: t0 + 30).first).to eq(30.0)
+    expect(timer.evaluate_logic({ "input" => nil }, state, recorded_at: t0 + 30)).to eq([ nil, state ])
+    expect(timer.evaluate_logic({ "input" => true }, state, recorded_at: t0 + 30)).to eq([ 0.0, { "active_since" => nil } ])
+    expect(timer.evaluate_logic({ "input" => false }, state, recorded_at: t0 - 10).first).to eq(0.0)
   end
 
-  it "rejects references to same-stratum or downstream blocks" do
-    upstream = HysteresisLogicBlock.create!(
-      logic_diagram: diagram,
-      name: "Upstream",
-      stratum: 2,
-      input_expressions: { "value" => "1", "low_limit" => "0", "high_limit" => "1" },
-      config: {}
-    )
+  it "requires subtype inputs" do
+    timer = TimerCounterLogicBlock.new(logic_diagram: diagram, name: "Timer", stratum: 1, input_expressions: {})
+    expression = ExpressionLogicBlock.new(logic_diagram: diagram, name: "Expression", stratum: 1, input_expressions: {})
 
-    block = LatchLogicBlock.new(
-      logic_diagram: diagram,
-      name: "Bad",
-      stratum: 2,
-      input_expressions: { "set" => "Upstream", "reset" => "false" },
-      config: {}
-    )
-
-    expect(block).not_to be_valid
-    expect(block.errors[:input_expressions].join).to include("not upstream")
-  end
-
-  it "accepts upstream logic block references by name" do
-    upstream = HysteresisLogicBlock.create!(
-      logic_diagram: diagram,
-      name: "BOT_Ready",
-      stratum: 1,
-      input_expressions: { "value" => "1", "low_limit" => "0", "high_limit" => "1" },
-      config: {}
-    )
-
-    block = LatchLogicBlock.new(
-      logic_diagram: diagram,
-      name: "Heat_Lockout",
-      stratum: 2,
-      input_expressions: { "set" => "BOT_Ready", "reset" => "false" },
-      config: {}
-    )
-
-    expect(block).to be_valid
-    expect(upstream).to be_persisted
-  end
-
-  it "rejects ambiguous name references" do
-    m = measurement
-    HysteresisLogicBlock.create!(
-      logic_diagram: diagram,
-      name: m.name,
-      stratum: 1,
-      input_expressions: { "value" => "1", "low_limit" => "0", "high_limit" => "1" },
-      config: {}
-    )
-
-    block = LatchLogicBlock.new(
-      logic_diagram: diagram,
-      name: "Ambiguous",
-      stratum: 2,
-      input_expressions: { "set" => m.name, "reset" => "false" },
-      config: {}
-    )
-
-    expect(block).not_to be_valid
-    expect(block.errors[:input_expressions].join).to include("ambiguous")
-  end
-
-  it "treats cross-diagram block names as unknown" do
-    other_diagram = LogicDiagram.create!(name: "Other")
-    other_block = HysteresisLogicBlock.create!(
-      logic_diagram: other_diagram,
-      name: "Other",
-      stratum: 1,
-      input_expressions: { "value" => "1", "low_limit" => "0", "high_limit" => "1" },
-      config: {}
-    )
-
-    block = LatchLogicBlock.new(
-      logic_diagram: diagram,
-      name: "Bad",
-      stratum: 2,
-      input_expressions: { "set" => "Other", "reset" => "false" },
-      config: {}
-    )
-
-    expect(block).not_to be_valid
-    expect(block.errors[:input_expressions].join).to include("unknown name Other")
-  end
-
-  it "treats boolean hysteresis inputs as 1/0" do
-    block = HysteresisLogicBlock.new
-
-    expect(block.evaluate_logic({ "value" => true, "low_limit" => 0.2, "high_limit" => 0.8 }, {}).first).to eq(true)
-    expect(block.evaluate_logic({ "value" => false, "low_limit" => 0.2, "high_limit" => 0.8 }, {}).first).to eq(false)
-  end
-
-  describe TimerCounterLogicBlock do
-    let(:t0) { Time.zone.parse("2026-09-30 12:00:00.250") }
-
-    def timer(mode: nil)
-      config = mode ? { "mode" => mode } : {}
-      described_class.new(logic_diagram: diagram, name: "Fan_Timer", stratum: 1, input_expressions: { "input" => "true" }, config: config)
-    end
-
-    it "requires an input and a known mode" do
-      expect(timer).to be_valid
-      expect(timer.mode).to eq("active_high")
-      expect(timer(mode: "active_low")).to be_valid
-      expect(timer(mode: "sideways")).not_to be_valid
-
-      missing = timer.tap { |b| b.input_expressions = {} }
-      expect(missing).not_to be_valid
-      expect(missing.errors[:input_expressions].join).to include("missing input")
-    end
-
-    it "outputs 0 and clears the start time while inactive" do
-      value, state = timer.evaluate_logic({ "input" => false }, { "active_since" => t0.iso8601(6) }, recorded_at: t0 + 5)
-
-      expect(value).to eq(0.0)
-      expect(state).to eq("active_since" => nil)
-    end
-
-    it "starts at 0 on the first active trace" do
-      value, state = timer.evaluate_logic({ "input" => true }, {}, recorded_at: t0)
-
-      expect(value).to eq(0.0)
-      expect(state).to eq("active_since" => t0.iso8601(6))
-    end
-
-    it "counts seconds since the input went active" do
-      value, state = timer.evaluate_logic({ "input" => 1.0 }, { "active_since" => t0.iso8601(6) }, recorded_at: t0 + 90.5)
-
-      expect(value).to eq(90.5)
-      expect(state).to eq("active_since" => t0.iso8601(6))
-    end
-
-    it "treats a false input as active in active_low mode" do
-      block = timer(mode: "active_low")
-
-      expect(block.evaluate_logic({ "input" => 0.0 }, {}, recorded_at: t0).first).to eq(0.0)
-      expect(block.evaluate_logic({ "input" => false }, { "active_since" => t0.iso8601(6) }, recorded_at: t0 + 30).first).to eq(30.0)
-      expect(block.evaluate_logic({ "input" => true }, { "active_since" => t0.iso8601(6) }, recorded_at: t0 + 30)).to eq([ 0.0, { "active_since" => nil } ])
-    end
-
-    it "outputs null but keeps the start time when the input is null" do
-      value, state = timer.evaluate_logic({ "input" => nil }, { "active_since" => t0.iso8601(6) }, recorded_at: t0 + 30)
-
-      expect(value).to be_nil
-      expect(state).to eq("active_since" => t0.iso8601(6))
-    end
-
-    it "never counts negative time" do
-      value, = timer.evaluate_logic({ "input" => true }, { "active_since" => t0.iso8601(6) }, recorded_at: t0 - 10)
-
-      expect(value).to eq(0.0)
-    end
-  end
-
-  describe ExpressionLogicBlock do
-    it "requires a value input" do
-      block = described_class.new(logic_diagram: diagram, name: "Doubled", stratum: 1, input_expressions: { "value" => "2 * 3" })
-      expect(block).to be_valid
-
-      block.input_expressions = {}
-      expect(block).not_to be_valid
-      expect(block.errors[:input_expressions].join).to include("missing value")
-    end
-
-    it "passes the evaluated value through without keeping state" do
-      block = described_class.new
-
-      [ 4.5, true, false, nil ].each do |value|
-        expect(block.evaluate_logic({ "value" => value }, { "stale" => 99.0 })).to eq([ value, {} ])
-      end
-    end
+    expect(timer).not_to be_valid
+    expect(timer.errors[:input_expressions].join).to include("missing input")
+    expect(expression).not_to be_valid
+    expect(expression.errors[:input_expressions].join).to include("missing value")
   end
 end

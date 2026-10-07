@@ -16,12 +16,18 @@ describe('hardware helpers', () => {
     expect(txnErrorMessage({ httpStatus: 500 })).toBe('Request failed (500). Please retry.');
     expect(txnErrorMessage({})).toBe('Could not reach the server. Please retry.');
   });
-  it('finds the measurements and outputs that depend on the given devices', () => {
+  it('finds instance connections that depend on the given devices', () => {
     const impact = computeImpact([{ id: 3, name: 'Relay' }],
-      [{ id: 1, name: 'Supply', device_id: 3, logic_diagram_id: 7 }, { id: 2, name: 'Other', device_id: 4, logic_diagram_id: 7 }, { id: 5, name: 'Sim', device_id: null, logic_diagram_id: 7 }],
-      [{ id: 9, name: 'Fan', device_id: 3, logic_diagram_id: 8, output_enable: true }]);
-    expect(impact).toEqual({ devices: [{ id: 3, name: 'Relay' }], measurements: [{ id: 1, name: 'Supply', logic_diagram_id: 7 }],
-      output_blocks: [{ id: 9, name: 'Fan', logic_diagram_id: 8, output_enable: true }] });
+      [{ id: 1, device_id: 3, logic_instance_id: 7, logic_input_id: 11 }, { id: 2, device_id: 4, logic_instance_id: 7, logic_input_id: 12 }],
+      [{ id: 9, device_id: 3, logic_instance_id: 8, logic_output_id: 21, output_enable: true }],
+      [{ id: 11, name: 'Supply' }, { id: 12, name: 'Other' }],
+      [{ id: 21, name: 'Fan' }],
+      [{ id: 7, name: 'Boiler' }, { id: 8, name: 'Ventilation' }]);
+    expect(impact).toEqual({
+      devices: [{ id: 3, name: 'Relay' }],
+      logic_input_bindings: [{ id: 1, name: 'Boiler · Supply', logic_instance_id: 7 }],
+      logic_output_bindings: [{ id: 9, name: 'Ventilation · Fan', logic_instance_id: 8, output_enable: true }],
+    });
   });
   it('treats cancelling as active and compares scan profiles with the bus', () => {
     expect(scanActive('cancelling')).toBe(true);

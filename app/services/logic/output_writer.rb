@@ -1,18 +1,18 @@
 module Logic
   class OutputWriter
-    Command = Struct.new(:output_block, :device, :channel, :desired_output, keyword_init: true)
+    Command = Struct.new(:output_binding, :device, :channel, :desired_output, keyword_init: true)
 
     def enabled_commands_by_device_id
-      commands = OutputBlock.includes(:device, :logic_diagram).filter_map do |output_block|
-        next unless output_block.logic_diagram.output_enable? && output_block.output_enable?
-        next if output_block.latest_result.nil?
-        next if output_block.desired_output.nil?
+      commands = LogicOutputBinding.includes(:device, :logic_output, :logic_instance).filter_map do |binding|
+        next unless binding.logic_instance.output_enable? && binding.output_enable?
+        next if binding.latest_result.nil?
+        next if binding.desired_output.nil?
 
         Command.new(
-          output_block: output_block,
-          device: output_block.device,
-          channel: output_block.channel,
-          desired_output: output_block.desired_output
+          output_binding: binding,
+          device: binding.device,
+          channel: binding.channel,
+          desired_output: binding.desired_output
         )
       end
 

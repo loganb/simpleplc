@@ -4,7 +4,10 @@ RSpec.describe "Record locking", type: :request do
   let(:interface) { HostInterface.create!(name: "Bus", port: "/dev/missing") }
 
   it "enables locking with a non-null zero default on every application table" do
-    [ HostInterface, Device, LogicDiagram, Measurement, LogicBlock, OutputBlock, Trace ].each do |model|
+    [
+      HostInterface, Device, LogicDiagram, LogicInput, LogicBlock, LogicOutput,
+      LogicInstance, LogicInputBinding, LogicOutputBinding, Trace
+    ].each do |model|
       column = model.columns_hash.fetch("lock_version")
       expect(column.null).to be(false)
       expect(column.default.to_i).to eq(0)
@@ -90,9 +93,11 @@ RSpec.describe "Record locking", type: :request do
   end
 
   it "serializes the persisted trace version after its creation callback computes results" do
-    diagram = LogicDiagram.create!(name: "Test", update_period: 60)
-    Measurement.create!(logic_diagram: diagram, name: "temperature", mode: "simulation", simulation_value: 20)
-    post "/traces", params: { trace: { logic_diagram_id: diagram.id } }
+    diagram = LogicDiagram.create!(name: "Test")
+    input = LogicInput.create!(logic_diagram: diagram, name: "temperature")
+    instance = LogicInstance.create!(logic_diagram: diagram, name: "Test room")
+    LogicInputBinding.create!(logic_instance: instance, logic_input: input, source_kind: "fixed_value", fixed_value: 20)
+    post "/traces", params: { trace: { logic_instance_id: instance.id } }
     expect(response).to have_http_status(:created)
     trace = Trace.find(response.parsed_body.fetch("id"))
     expect(trace.lock_version).to eq(1)

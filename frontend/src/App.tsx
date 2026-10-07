@@ -3,13 +3,17 @@ import { useLoaders } from './lib/DataLoader2';
 import { DashboardTab } from './tabs/dashboard/DashboardTab';
 import { DevicesTab } from './tabs/devices/DevicesTab';
 import { LogicTab } from './tabs/logic/LogicTab';
+import { InstancesTab } from './tabs/instances/InstancesTab';
 import {
   Device,
   HostInterface,
   LogicBlock,
   LogicDiagram,
-  Measurement,
-  OutputBlock,
+  LogicInput,
+  LogicInputBinding,
+  LogicInstance,
+  LogicOutput,
+  LogicOutputBinding,
   Store,
   connectLiveRecords,
 } from './store';
@@ -21,8 +25,9 @@ const rootUx = appTree.subtree();
 
 const TABS: { id: TabName; label: string }[] = [
   { id: 'dashboard', label: 'Dashboard' },
-  { id: 'devices', label: 'Devices' },
+  { id: 'instances', label: 'Instances' },
   { id: 'logic', label: 'Logic' },
+  { id: 'devices', label: 'Devices' },
 ];
 
 export function App() {
@@ -51,16 +56,25 @@ export function App() {
     activeTab: rootUx.getActiveSubtree() ?? 'dashboard',
   }), [rootUx], []);
 
-  const { devices, interfaces, measurements, logicDiagrams, logicBlocks, outputBlocks } = useLoaders(() => {
+  const {
+    devices, interfaces, logicInputs, logicDiagrams, logicBlocks, logicOutputs,
+    logicInstances, logicInputBindings, logicOutputBindings,
+  } = useLoaders(() => {
     const force = refreshToken > lastForcedRefreshToken.current;
     if (force) lastForcedRefreshToken.current = refreshToken;
     const devices = Store.m(Device).queryFor(null, {}, force);
     const interfaces = Store.m(HostInterface).queryFor(null, {}, force);
-    const measurements = Store.m(Measurement).queryFor(null, {}, force);
+    const logicInputs = Store.m(LogicInput).queryFor(null, {}, force);
     const logicDiagrams = Store.m(LogicDiagram).queryFor(null, {}, force);
     const logicBlocks = Store.m(LogicBlock).queryFor(null, {}, force);
-    const outputBlocks = Store.m(OutputBlock).queryFor(null, {}, force);
-    return { devices, interfaces, measurements, logicDiagrams, logicBlocks, outputBlocks };
+    const logicOutputs = Store.m(LogicOutput).queryFor(null, {}, force);
+    const logicInstances = Store.m(LogicInstance).queryFor(null, {}, force);
+    const logicInputBindings = Store.m(LogicInputBinding).queryFor(null, {}, force);
+    const logicOutputBindings = Store.m(LogicOutputBinding).queryFor(null, {}, force);
+    return {
+      devices, interfaces, logicInputs, logicDiagrams, logicBlocks, logicOutputs,
+      logicInstances, logicInputBindings, logicOutputBindings,
+    };
   }, [Store], [refreshToken]);
 
   const refresh = () => setRefreshToken((token) => token + 1);
@@ -101,8 +115,25 @@ export function App() {
             devices={devices}
             interfaces={interfaces}
             logicDiagrams={logicDiagrams}
-            measurements={measurements}
-            outputBlocks={outputBlocks}
+            logicInstances={logicInstances}
+            logicInputs={logicInputs}
+            logicOutputs={logicOutputs}
+            inputBindings={logicInputBindings}
+            outputBindings={logicOutputBindings}
+          />
+        )}
+
+        {activeTab === 'instances' && (
+          <InstancesTab
+            ux={rootUx.subtree('instances')}
+            instances={logicInstances}
+            diagrams={logicDiagrams}
+            inputs={logicInputs}
+            outputs={logicOutputs}
+            inputBindings={logicInputBindings}
+            outputBindings={logicOutputBindings}
+            devices={devices}
+            onRefresh={refresh}
           />
         )}
 
@@ -120,9 +151,8 @@ export function App() {
             ux={rootUx.subtree('logic')}
             diagrams={logicDiagrams}
             blocks={logicBlocks}
-            outputBlocks={outputBlocks}
-            measurements={measurements}
-            devices={devices}
+            outputs={logicOutputs}
+            inputs={logicInputs}
             onRefresh={refresh}
           />
         )}

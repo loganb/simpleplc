@@ -62,25 +62,21 @@ RSpec.describe Device do
   end
 
   it "does not change LogicDiagram hardware identities when labels are renamed" do
-    diagram = LogicDiagram.create!(name: "Boiler", update_period: 60)
-    measurement = Measurement.create!(
-      logic_diagram: diagram,
-      device: device,
-      name: "Call",
-      mode: "acquisition",
-      source_path: "inputs[0]"
+    diagram = LogicDiagram.create!(name: "Boiler")
+    input = LogicInput.create!(logic_diagram: diagram, name: "Call", value_type: "boolean")
+    output = LogicOutput.create!(logic_diagram: diagram, name: "Fan", value_type: "boolean", input_expression: "Call")
+    instance = LogicInstance.create!(logic_diagram: diagram, name: "Boiler room")
+    input_binding = LogicInputBinding.create!(
+      logic_instance: instance, logic_input: input, device: device,
+      source_kind: "device_input", source_path: "inputs[0]"
     )
-    output = OutputBlock.create!(
-      logic_diagram: diagram,
-      device: device,
-      name: "Fan",
-      channel: 1,
-      input_expression: "Call"
+    output_binding = LogicOutputBinding.create!(
+      logic_instance: instance, logic_output: output, device: device, channel: 1
     )
 
     device.update!(io_labels: { inputs: { "inputs[0]" => "Boiler call" }, outputs: { "1" => "Supply fan" } })
 
-    expect(measurement.reload.source_path).to eq("inputs[0]")
-    expect(output.reload.channel).to eq(1)
+    expect(input_binding.reload.source_path).to eq("inputs[0]")
+    expect(output_binding.reload.channel).to eq(1)
   end
 end

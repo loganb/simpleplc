@@ -18,7 +18,7 @@ module Logic
       previous_state = previous_result&.fetch("state", nil) || {}
       value, state = block.evaluate_logic(input_values, previous_state, recorded_at: recorded_at)
 
-      result_payload(block.trace_value(value), state, input_values).tap { block.clear_memery_cache! }
+      result_payload(block.trace_value(value), state, input_values)
     end
 
     private
@@ -26,7 +26,7 @@ module Logic
     attr_reader :block, :trace, :recorded_at, :context
 
     def previous_result
-      trace.logic_diagram.traces.where.not(id: trace.id).order(recorded_at: :desc, id: :desc).find do |previous_trace|
+      trace.logic_instance.traces.where.not(id: trace.id).order(recorded_at: :desc, id: :desc).find do |previous_trace|
         previous_trace.result_for(block)
       end&.result_for(block)
     end

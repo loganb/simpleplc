@@ -1,50 +1,46 @@
 import type { ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { FormButtons } from '../../components/FormButtons';
-import { formatComputedValue, formatElapsedSeconds, formatNullableBool } from '../../components/format';
 import { useTxnStatus } from '../../components/useTxnStatus';
 import { useLoaders } from '../../lib/DataLoader2';
-import { Store, Measurement, LogicDiagram, LogicBlock, OutputBlock, Trace } from '../../store';
+import { Store, LogicDiagram, LogicBlock } from '../../store';
 import type {
-  DeviceFields,
   LogicBlockFields,
   LogicDiagramFields,
-  MeasurementFields,
-  OutputBlockFields,
+  LogicInputFields,
+  LogicOutputFields,
 } from '../../store';
 import type { ExistingRecord, ReifiedQueryResult, Txn } from '../../lib/RestfulModelStore';
 import { nextStratumForExpressions } from '../../logicDiagram';
 import type { LogicUXState } from '../../uxTree';
-import { MeasurementForm } from './MeasurementForm';
-import { OutputBlockForm } from './OutputBlockForm';
+import { LogicInputForm } from './LogicInputForm';
+import { LogicOutputForm } from './LogicOutputForm';
 
 export function LogicTab({
   diagrams,
   blocks,
-  outputBlocks,
-  measurements,
-  devices,
+  outputs,
+  inputs,
   ux,
   onRefresh,
 }: {
   diagrams: ReifiedQueryResult<LogicDiagramFields>;
   blocks: ReifiedQueryResult<LogicBlockFields>;
-  outputBlocks: ReifiedQueryResult<OutputBlockFields>;
-  measurements: ReifiedQueryResult<MeasurementFields>;
-  devices: ReifiedQueryResult<DeviceFields>;
+  outputs: ReifiedQueryResult<LogicOutputFields>;
+  inputs: ReifiedQueryResult<LogicInputFields>;
   ux: LogicUXState;
   onRefresh: () => void;
 }) {
   const {
     selectedDiagramId,
     showDiagramForm,
-    showMeasurementForm,
+    showInputForm,
     showBlockForm,
     showOutputForm,
   } = useLoaders(() => ({
     selectedDiagramId: ux.get('selectedDiagramId') ?? null,
     showDiagramForm: ux.get('showDiagramForm') ?? false,
-    showMeasurementForm: ux.get('showMeasurementForm') ?? null,
+    showInputForm: ux.get('showInputForm') ?? null,
     showBlockForm: ux.get('showBlockForm') ?? null,
     showOutputForm: ux.get('showOutputForm') ?? null,
   }), [ux], [ux]);
@@ -54,15 +50,14 @@ export function LogicTab({
         <LogicDiagramsSection
           diagrams={diagrams}
           blocks={blocks}
-          outputBlocks={outputBlocks}
-          measurements={measurements}
-          devices={devices}
+          outputs={outputs}
+          inputs={inputs}
           selectedDiagramId={selectedDiagramId}
           onSelectDiagram={(id) => ux.set('selectedDiagramId', id)}
           showDiagramForm={showDiagramForm}
           onShowDiagramForm={(show) => ux.set('showDiagramForm', show)}
-          showMeasurementForm={showMeasurementForm}
-          onShowMeasurementForm={(id) => ux.set('showMeasurementForm', id)}
+          showInputForm={showInputForm}
+          onShowInputForm={(id) => ux.set('showInputForm', id)}
           showBlockForm={showBlockForm}
           onShowBlockForm={(id) => ux.set('showBlockForm', id)}
           showOutputForm={showOutputForm}
@@ -80,15 +75,14 @@ export function LogicTab({
 function LogicDiagramsSection({
   diagrams,
   blocks,
-  outputBlocks,
-  measurements,
-  devices,
+  outputs,
+  inputs,
   selectedDiagramId,
   onSelectDiagram,
   showDiagramForm,
   onShowDiagramForm,
-  showMeasurementForm,
-  onShowMeasurementForm,
+  showInputForm,
+  onShowInputForm,
   showBlockForm,
   onShowBlockForm,
   showOutputForm,
@@ -97,29 +91,22 @@ function LogicDiagramsSection({
 }: {
   diagrams: ReifiedQueryResult<LogicDiagramFields>;
   blocks: ReifiedQueryResult<LogicBlockFields>;
-  outputBlocks: ReifiedQueryResult<OutputBlockFields>;
-  measurements: ReifiedQueryResult<MeasurementFields>;
-  devices: ReifiedQueryResult<DeviceFields>;
+  outputs: ReifiedQueryResult<LogicOutputFields>;
+  inputs: ReifiedQueryResult<LogicInputFields>;
   selectedDiagramId: number | null;
   onSelectDiagram: (id: number | null) => void;
   showDiagramForm: boolean;
   onShowDiagramForm: (show: boolean) => void;
-  showMeasurementForm: number | 'new' | null;
-  onShowMeasurementForm: (id: number | 'new' | null) => void;
+  showInputForm: number | 'new' | null;
+  onShowInputForm: (id: number | 'new' | null) => void;
   showBlockForm: number | 'new' | null;
   onShowBlockForm: (id: number | 'new' | null) => void;
   showOutputForm: number | 'new' | null;
   onShowOutputForm: (id: number | 'new' | null) => void;
   onRefresh: () => void;
 }) {
-  const [traceTxn, setTraceTxn] = useState<Txn | undefined>();
-  const [diagramTxn, setDiagramTxn] = useState<Txn | undefined>();
   const [deleteDiagramTxn, setDeleteDiagramTxn] = useState<Txn | undefined>();
-  const [traceError, setTraceError] = useState<string | null>(null);
-  const handledTraceSeq = useRef<number | null>(null);
   const handledDeleteDiagramSeq = useRef<number | null>(null);
-  const { txnResult: traceTxnResult, saving: computing } = useTxnStatus(traceTxn);
-  const { saving: savingDiagram } = useTxnStatus(diagramTxn);
   const { txnResult: deleteDiagramTxnResult, saving: deletingDiagram } = useTxnStatus(deleteDiagramTxn);
   const deleteDiagramError = deleteDiagramTxnResult?.status === 'error' ? 'Delete failed' : null;
   const foundDiagrams = diagrams._loaded
@@ -129,13 +116,13 @@ function LogicDiagramsSection({
   const currentBlocks = blocks._loaded && currentDiagram
     ? blocks.filter((b) => b._found && (b as ExistingRecord<LogicBlockFields>).logic_diagram_id === currentDiagram.id) as ExistingRecord<LogicBlockFields>[]
     : [];
-  const foundMeasurements = measurements._loaded
-    ? measurements.filter((m) => (
-      m._found && currentDiagram && (m as ExistingRecord<MeasurementFields>).logic_diagram_id === currentDiagram.id
-    )) as ExistingRecord<MeasurementFields>[]
+  const foundInputs = inputs._loaded
+    ? inputs.filter((input) => (
+      input._found && currentDiagram && (input as ExistingRecord<LogicInputFields>).logic_diagram_id === currentDiagram.id
+    )) as ExistingRecord<LogicInputFields>[]
     : [];
-  const currentOutputs = outputBlocks._loaded && currentDiagram
-    ? outputBlocks.filter((o) => o._found && (o as ExistingRecord<OutputBlockFields>).logic_diagram_id === currentDiagram.id) as ExistingRecord<OutputBlockFields>[]
+  const currentOutputs = outputs._loaded && currentDiagram
+    ? outputs.filter((output) => output._found && (output as ExistingRecord<LogicOutputFields>).logic_diagram_id === currentDiagram.id) as ExistingRecord<LogicOutputFields>[]
     : [];
   const blocksByStratum = new Map<number, ExistingRecord<LogicBlockFields>[]>();
   currentBlocks.forEach((block) => {
@@ -146,24 +133,12 @@ function LogicDiagramsSection({
   const strata = [...blocksByStratum.keys()].sort((a, b) => a - b);
 
   useEffect(() => {
-    if (!traceTxnResult) return;
-    if (handledTraceSeq.current === traceTxnResult.seq) return;
-    handledTraceSeq.current = traceTxnResult.seq;
-    if (traceTxnResult.status === 'succeeded') {
-      setTraceError(null);
-      onRefresh();
-    } else {
-      setTraceError('Compute failed');
-    }
-  }, [traceTxnResult, onRefresh]);
-
-  useEffect(() => {
     if (!deleteDiagramTxnResult) return;
     if (handledDeleteDiagramSeq.current === deleteDiagramTxnResult.seq) return;
     handledDeleteDiagramSeq.current = deleteDiagramTxnResult.seq;
     if (deleteDiagramTxnResult.status === 'succeeded') {
       onShowDiagramForm(false);
-      onShowMeasurementForm(null);
+      onShowInputForm(null);
       onShowBlockForm(null);
       onShowOutputForm(null);
       onSelectDiagram(null);
@@ -175,20 +150,14 @@ function LogicDiagramsSection({
     onSelectDiagram,
     onShowBlockForm,
     onShowDiagramForm,
-    onShowMeasurementForm,
+    onShowInputForm,
     onShowOutputForm,
   ]);
-
-  const computeNow = () => {
-    if (!currentDiagram) return;
-    setTraceError(null);
-    setTraceTxn(Store.m(Trace).create({ logic_diagram_id: currentDiagram.id }));
-  };
 
   const deleteCurrentDiagram = () => {
     if (!currentDiagram || deletingDiagram) return;
     const confirmed = window.confirm(
-      `Delete "${currentDiagram.name}" and all of its measurements, blocks, outputs, and traces?`,
+      `Delete "${currentDiagram.name}" and all of its inputs, blocks, outputs, instances, and traces?`,
     );
     if (!confirmed) return;
 
@@ -218,21 +187,6 @@ function LogicDiagramsSection({
           )}
         </div>
         <div class="flex gap-2">
-          {currentDiagram && (
-            <label class="flex items-center gap-2 rounded border border-border px-3 py-1.5 text-sm text-text-muted">
-              <span class={currentDiagram.output_enable ? 'font-medium text-text' : ''}>Outputs</span>
-              <input
-                type="checkbox"
-                class="peer sr-only"
-                checked={currentDiagram.output_enable}
-                disabled={savingDiagram}
-                onChange={() => setDiagramTxn(Store.m(LogicDiagram).patch(currentDiagram.id, {
-                  output_enable: !currentDiagram.output_enable,
-                }))}
-              />
-              <span class="relative h-5 w-9 shrink-0 rounded-full bg-border transition-colors after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:shadow after:transition-transform peer-checked:bg-active peer-checked:after:translate-x-4 peer-disabled:opacity-50" />
-            </label>
-          )}
           <button
             class="rounded border border-border px-3 py-1.5 text-sm font-medium text-text-muted hover:text-text"
             onClick={() => onShowDiagramForm(true)}
@@ -245,13 +199,6 @@ function LogicDiagramsSection({
             onClick={deleteCurrentDiagram}
           >
             {deletingDiagram ? 'Deleting...' : 'Delete Diagram'}
-          </button>
-          <button
-            class="rounded border border-border px-3 py-1.5 text-sm font-medium text-text-muted hover:text-text disabled:opacity-50"
-            disabled={!currentDiagram || computing}
-            onClick={computeNow}
-          >
-            {computing ? 'Computing...' : 'Compute Now'}
           </button>
           <button
             class="rounded bg-active px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
@@ -271,7 +218,6 @@ function LogicDiagramsSection({
       </div>
 
       {showDiagramForm && <LogicDiagramForm onClose={() => onShowDiagramForm(false)} />}
-      {traceError && <p class="mb-3 text-sm text-error">{traceError}</p>}
       {deleteDiagramError && <p class="mb-3 text-sm text-error">{deleteDiagramError}</p>}
 
       {!diagrams._loaded ? (
@@ -289,20 +235,18 @@ function LogicDiagramsSection({
             />
           )}
 
-          {showMeasurementForm !== null && currentDiagram && (
-            <MeasurementForm
+          {showInputForm !== null && currentDiagram && (
+            <LogicInputForm
               diagram={currentDiagram}
-              editId={showMeasurementForm === 'new' ? null : showMeasurementForm}
-              devices={devices}
-              onClose={() => onShowMeasurementForm(null)}
+              editId={showInputForm === 'new' ? null : showInputForm}
+              onClose={() => onShowInputForm(null)}
             />
           )}
 
           {showOutputForm !== null && currentDiagram && (
-            <OutputBlockForm
+            <LogicOutputForm
               diagram={currentDiagram}
               editId={showOutputForm === 'new' ? null : showOutputForm}
-              devices={devices}
               onClose={() => onShowOutputForm(null)}
             />
           )}
@@ -311,19 +255,19 @@ function LogicDiagramsSection({
             <div class="flex min-w-max gap-4">
               <div class="w-64 shrink-0">
                 <ColumnHeader
-                  title="Measurements"
-                  action={<NewButton onClick={() => onShowMeasurementForm('new')} />}
+                  title="Inputs"
+                  action={<NewButton onClick={() => onShowInputForm('new')} />}
                 />
                 <div class="space-y-2">
-                  {foundMeasurements.length === 0 ? (
+                  {foundInputs.length === 0 ? (
                     <div class="rounded-lg border border-dashed border-border bg-surface-alt p-4 text-sm text-text-muted">
-                      No measurements in this diagram.
+                      No inputs in this diagram.
                     </div>
-                  ) : foundMeasurements.map((measurement) => (
-                    <MeasurementCard
-                      key={measurement.id}
-                      measurement={measurement}
-                      onEdit={(id) => onShowMeasurementForm(id)}
+                  ) : foundInputs.map((input) => (
+                    <LogicInputCard
+                      key={input.id}
+                      input={input}
+                      onEdit={(id) => onShowInputForm(id)}
                     />
                   ))}
                 </div>
@@ -355,10 +299,9 @@ function LogicDiagramsSection({
                       No outputs in this diagram.
                     </div>
                   ) : currentOutputs.map((output) => (
-                    <OutputBlockCard
+                    <LogicOutputCard
                       key={output.id}
                       output={output}
-                      devices={devices}
                       onEdit={(id) => onShowOutputForm(id)}
                     />
                   ))}
@@ -417,24 +360,18 @@ export function LogicBlockCard({ block, onEdit }: {
         <p class="whitespace-pre-wrap break-words text-xs text-text">{block.notes}</p>
       )}
 
-      <div
-        class="flex items-center justify-between rounded bg-surface-alt px-2 py-1.5"
-        title={block.block_type === 'expression'
+      <p class="truncate rounded bg-surface-alt px-2 py-1.5 font-mono text-xs text-text-muted"
+        title={expressionsToText(block.input_expressions)}>
+        {block.block_type === 'expression'
           ? block.input_expressions.value
-          : expressionsToText(block.input_expressions)}
-      >
-        <span class="text-xs text-text-muted">Output</span>
-        <span class="font-mono text-sm font-semibold">
-          {formatBlockOutput(block)}
-        </span>
-      </div>
+          : Object.values(block.input_expressions).join(' · ')}
+      </p>
     </div>
   );
 }
 
 function LogicDiagramForm({ onClose }: { onClose: () => void }) {
   const [name, setName] = useState('');
-  const [updatePeriod, setUpdatePeriod] = useState('60');
   const [saveTxn, setSaveTxn] = useState<Txn | undefined>();
   const [error, setError] = useState<string | null>(null);
   const { txnResult, saving } = useTxnStatus(saveTxn);
@@ -447,7 +384,7 @@ function LogicDiagramForm({ onClose }: { onClose: () => void }) {
 
   const handleSave = () => {
     setError(null);
-    setSaveTxn(Store.m(LogicDiagram).create({ name, update_period: parseInt(updatePeriod, 10) }));
+    setSaveTxn(Store.m(LogicDiagram).create({ name }));
   };
 
   return (
@@ -462,27 +399,9 @@ function LogicDiagramForm({ onClose }: { onClose: () => void }) {
           onInput={(e) => setName((e.target as HTMLInputElement).value)}
         />
       </label>
-      <label class="block">
-        <span class="text-xs text-text-muted">Update Period (seconds)</span>
-        <input
-          type="number"
-          min="1"
-          class="mt-1 block w-full rounded border border-border bg-surface px-2 py-1.5 text-sm"
-          value={updatePeriod}
-          onInput={(e) => setUpdatePeriod((e.target as HTMLInputElement).value)}
-        />
-      </label>
       <FormButtons saving={saving} disabled={!name} onSave={handleSave} onCancel={onClose} />
     </div>
   );
-}
-
-function formatBlockOutput(block: LogicBlockFields) {
-  switch (block.block_type) {
-    case 'timer_counter': return formatElapsedSeconds(block.output);
-    case 'expression': return formatComputedValue(block.output);
-    default: return formatNullableBool(block.output);
-  }
 }
 
 const MODES_BY_TYPE: Record<LogicBlockFields['block_type'], { value: string; label: string }[]> = {
@@ -673,196 +592,38 @@ function textToExpressions(text: string) {
   return expressions;
 }
 
-// ---------------------------------------------------------------------------
-// Measurement components
-// ---------------------------------------------------------------------------
-
-export function MeasurementCard({ measurement, onEdit }: {
-  measurement: ExistingRecord<MeasurementFields>;
+export function LogicInputCard({ input, onEdit }: {
+  input: ExistingRecord<LogicInputFields>;
   onEdit: (id: number) => void;
 }) {
-  const m = measurement;
-  const [editingValue, setEditingValue] = useState(false);
-  const [simulationDraft, setSimulationDraft] = useState(String(m.simulation_value ?? ''));
-  const [saveTxn, setSaveTxn] = useState<Txn | undefined>();
-  const [error, setError] = useState<string | null>(null);
-  const valueSaveStarted = useRef(false);
-  const { txnResult, saving } = useTxnStatus(saveTxn);
-
-  const displayValue = m.mode === 'simulation' ? m.simulation_value : m.latest_value;
-
-  useEffect(() => {
-    if (!editingValue) setSimulationDraft(String(m.simulation_value ?? ''));
-  }, [editingValue, m.simulation_value]);
-
-  useEffect(() => {
-    if (!txnResult) return;
-    setError(txnResult.status === 'succeeded' ? null : 'Save failed');
-  }, [txnResult]);
-
-  const patchMeasurement = (changes: Partial<MeasurementFields>) => {
-    setError(null);
-    setSaveTxn(Store.m(Measurement).patch(m.id, changes));
-  };
-
-  const toggleMode = () => {
-    const nextMode: MeasurementFields['mode'] = m.mode === 'simulation' ? 'acquisition' : 'simulation';
-    patchMeasurement({ mode: nextMode });
-  };
-
-  const startEditingValue = () => {
-    if (m.mode !== 'simulation') return;
-    valueSaveStarted.current = false;
-    setSimulationDraft(String(m.simulation_value ?? ''));
-    setEditingValue(true);
-  };
-
-  const saveSimulationValue = () => {
-    if (valueSaveStarted.current) return;
-    if (!editingValue) return;
-    valueSaveStarted.current = true;
-    setEditingValue(false);
-    patchMeasurement({
-      simulation_value: simulationDraft.trim() === '' ? null : parseFloat(simulationDraft),
-    });
-  };
-
-  return (
-    <div class="rounded-lg border border-border bg-surface p-3 space-y-2">
-      <div class="flex items-center justify-between">
-        <h3 class="text-sm font-semibold">{m.name}</h3>
-        <button
-          class="text-xs text-text-muted hover:text-text"
-          onClick={() => onEdit(m.id as number)}
-        >
-          Edit
-        </button>
-      </div>
-
-      {editingValue ? (
-        <input
-          autoFocus
-          type="number"
-          step="any"
-          class="w-full rounded border border-border bg-surface px-2 py-1 text-xl font-mono font-bold"
-          value={simulationDraft}
-          onInput={(e) => setSimulationDraft((e.target as HTMLInputElement).value)}
-          onBlur={saveSimulationValue}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              e.preventDefault();
-              saveSimulationValue();
-            } else if (e.key === 'Escape') {
-              valueSaveStarted.current = true;
-              setSimulationDraft(String(m.simulation_value ?? ''));
-              setEditingValue(false);
-            }
-          }}
-        />
-      ) : (
-        <button
-          class={`block w-full text-left text-xl font-mono font-bold ${m.mode === 'simulation' ? 'cursor-text hover:text-active' : 'cursor-default'}`}
-          onClick={startEditingValue}
-          disabled={m.mode !== 'simulation'}
-        >
-          {displayValue !== null
-            ? <>{displayValue.toFixed(1)}{m.units && <span class="text-xs text-text-muted ml-1">{m.units}</span>}</>
-            : <span class="text-text-muted text-sm">{m.mode === 'simulation' ? 'Set value' : 'No data'}</span>
-          }
-        </button>
-      )}
-
-      <div class="text-xs text-text-muted space-y-0.5">
-        <label class="flex items-center justify-between gap-2 rounded bg-surface-alt px-2 py-1">
-          <span class={m.mode === 'acquisition' ? 'font-medium text-text' : ''}>Acquisition</span>
-          <input
-            type="checkbox"
-            class="peer sr-only"
-            checked={m.mode === 'simulation'}
-            disabled={saving}
-            onChange={toggleMode}
-          />
-          <span class="relative h-5 w-9 shrink-0 rounded-full bg-border transition-colors after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:shadow after:transition-transform peer-checked:bg-active peer-checked:after:translate-x-4 peer-disabled:opacity-50" />
-          <span class={m.mode === 'simulation' ? 'font-medium text-text' : ''}>Simulation</span>
-        </label>
-        {saving && <p>Saving...</p>}
-        {error && <p class="text-error">{error}</p>}
-      </div>
-    </div>
-  );
+  return <PortCard name={input.name} valueType={input.value_type} units={input.units}
+    onEdit={() => onEdit(input.id)} />;
 }
 
-// ---------------------------------------------------------------------------
-// Output components
-// ---------------------------------------------------------------------------
-
-export function OutputBlockCard({ output, devices, onEdit }: {
-  output: ExistingRecord<OutputBlockFields>;
-  devices: ReifiedQueryResult<DeviceFields>;
+export function LogicOutputCard({ output, onEdit }: {
+  output: ExistingRecord<LogicOutputFields>;
   onEdit: (id: number) => void;
 }) {
-  const [saveTxn, setSaveTxn] = useState<Txn | undefined>();
-  const [error, setError] = useState<string | null>(null);
-  const { txnResult, saving } = useTxnStatus(saveTxn);
-  const device = devices.find((d) => d._found && (d as ExistingRecord<DeviceFields>).id === output.device_id);
-  const foundDevice = device?._found ? device as ExistingRecord<DeviceFields> : null;
-  const deviceName = foundDevice?.name ?? 'Unknown device';
-  const assignedOutput = foundDevice?.outputs.find(candidate => candidate.channel === output.channel);
-
-  useEffect(() => {
-    if (!txnResult) return;
-    setError(txnResult.status === 'succeeded' ? null : 'Save failed');
-  }, [txnResult]);
-
-  return (
-    <div class="rounded-lg border border-border bg-surface p-3 space-y-2">
-      <div class="flex items-start justify-between gap-3">
-        <div>
-          <h3 class="text-sm font-semibold">{output.name}</h3>
-          <p class="text-xs text-text-muted">{deviceName} · {assignedOutput?.label ?? `Channel ${output.channel}`} (ch {output.channel})</p>
-        </div>
-        <button
-          class="text-xs text-text-muted hover:text-text"
-          onClick={() => onEdit(output.id)}
-        >
-          Edit
-        </button>
-      </div>
-
-      <div
-        class={`flex items-center justify-between rounded px-2 py-1.5 ${outputBoxClass(output)}`}
-        title={output.input_expression}
-      >
-        <span class="text-xs text-text-muted">Output</span>
-        <span class="font-mono text-sm font-semibold">
-          {formatNullableBool(output.desired_output)}
-        </span>
-      </div>
-
-      <label class="flex items-center justify-between gap-2 rounded bg-surface-alt px-2 py-1 text-xs text-text-muted">
-        <span class={output.output_enable ? 'font-medium text-text' : ''}>Output Enable</span>
-        <input
-          type="checkbox"
-          class="peer sr-only"
-          checked={output.output_enable}
-          disabled={saving}
-          onChange={() => {
-            setError(null);
-            setSaveTxn(Store.m(OutputBlock).patch(output.id, { output_enable: !output.output_enable }));
-          }}
-        />
-        <span class="relative h-5 w-9 shrink-0 rounded-full bg-border transition-colors after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:shadow after:transition-transform peer-checked:bg-active peer-checked:after:translate-x-4 peer-disabled:opacity-50" />
-      </label>
-
-      {saving && <p class="text-xs text-text-muted">Saving...</p>}
-      {error && <p class="text-xs text-error">{error}</p>}
-    </div>
-  );
+  return <PortCard name={output.name} valueType={output.value_type} units={output.units}
+    detail={output.input_expression} onEdit={() => onEdit(output.id)} />;
 }
 
-// The card shows only what it computes, styled by whether this card drives
-// it. The diagram-level Outputs toggle deliberately doesn't factor in.
-function outputBoxClass(output: OutputBlockFields) {
-  if (!output.output_enable || output.desired_output === null) return 'bg-surface-alt opacity-50';
-  return output.desired_output ? 'bg-ok-bg text-ok' : 'bg-surface-alt text-text';
+function PortCard({ name, valueType, units, detail, onEdit }: {
+  name: string;
+  valueType: string;
+  units: string | null;
+  detail?: string;
+  onEdit: () => void;
+}) {
+  return <div class="space-y-2 rounded-lg border border-border bg-surface p-3">
+    <div class="flex items-start justify-between gap-3">
+      <div class="min-w-0">
+        <h3 class="truncate font-mono text-sm font-semibold">{name}</h3>
+        <p class="text-xs capitalize text-text-muted">{valueType}{units ? ` · ${units}` : ''}</p>
+      </div>
+      <button class="text-xs text-text-muted hover:text-text" onClick={onEdit}>Edit</button>
+    </div>
+    {detail && <p class="truncate rounded bg-surface-alt px-2 py-1.5 font-mono text-xs text-text-muted"
+      title={detail}>{detail}</p>}
+  </div>;
 }

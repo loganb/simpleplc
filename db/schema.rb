@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_30_000000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_07_000000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -76,59 +76,98 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_30_000000) do
     t.datetime "created_at", null: false
     t.integer "lock_version", default: 0, null: false
     t.string "name", null: false
+    t.datetime "updated_at", null: false
+  end
+
+  create_table "logic_input_bindings", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.bigint "device_id"
+    t.jsonb "fixed_value"
+    t.integer "lock_version", default: 0, null: false
+    t.bigint "logic_input_id", null: false
+    t.bigint "logic_instance_id", null: false
+    t.string "source_kind", null: false
+    t.string "source_path"
+    t.datetime "updated_at", null: false
+    t.index ["device_id"], name: "index_logic_input_bindings_on_device_id"
+    t.index ["logic_input_id"], name: "index_logic_input_bindings_on_logic_input_id"
+    t.index ["logic_instance_id", "logic_input_id"], name: "index_logic_input_bindings_on_instance_and_input", unique: true
+    t.index ["logic_instance_id"], name: "index_logic_input_bindings_on_logic_instance_id"
+  end
+
+  create_table "logic_inputs", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.integer "lock_version", default: 0, null: false
+    t.bigint "logic_diagram_id", null: false
+    t.string "name", null: false
+    t.string "units"
+    t.datetime "updated_at", null: false
+    t.string "value_type", default: "number", null: false
+    t.index ["logic_diagram_id", "name"], name: "index_logic_inputs_on_logic_diagram_id_and_name", unique: true
+    t.index ["logic_diagram_id"], name: "index_logic_inputs_on_logic_diagram_id"
+  end
+
+  create_table "logic_instances", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.integer "lock_version", default: 0, null: false
+    t.bigint "logic_diagram_id", null: false
+    t.string "name", null: false
     t.boolean "output_enable", default: false, null: false
     t.integer "update_period", default: 60, null: false
     t.datetime "updated_at", null: false
+    t.index ["logic_diagram_id"], name: "index_logic_instances_on_logic_diagram_id"
+    t.index ["name"], name: "index_logic_instances_on_name", unique: true
   end
 
-  create_table "measurements", force: :cascade do |t|
-    t.datetime "created_at", null: false
-    t.bigint "device_id"
-    t.integer "lock_version", default: 0, null: false
-    t.bigint "logic_diagram_id", null: false
-    t.string "mode", default: "acquisition", null: false
-    t.string "name", null: false
-    t.float "simulation_value"
-    t.string "source_path"
-    t.string "units"
-    t.datetime "updated_at", null: false
-    t.index ["device_id"], name: "index_measurements_on_device_id"
-    t.index ["logic_diagram_id", "name"], name: "index_measurements_on_logic_diagram_id_and_name", unique: true
-    t.index ["logic_diagram_id"], name: "index_measurements_on_logic_diagram_id"
-  end
-
-  create_table "output_blocks", force: :cascade do |t|
+  create_table "logic_output_bindings", force: :cascade do |t|
     t.integer "channel", null: false
     t.datetime "created_at", null: false
     t.bigint "device_id", null: false
+    t.integer "lock_version", default: 0, null: false
+    t.bigint "logic_instance_id", null: false
+    t.bigint "logic_output_id", null: false
+    t.boolean "output_enable", default: true, null: false
+    t.string "target_kind", default: "device_output", null: false
+    t.datetime "updated_at", null: false
+    t.index ["device_id"], name: "index_logic_output_bindings_on_device_id"
+    t.index ["logic_instance_id", "logic_output_id"], name: "index_logic_output_bindings_on_instance_and_output", unique: true
+    t.index ["logic_instance_id"], name: "index_logic_output_bindings_on_logic_instance_id"
+    t.index ["logic_output_id"], name: "index_logic_output_bindings_on_logic_output_id"
+  end
+
+  create_table "logic_outputs", force: :cascade do |t|
+    t.datetime "created_at", null: false
     t.string "input_expression", null: false
     t.integer "lock_version", default: 0, null: false
     t.bigint "logic_diagram_id", null: false
     t.string "name", null: false
-    t.boolean "output_enable", default: false, null: false
+    t.string "units"
     t.datetime "updated_at", null: false
-    t.index ["device_id"], name: "index_output_blocks_on_device_id"
-    t.index ["logic_diagram_id", "device_id", "channel"], name: "idx_on_logic_diagram_id_device_id_channel_eedbeb6ab3", unique: true
-    t.index ["logic_diagram_id", "name"], name: "index_output_blocks_on_logic_diagram_id_and_name", unique: true
-    t.index ["logic_diagram_id"], name: "index_output_blocks_on_logic_diagram_id"
+    t.string "value_type", default: "boolean", null: false
+    t.index ["logic_diagram_id", "name"], name: "index_logic_outputs_on_logic_diagram_id_and_name", unique: true
+    t.index ["logic_diagram_id"], name: "index_logic_outputs_on_logic_diagram_id"
   end
 
   create_table "traces", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.integer "lock_version", default: 0, null: false
-    t.bigint "logic_diagram_id", null: false
+    t.bigint "logic_instance_id", null: false
     t.datetime "recorded_at", null: false
     t.jsonb "results", default: {}, null: false
     t.datetime "updated_at", null: false
-    t.index ["logic_diagram_id", "created_at"], name: "index_traces_on_logic_diagram_id_and_created_at"
-    t.index ["logic_diagram_id"], name: "index_traces_on_logic_diagram_id"
+    t.index ["logic_instance_id"], name: "index_traces_on_logic_instance_id"
   end
 
   add_foreign_key "devices", "host_interfaces"
   add_foreign_key "logic_blocks", "logic_diagrams"
-  add_foreign_key "measurements", "devices"
-  add_foreign_key "measurements", "logic_diagrams"
-  add_foreign_key "output_blocks", "devices"
-  add_foreign_key "output_blocks", "logic_diagrams"
-  add_foreign_key "traces", "logic_diagrams"
+  add_foreign_key "logic_input_bindings", "devices"
+  add_foreign_key "logic_input_bindings", "logic_inputs"
+  add_foreign_key "logic_input_bindings", "logic_instances"
+  add_foreign_key "logic_inputs", "logic_diagrams"
+  add_foreign_key "logic_instances", "logic_diagrams"
+  add_foreign_key "logic_output_bindings", "devices"
+  add_foreign_key "logic_output_bindings", "logic_instances"
+  add_foreign_key "logic_output_bindings", "logic_outputs"
+  add_foreign_key "logic_outputs", "logic_diagrams"
+  add_foreign_key "traces", "logic_instances"
 end

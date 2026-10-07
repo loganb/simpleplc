@@ -8,7 +8,11 @@ HVAC PLC controller application — a web interface for monitoring and controlli
 
 - **Backend**: Rails 8.1 in API-only mode, serving JSON via RestfulApiController + RestfulApi pattern.
 - **Frontend**: Preact + TypeScript, bundled with esbuild, styled with Tailwind CSS v4. Lives in `frontend/`. Designed for static deployment (S3, GitHub Pages). Communicates with Rails via CORS.
-  - Development Rails and esbuild servers bind to `0.0.0.0` for LAN/Tailscale testing; development CORS is permissive. Production CORS behavior is unchanged.
+  - Development Rails and esbuild servers bind for LAN/Tailscale testing;
+    development CORS is permissive. The frontend derives API/Cable URLs from
+    its page hostname on port 3000, while `PLC_DEV_HOST` narrowly authorizes the
+    configured MagicDNS host in Rails and Action Cable. Production behavior is
+    unchanged.
   - `frontend/public/` is the static template source (hand-written `index.html`, future favicons/manifests). Checked into git.
   - `frontend/dist/` is the build output (gitignored). `build.mjs` copies `public/` → `dist/` and writes `app.js`, `app.css`, `index.css` alongside.
   - Two CSS pipelines write into `dist/`: (1) the Tailwind CLI subprocess processes `src/index.css` → `dist/index.css`; (2) esbuild bundles `.css`/`.scss` imports from the TSX module graph (entry `src/widgets.scss` plus any component-colocated styles) → `dist/app.css`. SCSS handled by `esbuild-sass-plugin`. Tailwind's `@apply` is only available inside `src/index.css` — component SCSS uses Tailwind utility classes via `className` instead.
@@ -19,19 +23,28 @@ HVAC PLC controller application — a web interface for monitoring and controlli
 
 ## Current State
 
+- **Logic diagram instances — implemented locally**: LogicDiagrams are reusable,
+  hardware-independent definitions with typed inputs, blocks, and outputs.
+  Top-level Instances bind those ports to fixed values or Device I/O and own
+  schedules, traces, retained runtime state, and both output-enable gates.
+  Navigation is Dashboard, Instances, Logic, Devices. Instance edits save live;
+  incomplete instances evaluate safely, and one physical output has at most
+  one active owner while inactive instances may retain overlapping standby
+  bindings. See `claude/logic-diagram-instances.md`.
+
 - **Modbus polling** working — three devices (DS18B20 temp board, NTC temp board, relay I/O board) polled and state stored in `devices.current_state` JSON column. The N4D8B08 relay I/O driver writes unrelated input/output relationship mode through explicit configure! during normal connection preparation so physical input highs do not toggle relay outputs.
 - **Interface enable/online state** — `HostInterface` carries two independent states with two different writers. `enabled` is operator intent, set from the UI; `online` is the poller's report that it is holding the port open. The poller keeps one `ModBus::RTUClient` per interface open *across* cycles (`Poller::Connection`) instead of reopening every 10s, caching driver instances with it so a driver's setup writes — `Drivers::N4D8B08#configure!` writes the relationship register — happen once per connection rather than every cycle. Disabling is a request, not an act: the web process never touches the port, so the UI shows `releasing` until the poller confirms by writing `online: false`. `HostInterface#connection_state` folds intent, the report, and a `poller_reported_at` heartbeat into `online | offline | releasing | disabled | unknown`; staleness gates both directions so a dead poller can't leave a phantom online bus. Serial-level errors (`SystemCallError`/`IOError`) drop the connection and reconnect next cycle, while Modbus protocol errors stay device-level and keep the port. `SIGTERM` releases every port and marks its bus offline. See `claude/interface-online-state.md`.
-- **REST API** exposes devices, host_interfaces, host_ports, measurements, logic diagrams/blocks, output blocks, and traces with the RestfulApiController pattern (flat JSON wire format compatible with RestfulModelStore).
+- **REST API** exposes devices, host interfaces/ports, logical inputs/diagrams/blocks/outputs, logic instances, input/output bindings, and instance traces with the RestfulApiController pattern (flat JSON wire format compatible with RestfulModelStore).
 - **Host port scanning** — `HostPortScanner` enumerates the machine's real serial ports from `/sys/class/tty` (keeping only ttys with a bound `device/driver`, which excludes ptys and virtual consoles), enriches them with USB descriptors and `/dev/serial` aliases, and flags kernel consoles from `/proc/consoles`. It performs filesystem reads only and never opens a port, so it is safe to run from the web process while the poller is transacting on a bus. Exposed read-only as `HostPort`, a plain `Data.define` value object rather than an AR model; every request re-scans. `HostPort#id` is `Base64.urlsafe_encode64(stable_path)`, so ids are URL-safe with no route constraints, and `HostPortApi#by_ids` looks ids up against a fresh scan rather than decoding them into paths. `HostInterface#port` should hold the most stable path available (`by_id || by_path || device`); `HostInterface` also gained a required `name` and computed `port_present` / `resolved_device` (named `port_present?` rather than `present?` so it does not shadow `Object#present?`). The Devices tab lists discovered ports and turns a selected one into a prefilled new-interface form. See `claude/host-port-scan.md`.
-- **Measurements** — named values owned by LogicDiagrams. Drivers declare stable Device-level `inputs` and `outputs` catalogs; the Device API exposes both with per-Device label overrides merged over driver defaults, and the logic editor restricts acquisition measurement sources to the selected Device's enumerated inputs instead of accepting a free-form JSON path. Acquisition measurements read the selected path (e.g. `temperatures[4]`) at Trace creation; simulation measurements use an operator-entered value so diagrams can be designed before hardware is wired. Boolean acquisition values normalize to `1.0`/`0.0`; missing acquisition values remain `null`.
-- **Frontend UX** is split into top-level Dashboard, Devices, and Logic tabs. `frontend/src/App.tsx` owns shared data loading and the root `TreeStore`; `frontend/src/uxTree.ts` defines typed subtrees passed into each tab. Dashboard is monitoring-only, showing device state plus per-logic-diagram input/output summaries. Devices owns host-interface and device CRUD; Device create/edit uses a modal with driver-catalog input/output label fields. Logic owns diagram, measurement, block, and output editing, with hardware selectors and cards showing effective Device labels while persisting stable paths/channels. Live queries refresh every 5 minutes and use bounded frontend store cache epochs to avoid unbounded long-session cache growth.
-- **LogicDiagram feature** — a LogicDiagram maps diagram-owned Measurements through stateful LogicBlocks (hysteresis, latch, timer counter, and expression) into OutputBlocks. Hysteresis/latch values are stored as 1.0/0.0, timer counters store numbers, and expression blocks store their raw result, booleans included; `ExpressionLogicBlock` is a named expression (variable assignment); `TimerCounterLogicBlock` outputs seconds since its input went active (0 while inactive), measured between trace `recorded_at` times. Every LogicBlock has a freeform plain-text `notes` field for documentation, edited in the block form and shown on the block card (`claude/logic-block-notes.md`). The frontend editor computes topological strata for left-to-right block columns, while the backend validates dependency order and evaluates blocks by ascending stratum. Creating a Trace snapshots every Measurement, computes every LogicBlock, then evaluates OutputBlocks into the trace `results` JSON document. Expression runtime values are numbers, `true`, `false`, and `null`; booleans/numbers coerce at math/boolean operator boundaries. Ordinary operators propagate `null`, `&&`/`||` follow SQL three-valued logic, and `a ?? b` / `coalesce(a, b, ...)` replace null with a fallback. Hysteresis and latch blocks emit `null` when required inputs are unknown but preserve retained internal state for continuity. Latest UI state and output writing read from the newest Trace for the diagram. The poller owns physical relay writes: after reading a device, it applies the latest enabled non-null OutputBlock values for that device when both the diagram and output have `output_enable` true. Disabled outputs record desired state but leave hardware unchanged. The frontend can delete a selected diagram after browser confirmation; Rails cascades that delete to diagram-owned measurements, blocks, outputs, and traces. See `claude/logic-diagram.md`, `claude/measurements-in-logic-diagram-and-simulation.md`, `claude/output-enable.md`, `claude/trace-results-json.md`, `claude/expression-types.md`, and `claude/logic-diagram-delete.md`.
-- **Logic runner** — a dedicated daemon computes each LogicDiagram on its `update_period`. It runs asynchronously from the poller and communicates only through Trace records; the poller remains the sole hardware writer. Missing intervals are not backfilled, per-diagram failures retry after ten seconds, and a PostgreSQL advisory lock prevents duplicate runners for one database. Foreman wiring and production systemd supervision are installed. Deployed as `99f43b7` on 2026-09-28 and verified across three consecutive 30-second production traces with healthy subsequent hardware polls. The current development Foreman session still needs a restart to add its new Procfile process. See `claude/logic-runner.md`.
+- **Typed logical ports and bindings** — LogicInputs and LogicOutputs belong only to reusable diagrams. LogicInputBindings select a fixed value or an enumerated Device input; LogicOutputBindings select an enumerated Device output and carry the per-connection enable gate. Driver catalog compatibility is validated under a Device row lock. Boolean Device inputs can feed numeric diagram ports as `1.0`/`0.0`; missing/unbound inputs remain `null`.
+- **Frontend UX** has top-level Dashboard, Instances, Logic, and Devices tabs. `frontend/src/App.tsx` owns shared loading and the root `TreeStore`; `frontend/src/uxTree.ts` defines typed tab state. Dashboard monitors devices and instances. Instances owns live connection/schedule/enable editing and manual computation. Logic edits hardware-independent definitions. Devices owns host-interface and Device CRUD, including dependency links back to the referencing instance. Live queries refresh every five minutes and use bounded store cache epochs.
+- **LogicDiagram feature** — a diagram maps typed LogicInputs through stateful LogicBlocks (hysteresis, latch, timer counter, and expression) into typed LogicOutputs. It owns no hardware, scheduling, enable, trace, or latest-value state. Each LogicInstance evaluates that same definition independently, so retained block history and results do not cross between instances. Trace result schema v2 stores `logic_inputs`, `logic_blocks`, and `logic_outputs`; the reader retains v1 bucket compatibility. Expression semantics remain numbers/booleans/null with three-valued logic and explicit null fallback. The poller remains the sole physical writer and uses the latest instance trace only when both instance and output-binding gates are enabled. Deleting a diagram cascades its instances, bindings, and traces; deleting an instance leaves the diagram intact.
+- **Logic runner** — the dedicated daemon schedules each LogicInstance by its `update_period`; diagrams without instances do not run. It remains asynchronous from the poller and communicates only through Trace records. Missing intervals are not backfilled, per-instance failures retry after ten seconds, and a PostgreSQL advisory lock prevents duplicate runners for one database. Existing production remains on the pre-instance release until this change is explicitly deployed.
 
 ## Key Entry Points
 
-- `config/routes.rb` — resources for host_interfaces, devices, measurements, logic diagrams/blocks, output blocks, and traces.
-- `app/apis/` — RestfulApi subclasses (DeviceApi, HostInterfaceApi, MeasurementApi, LogicDiagramApi, LogicBlockApi, OutputBlockApi, TraceApi).
+- `config/routes.rb` — resources for hardware, logical definitions, instances, bindings, and traces.
+- `app/apis/` — RestfulApi serializers for Device/HostInterface, LogicInput/Diagram/Block/Output, LogicInstance, both binding types, and Trace.
 - `lib/restful_api_controller.rb` — controller mixin providing REST actions.
 - `frontend/src/App.tsx` — main Preact dashboard component.
 - `frontend/src/store.ts` — RestfulModelStore instance + model definitions.
@@ -43,11 +56,13 @@ HVAC PLC controller application — a web interface for monitoring and controlli
 
 - `host_interfaces` — serial bus config (name, port, baud, parity, etc.) plus `enabled` (operator intent, written by the web process) and `online`/`poller_reported_at`/`connection_error` (the poller's report, never writable through the API). `port` should be a stable path — prefer `/dev/serial/by-id/...` over `/dev/ttyUSB0`, which is assigned in enumeration order and can move between adapters across reboots.
 - `devices` — Modbus devices (belongs_to host_interface, driver, modbus_address, current_state JSON, and JSONB input/output label overrides)
-- `measurements` — LogicDiagram-owned named values (name, mode, optional device/source path, units, simulation value)
-- `logic_diagrams` — named control-logic diagrams with an update period
+- `logic_inputs` — diagram-owned named typed input ports
+- `logic_diagrams` — named reusable control-logic definitions
 - `logic_blocks` — diagram-owned stateful/function blocks with expression inputs, config, state, and frontend-computed stratum
-- `output_blocks` — diagram-owned binary output commands with an input expression, device/channel destination, and per-output enable gate
-- `traces` — explicit computation runs for a LogicDiagram, with `results` JSON storing schema-versioned measurement, logic block, and output block result buckets keyed by source ID.
+- `logic_outputs` — diagram-owned named typed output expressions
+- `logic_instances` — diagram selection, schedule, master output gate, and runtime identity
+- `logic_input_bindings` / `logic_output_bindings` — instance port connections to fixed values or real Device I/O; output bindings own their individual enable gate
+- `traces` — explicit computation runs for one LogicInstance, with schema-versioned port/block results keyed by source ID
 
 ## WebSocket record updates
 
@@ -78,7 +93,7 @@ The approved hardware-setup plan is implemented; see `claude/hardware-setup.md` 
 
 Driver constructors have no hardware IO. The poller calls configure! before caching a normal-operation driver; scans never configure devices. Each driver implements device_support (yes/no/maybe plus evidence). The UX lists all verdicts; the operator picks a driver and either creates a new Device from a result or patches an existing one to it.
 
-Devices supports port replacement, scan/cancel, plain device CRUD from scan results, dependency-aware deletion (impact computed client-side from the store's Measurement/OutputBlock queries; the server's `deletable!` still enforces it), structured errors/conflict recovery and two-fresh-poll verification after enable. Configuration revisions protect operator edits independently of heartbeat/scan updates. Shared serial locks and unique adapter claims prevent cooperating processes or aliases from owning the same bus. Stale connection-error text still clears on the next poll.
+Devices supports port replacement, scan/cancel, plain device CRUD from scan results, dependency-aware deletion (impact computed from LogicInputBinding/LogicOutputBinding queries and enforced again by the server), structured errors/conflict recovery and two-fresh-poll verification after enable. Configuration revisions protect operator edits independently of heartbeat/scan updates. Shared serial locks and unique adapter claims prevent cooperating processes or aliases from owning the same bus. Stale connection-error text still clears on the next poll.
 
 Validation: 181 RSpec examples and 33 frontend tests pass; TypeScript and frontend build pass. Includes an API/poller journey against a fake RTU endpoint and Preact component tests. Real Chromium smoke checking timed out; visual browser verification remains unconfirmed. Development/test databases migrated; restart development API/poller to load the schema/code. Production is unchanged, and implementation changes remain uncommitted and undeployed.
 
@@ -95,12 +110,12 @@ pass, and both relay boards resumed fresh successful polling without errors.
 
 ## Device I/O labels — implemented locally
 
-Device create/edit now opens in an accessible modal and exposes label overrides
-for every driver-declared input and output. Overrides live in one `io_labels`
-JSONB column; API catalogs merge them over driver defaults. LogicDiagram forms
-and cards display effective labels while Measurements and OutputBlocks continue
-to persist stable paths and numeric channels. Label-only edits do not advance the
-parent bus revision or touch hardware. Development and production are migrated;
+Device create/edit opens in an accessible modal and exposes label overrides for
+every driver-declared input and output. Overrides live in one `io_labels` JSONB
+column; API catalogs merge them over driver defaults. Instance binding selectors
+display effective labels while bindings persist stable paths and numeric
+channels. Label-only edits do not advance the parent bus revision or touch
+hardware. Development and production are migrated for this earlier feature;
 production is deployed at `cf38150`, with all services healthy and both relay
 boards polling cleanly after restart. See `claude/device-io-labels.md` for design
 and verification.

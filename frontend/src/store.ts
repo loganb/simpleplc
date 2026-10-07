@@ -4,9 +4,17 @@ import RecordStream from './lib/RecordStream';
 import RestfulModelStore from './lib/RestfulModelStore';
 import type { ModelDefinition } from './lib/RestfulModelStore';
 
-// In production, override via the global. In dev, hit localhost Rails.
+export function developmentApiBase(pageUrl: string | undefined) {
+  const url = new URL(pageUrl ?? 'http://localhost');
+  url.port = '3000';
+  return url.origin;
+}
+
+// Production injects an empty same-origin override. In development, keep the
+// page's hostname so a browser reaching the UI over LAN/Tailscale reaches the
+// API on that same controller rather than its own localhost.
 const API_BASE = (globalThis as Record<string, unknown>).PLC_API_BASE as string
-  ?? 'http://localhost:3000';
+  ?? developmentApiBase(globalThis.location?.href);
 
 const AxiosClient = axios.create({
   baseURL: API_BASE,
@@ -164,31 +172,27 @@ export const HostPort: ModelDefinition<HostPortFields> = {
   singleton: false,
 };
 
-export interface MeasurementFields {
+export type LogicValueType = 'boolean' | 'number';
+
+export interface LogicInputFields {
   id: number;
   logic_diagram_id: number;
   name: string;
-  mode: 'acquisition' | 'simulation';
-  device_id: number | null;
-  source_path: string | null;
+  value_type: LogicValueType;
   units: string | null;
-  simulation_value: number | null;
-  latest_value: number | null;
   created_at: string;
   updated_at: string;
 }
 
-export const Measurement: ModelDefinition<MeasurementFields> = {
-  name: 'measurement',
-  inflections: { plural: 'measurements', title: 'Measurement' },
+export const LogicInput: ModelDefinition<LogicInputFields> = {
+  name: 'logic_input',
+  inflections: { plural: 'logic_inputs', title: 'LogicInput' },
   singleton: false,
 };
 
 export interface LogicDiagramFields {
   id: number;
   name: string;
-  update_period: number;
-  output_enable: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -207,8 +211,6 @@ export interface BaseLogicBlockFields {
   input_expressions: Record<string, string>;
   config: Record<string, unknown>;
   notes: string;
-  latest_value: number | boolean | null; // only expression blocks store booleans
-  latest_state: Record<string, unknown> | null;
   created_at: string;
   updated_at: string;
 }
@@ -216,32 +218,21 @@ export interface BaseLogicBlockFields {
 export interface HysteresisLogicBlockFields extends BaseLogicBlockFields {
   type: 'HysteresisLogicBlock';
   block_type: 'hysteresis';
-  output: boolean | null;
-  value: number | null;
-  low_limit: number | null;
-  high_limit: number | null;
 }
 
 export interface LatchLogicBlockFields extends BaseLogicBlockFields {
   type: 'LatchLogicBlock';
   block_type: 'latch';
-  output: boolean | null;
-  set: boolean | null;
-  reset: boolean | null;
 }
 
 export interface TimerCounterLogicBlockFields extends BaseLogicBlockFields {
   type: 'TimerCounterLogicBlock';
   block_type: 'timer_counter';
-  output: number | null; // seconds the input has been active; 0 while inactive
-  input: number | boolean | null;
 }
 
 export interface ExpressionLogicBlockFields extends BaseLogicBlockFields {
   type: 'ExpressionLogicBlock';
   block_type: 'expression';
-  output: number | boolean | null;
-  value: number | boolean | null;
 }
 
 export type LogicBlockFields =
@@ -256,37 +247,89 @@ export const LogicBlock: ModelDefinition<LogicBlockFields> = {
   singleton: false,
 };
 
-export interface OutputBlockFields {
+export interface LogicOutputFields {
   id: number;
   logic_diagram_id: number;
   name: string;
-  device_id: number;
-  channel: number;
+  value_type: LogicValueType;
+  units: string | null;
   input_expression: string;
-  output_enable: boolean;
-  latest_value: number | null;
-  latest_state: Record<string, unknown> | null;
-  desired_output: boolean | null;
-  effective_output: boolean | null;
-  write_pending: boolean | null;
   created_at: string;
   updated_at: string;
 }
 
-export const OutputBlock: ModelDefinition<OutputBlockFields> = {
-  name: 'output_block',
-  inflections: { plural: 'output_blocks', title: 'OutputBlock' },
+export const LogicOutput: ModelDefinition<LogicOutputFields> = {
+  name: 'logic_output',
+  inflections: { plural: 'logic_outputs', title: 'LogicOutput' },
+  singleton: false,
+};
+
+export interface LogicInstanceFields {
+  id: number;
+  logic_diagram_id: number;
+  name: string;
+  update_period: number;
+  output_enable: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export const LogicInstance: ModelDefinition<LogicInstanceFields> = {
+  name: 'logic_instance',
+  inflections: { plural: 'logic_instances', title: 'LogicInstance' },
+  singleton: false,
+};
+
+export interface LogicInputBindingFields {
+  id: number;
+  logic_instance_id: number;
+  logic_input_id: number;
+  source_kind: 'device_input' | 'fixed_value';
+  device_id: number | null;
+  source_path: string | null;
+  fixed_value: number | boolean | null;
+  latest_value: number | boolean | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export const LogicInputBinding: ModelDefinition<LogicInputBindingFields> = {
+  name: 'logic_input_binding',
+  inflections: { plural: 'logic_input_bindings', title: 'LogicInputBinding' },
+  singleton: false,
+};
+
+export interface LogicOutputBindingFields {
+  id: number;
+  logic_instance_id: number;
+  logic_output_id: number;
+  target_kind: 'device_output';
+  device_id: number;
+  channel: number;
+  output_enable: boolean;
+  latest_value: number | boolean | null;
+  latest_state: Record<string, unknown> | null;
+  desired_output: boolean | null;
+  effective_output: boolean | null;
+  write_pending: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export const LogicOutputBinding: ModelDefinition<LogicOutputBindingFields> = {
+  name: 'logic_output_binding',
+  inflections: { plural: 'logic_output_bindings', title: 'LogicOutputBinding' },
   singleton: false,
 };
 
 export interface TraceFields {
   id: number;
-  logic_diagram_id: number;
+  logic_instance_id: number;
   results: {
     schema_version: number;
-    measurements: Record<string, TraceResult>;
+    logic_inputs: Record<string, TraceResult>;
     logic_blocks: Record<string, TraceResult>;
-    output_blocks: Record<string, TraceResult>;
+    logic_outputs: Record<string, TraceResult>;
   };
   recorded_at: string;
   created_at: string;
@@ -297,7 +340,7 @@ export interface TraceResult {
   id: number;
   name: string;
   type?: string;
-  value: number | null;
+  value: number | boolean | null;
   state: Record<string, unknown>;
   input_values: Record<string, unknown>;
   recorded_at: string;

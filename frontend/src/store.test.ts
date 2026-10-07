@@ -16,17 +16,20 @@ describe('PLC store model definitions', () => {
     globalThis.requestAnimationFrame = ((callback: FrameRequestCallback) => {
       return setTimeout(() => callback(Date.now()), 0) as unknown as number;
     }) as typeof requestAnimationFrame;
-    const { Trace } = await import('./store');
+    const { Trace, developmentApiBase } = await import('./store');
+    expect(developmentApiBase('http://executivealpha.hamlet-vibes.ts.net:5174/')).toBe(
+      'http://executivealpha.hamlet-vibes.ts.net:3000',
+    );
     const axios = {
       post: vi.fn().mockResolvedValue({
         data: {
           id: 7,
           traces: [{
             id: 7,
-            logic_diagram_id: 3,
+            logic_instance_id: 3,
             results: {
-              schema_version: 1,
-              measurements: {
+              schema_version: 2,
+              logic_inputs: {
                 5: {
                   id: 5,
                   name: 'Temp',
@@ -37,7 +40,7 @@ describe('PLC store model definitions', () => {
                 },
               },
               logic_blocks: {},
-              output_blocks: {},
+              logic_outputs: {},
             },
             recorded_at: '2026-04-30T10:00:00Z',
             created_at: '2026-04-30T10:00:00Z',
@@ -49,13 +52,13 @@ describe('PLC store model definitions', () => {
     const store = new RestfulModelStore(axios as never);
     store.m(Trace);
 
-    store.m(Trace).create({ logic_diagram_id: 3 });
+    store.m(Trace).create({ logic_instance_id: 3 });
     await settleIo();
 
-    expect(axios.post).toHaveBeenCalledWith('/traces.json', { trace: { logic_diagram_id: 3 } }, {});
+    expect(axios.post).toHaveBeenCalledWith('/traces.json', { trace: { logic_instance_id: 3 } }, {});
     const trace = store.m(Trace).fetch(7);
     expect(trace._found).toBe(true);
     if (!trace._found) throw new Error('trace should be found');
-    expect(trace.results.measurements[5].value).toBe(42);
+    expect(trace.results.logic_inputs[5].value).toBe(42);
   });
 });

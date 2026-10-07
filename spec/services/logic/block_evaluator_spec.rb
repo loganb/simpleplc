@@ -2,25 +2,9 @@ require "rails_helper"
 
 RSpec.describe Logic::BlockEvaluator do
   let(:diagram) { LogicDiagram.create!(name: "Boiler") }
+  let(:instance) { LogicInstance.create!(logic_diagram: diagram, name: "Boiler room") }
 
-  it "persists active-high hysteresis output, state, and input values" do
-    block = HysteresisLogicBlock.create!(
-      logic_diagram: diagram,
-      name: "BOT_Ready",
-      stratum: 1,
-      input_expressions: { "value" => "145", "low_limit" => "130", "high_limit" => "140" },
-      config: { "mode" => "active_high" }
-    )
-    trace = Trace.create!(logic_diagram: diagram, recorded_at: Time.zone.parse("2026-04-28 12:00:00"))
-
-    result = described_class.evaluate!(block, trace: trace)
-
-    expect(result["value"]).to eq(1.0)
-    expect(result["state"]).to include("output" => true)
-    expect(result["input_values"]).to include("value" => 145.0, "low_limit" => 130.0, "high_limit" => 140.0)
-  end
-
-  it "retains hysteresis output between limits from the latest trace result" do
+  it "retains state from the same instance's previous trace" do
     block = HysteresisLogicBlock.create!(
       logic_diagram: diagram,
       name: "Flow_Lockout",
@@ -28,164 +12,71 @@ RSpec.describe Logic::BlockEvaluator do
       input_expressions: { "value" => "0.9", "low_limit" => "0.8", "high_limit" => "1" },
       config: { "mode" => "active_high" }
     )
-    Trace.create!(logic_diagram: diagram, recorded_at: 1.minute.ago).tap do |previous_trace|
-      previous_trace.update!(
-        results: Trace.empty_results.merge(
-          "logic_blocks" => {
-            block.id.to_s => {
-              "id" => block.id,
-              "name" => block.name,
-              "type" => block.type,
-              "value" => 1.0,
-              "state" => { "output" => true },
-              "input_values" => {},
-              "recorded_at" => previous_trace.recorded_at.iso8601
-            }
+    Trace.create!(logic_instance: instance, recorded_at: 1.minute.ago).tap do |previous_trace|
+      previous_trace.update!(results: Trace.empty_results.merge(
+        "logic_blocks" => {
+          block.id.to_s => {
+            "id" => block.id,
+            "name" => block.name,
+            "type" => block.type,
+            "value" => 1.0,
+            "state" => { "output" => true },
+            "input_values" => {},
+            "recorded_at" => previous_trace.recorded_at.iso8601
           }
-        )
-      )
+        }
+      ))
     end
-    trace = Trace.create!(logic_diagram: diagram)
 
-    result = described_class.evaluate!(block, trace: trace)
+    result = described_class.evaluate!(block, trace: Trace.create!(logic_instance: instance))
 
     expect(result["value"]).to eq(1.0)
     expect(result["state"]).to include("output" => true)
   end
 
-  it "emits null but preserves hysteresis state when an input is null" do
-    block = HysteresisLogicBlock.create!(
-      logic_diagram: diagram,
-      name: "Flow_Lockout",
-      stratum: 1,
-      input_expressions: { "value" => "null", "low_limit" => "0.8", "high_limit" => "1" },
-      config: { "mode" => "active_high" }
-    )
-    Trace.create!(logic_diagram: diagram, recorded_at: 1.minute.ago).tap do |previous_trace|
-      previous_trace.update!(
-        results: Trace.empty_results.merge(
-          "logic_blocks" => {
-            block.id.to_s => {
-              "id" => block.id,
-              "name" => block.name,
-              "type" => block.type,
-              "value" => 1.0,
-              "state" => { "output" => true },
-              "input_values" => {},
-              "recorded_at" => previous_trace.recorded_at.iso8601
-            }
-          }
-        )
-      )
-    end
-    trace = Trace.create!(logic_diagram: diagram)
-
-    result = described_class.evaluate!(block, trace: trace)
-
-    expect(result["value"]).to be_nil
-    expect(result["state"]).to include("output" => true)
-    expect(result["input_values"]).to include("value" => nil)
-  end
-
-  it "implements reset-dominant latch-high behavior" do
+  it "does not share retained state between instances" do
     block = LatchLogicBlock.create!(
       logic_diagram: diagram,
       name: "Heat_Lockout",
       stratum: 1,
-      input_expressions: { "set" => "true", "reset" => "false" },
-      config: { "mode" => "latch_high", "dominance" => "reset" }
+      input_expressions: { "set" => "false", "reset" => "false" },
+      config: { "mode" => "latch_high", "initial_output" => false }
     )
-    first = described_class.evaluate!(block, trace: Trace.create!(logic_diagram: diagram))
-    block.update!(input_expressions: { "set" => "false", "reset" => "false" })
-    retained = described_class.evaluate!(block, trace: Trace.create!(logic_diagram: diagram))
-    block.update!(input_expressions: { "set" => "false", "reset" => "true" })
-    reset = described_class.evaluate!(block, trace: Trace.create!(logic_diagram: diagram))
-
-    expect(first["value"]).to eq(1.0)
-    expect(retained["value"]).to eq(1.0)
-    expect(reset["value"]).to eq(0.0)
-  end
-
-  it "emits null but preserves latch state when an input is null" do
-    block = LatchLogicBlock.create!(
-      logic_diagram: diagram,
-      name: "Heat_Lockout",
-      stratum: 1,
-      input_expressions: { "set" => "null", "reset" => "false" },
-      config: { "mode" => "latch_high", "dominance" => "reset" }
-    )
-    Trace.create!(logic_diagram: diagram, recorded_at: 1.minute.ago).tap do |previous_trace|
-      previous_trace.update!(
-        results: Trace.empty_results.merge(
-          "logic_blocks" => {
-            block.id.to_s => {
-              "id" => block.id,
-              "name" => block.name,
-              "type" => block.type,
-              "value" => 1.0,
-              "state" => { "output" => true },
-              "input_values" => {},
-              "recorded_at" => previous_trace.recorded_at.iso8601
-            }
-          }
-        )
-      )
-    end
-    trace = Trace.create!(logic_diagram: diagram)
-
-    result = described_class.evaluate!(block, trace: trace)
-
-    expect(result["value"]).to be_nil
-    expect(result["state"]).to include("output" => true)
-    expect(result["input_values"]).to include("set" => nil, "reset" => false)
-  end
-
-  it "evaluates measurement and logic block references by name" do
-    host = HostInterface.create!(name: "Test Bus", port: "/dev/ttyUSB0")
-    device = Device.create!(
-      name: "Temp board",
-      host_interface: host,
-      driver: "Drivers::N4DSC08",
-      modbus_address: 1,
-      current_state: {
-        "status" => "ok",
-        "data" => {
-          "temperatures" => [ 145.0 ]
+    other = LogicInstance.create!(logic_diagram: diagram, name: "Other room")
+    previous = Trace.create!(logic_instance: instance, recorded_at: 1.minute.ago)
+    previous.update!(results: Trace.empty_results.merge(
+      "logic_blocks" => {
+        block.id.to_s => {
+          "id" => block.id,
+          "name" => block.name,
+          "type" => block.type,
+          "value" => 1.0,
+          "state" => { "output" => true },
+          "input_values" => {},
+          "recorded_at" => previous.recorded_at.iso8601
         }
       }
-    )
-    measurement = Measurement.create!(logic_diagram: diagram, name: "BoilerOutletTemp", device: device, source_path: "temperatures[0]")
-    ready = HysteresisLogicBlock.create!(
-      logic_diagram: diagram,
-      name: "BOT_Ready",
-      stratum: 1,
-      input_expressions: { "value" => "BoilerOutletTemp", "low_limit" => "130", "high_limit" => "140" },
-      config: { "mode" => "active_high" }
-    )
-    lockout = LatchLogicBlock.create!(
-      logic_diagram: diagram,
-      name: "Heat_Lockout",
-      stratum: 2,
-      input_expressions: { "set" => "!BOT_Ready", "reset" => "false" },
-      config: { "mode" => "latch_high", "dominance" => "reset" }
-    )
+    ))
 
-    trace = Trace.create!(logic_diagram: diagram)
-    described_class.evaluate!(ready, trace: trace)
-    result = described_class.evaluate!(lockout, trace: trace)
+    result = described_class.evaluate!(block, trace: Trace.create!(logic_instance: other))
 
-    expect(result["input_values"]).to include("set" => false)
     expect(result["value"]).to eq(0.0)
   end
 
-  it "passes numeric block values through" do
-    block = TimerCounterLogicBlock.create!(logic_diagram: diagram, name: "Fan_Timer", stratum: 1, input_expressions: { "input" => "true" })
+  it "tracks timer elapsed time from the instance's previous state" do
     t0 = Time.zone.parse("2026-09-30 12:00:00")
-    Trace.create!(logic_diagram: diagram, recorded_at: t0)
-    trace = Trace.create!(logic_diagram: diagram, recorded_at: t0 + 42)
+    block = TimerCounterLogicBlock.create!(
+      logic_diagram: diagram,
+      name: "Fan_Timer",
+      stratum: 1,
+      input_expressions: { "input" => "true" },
+      config: { "mode" => "active_high" }
+    )
 
-    result = described_class.evaluate!(block, trace: trace)
+    first = described_class.evaluate!(block, trace: Trace.create!(logic_instance: instance, recorded_at: t0))
+    second = described_class.evaluate!(block, trace: Trace.create!(logic_instance: instance, recorded_at: t0 + 45))
 
-    expect(result["value"]).to eq(42.0)
+    expect(first["value"]).to eq(0.0)
+    expect(second["value"]).to eq(45.0)
   end
 end

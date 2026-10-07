@@ -1,12 +1,6 @@
 require "rails_helper"
 
 RSpec.describe LogicDiagram, type: :model do
-  it "defaults output_enable to false" do
-    diagram = described_class.create!(name: "Boiler")
-
-    expect(diagram).not_to be_output_enable
-  end
-
   it "requires a name" do
     diagram = described_class.new(name: "")
 
@@ -14,10 +8,7 @@ RSpec.describe LogicDiagram, type: :model do
     expect(diagram.errors[:name]).to be_present
   end
 
-  it "requires a positive update period" do
-    diagram = described_class.new(name: "Boiler", update_period: 0)
-
-    expect(diagram).not_to be_valid
-    expect(diagram.errors[:update_period]).to be_present
+  it "contains no runtime configuration" do
+    expect(described_class.column_names).not_to include("update_period", "output_enable")
   end
 end

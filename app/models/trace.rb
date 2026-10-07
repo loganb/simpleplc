@@ -1,16 +1,22 @@
 class Trace < ApplicationRecord
   include ObservesRecordChanges
   RESULT_BUCKETS = {
-    "Measurement" => "measurements",
+    "LogicInput" => "logic_inputs",
     "HysteresisLogicBlock" => "logic_blocks",
     "LatchLogicBlock" => "logic_blocks",
     "TimerCounterLogicBlock" => "logic_blocks",
     "ExpressionLogicBlock" => "logic_blocks",
     "LogicBlock" => "logic_blocks",
-    "OutputBlock" => "output_blocks"
+    "LogicOutput" => "logic_outputs"
   }.freeze
 
-  belongs_to :logic_diagram
+  LEGACY_RESULT_BUCKETS = {
+    "LogicInput" => "measurements",
+    "LogicOutput" => "output_blocks"
+  }.freeze
+
+  belongs_to :logic_instance
+  delegate :logic_diagram, to: :logic_instance
 
   validates :recorded_at, presence: true
 
@@ -23,10 +29,10 @@ class Trace < ApplicationRecord
 
   def self.empty_results
     {
-      "schema_version" => 1,
-      "measurements" => {},
+      "schema_version" => 2,
+      "logic_inputs" => {},
       "logic_blocks" => {},
-      "output_blocks" => {}
+      "logic_outputs" => {}
     }
   end
 
@@ -37,7 +43,12 @@ class Trace < ApplicationRecord
   end
 
   def result_for(source)
-    results.to_h.dig(self.class.results_bucket_for(source), source.id.to_s)
+    bucket = if results.to_h.fetch("schema_version", 1) == 1
+      LEGACY_RESULT_BUCKETS.fetch(source.class.base_class.name) { self.class.results_bucket_for(source) }
+    else
+      self.class.results_bucket_for(source)
+    end
+    results.to_h.dig(bucket, source.id.to_s)
   end
 
   def value_for(source)

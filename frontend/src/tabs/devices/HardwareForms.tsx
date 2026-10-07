@@ -13,10 +13,10 @@ import { useImpact } from './useImpact';
 
 export function ImpactView({ impact }: { impact: Impact }) {
   return <div class="space-y-1 text-sm">
-    <p>{impact.devices.length} device(s), {impact.measurements.length} measurement(s), {impact.output_blocks.length} output assignment(s).</p>
-    {[...impact.measurements, ...impact.output_blocks].map((ref, i) => <button key={i} class="block underline" onClick={() => {
-      const root = appTree.subtree(); root.subtree('logic').set('selectedDiagramId', ref.logic_diagram_id); root.setActiveSubtree('logic');
-    }}>{ref.name} — open diagram {ref.logic_diagram_id}{ref.output_enable ? ' (output enabled)' : ''}</button>)}
+    <p>{impact.devices.length} device(s), {impact.logic_input_bindings.length} input connection(s), {impact.logic_output_bindings.length} output connection(s).</p>
+    {[...impact.logic_input_bindings, ...impact.logic_output_bindings].map((ref, i) => <button key={i} class="block underline" onClick={() => {
+      const root = appTree.subtree(); root.subtree('instances').set('selectedInstanceId', ref.logic_instance_id); root.setActiveSubtree('instances');
+    }}>{ref.name} — open instance{ref.output_enable ? ' (output enabled)' : ''}</button>)}
   </div>;
 }
 
@@ -34,7 +34,7 @@ function Editor({ model, editId, defaults, deletes, prepare, children, onClose, 
   const { start, busy, failure, clearFailure } = useTxn();
   const [comparing, setComparing] = useState(false);
   const [reviewing, setReviewing] = useState(false);
-  const impact = useImpact(deletes);
+  const impact = useImpact(deletes, reviewing);
   const singular = model.name;
   const pick = (record: Fields) => Object.fromEntries([...Object.keys(defaults), 'configuration_revision'].map(k => [k, record[k]]));
   const { record } = useLoaders(() => ({ record: editId === null ? null : Store.m(model).fetch(editId) }), [Store], [editId]);
@@ -73,7 +73,7 @@ function Editor({ model, editId, defaults, deletes, prepare, children, onClose, 
       <p>Delete this {singular === 'device' ? 'device' : 'interface and its devices'}?</p>
       {!impact ? <p class="text-sm">Checking dependencies…</p> : <>
         <ImpactView impact={impact} />
-        {impact.measurements.length + impact.output_blocks.length > 0 ? <p>Reassign or remove these dependencies in Logic before deleting.</p> :
+        {impact.logic_input_bindings.length + impact.logic_output_bindings.length > 0 ? <p>Reassign or remove these connections in Instances before deleting.</p> :
           <button class={`${btn} text-error`} disabled={busy} onClick={() => start(Store.m(model).destroy(editId), done)}>Confirm deletion</button>}
       </>}
       <button class={btn} disabled={busy} onClick={() => setReviewing(false)}>Keep it</button>

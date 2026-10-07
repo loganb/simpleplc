@@ -6,8 +6,8 @@ class Device < ApplicationRecord
   BUS_CONFIGURATION_FIELDS = %w[name host_interface_id modbus_address driver].freeze
   MAX_IO_LABEL_LENGTH = 100
   validates :driver, inclusion: { in: ->(_) { Drivers::Registry.all.map(&:name) } }
-  has_many :measurements, dependent: :restrict_with_error
-  has_many :output_blocks, dependent: :restrict_with_error
+  has_many :logic_input_bindings, dependent: :restrict_with_error
+  has_many :logic_output_bindings, dependent: :restrict_with_error
   after_save :bump_bus_revision
   after_destroy :bump_bus_revision
   before_validation :normalize_io_labels

@@ -25,14 +25,6 @@ class LatchLogicBlock < LogicBlock
     config.key?("initial_output") ? config["initial_output"] : !latch_high?
   end
 
-  def set
-    latest_input_value("set")
-  end
-
-  def reset
-    latest_input_value("reset")
-  end
-
   def evaluate_logic(input_values, previous_state, **)
     prior_value = previous_state.key?("output") ? previous_state["output"] : initial_output
     prior_value = initial_output if prior_value.nil?
