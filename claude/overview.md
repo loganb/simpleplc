@@ -23,7 +23,7 @@ HVAC PLC controller application — a web interface for monitoring and controlli
 
 ## Current State
 
-- **Logic diagram instances — implemented locally**: LogicDiagrams are reusable,
+- **Logic diagram instances — deployed at `c0bd734`**: LogicDiagrams are reusable,
   hardware-independent definitions with typed inputs, blocks, and outputs.
   Top-level Instances bind those ports to fixed values or Device I/O and own
   schedules, traces, retained runtime state, and both output-enable gates.
@@ -39,7 +39,7 @@ HVAC PLC controller application — a web interface for monitoring and controlli
 - **Typed logical ports and bindings** — LogicInputs and LogicOutputs belong only to reusable diagrams. LogicInputBindings select a fixed value or an enumerated Device input; LogicOutputBindings select an enumerated Device output and carry the per-connection enable gate. Driver catalog compatibility is validated under a Device row lock. Boolean Device inputs can feed numeric diagram ports as `1.0`/`0.0`; missing/unbound inputs remain `null`.
 - **Frontend UX** has top-level Dashboard, Instances, Logic, and Devices tabs. `frontend/src/App.tsx` owns shared loading and the root `TreeStore`; `frontend/src/uxTree.ts` defines typed tab state. Dashboard monitors devices and instances. Instances owns live connection/schedule/enable editing and manual computation. Logic edits hardware-independent definitions. Devices owns host-interface and Device CRUD, including dependency links back to the referencing instance. Live queries refresh every five minutes and use bounded store cache epochs.
 - **LogicDiagram feature** — a diagram maps typed LogicInputs through stateful LogicBlocks (hysteresis, latch, timer counter, and expression) into typed LogicOutputs. It owns no hardware, scheduling, enable, trace, or latest-value state. Each LogicInstance evaluates that same definition independently, so retained block history and results do not cross between instances. Trace result schema v2 stores `logic_inputs`, `logic_blocks`, and `logic_outputs`; the reader retains v1 bucket compatibility. Expression semantics remain numbers/booleans/null with three-valued logic and explicit null fallback. The poller remains the sole physical writer and uses the latest instance trace only when both instance and output-binding gates are enabled. Deleting a diagram cascades its instances, bindings, and traces; deleting an instance leaves the diagram intact.
-- **Logic runner** — the dedicated daemon schedules each LogicInstance by its `update_period`; diagrams without instances do not run. It remains asynchronous from the poller and communicates only through Trace records. Missing intervals are not backfilled, per-instance failures retry after ten seconds, and a PostgreSQL advisory lock prevents duplicate runners for one database. Existing production remains on the pre-instance release until this change is explicitly deployed.
+- **Logic runner** — the dedicated daemon schedules each LogicInstance by its `update_period`; diagrams without instances do not run. It remains asynchronous from the poller and communicates only through Trace records. Missing intervals are not backfilled, per-instance failures retry after ten seconds, and a PostgreSQL advisory lock prevents duplicate runners for one database. Production was migrated to instances on 2026-10-07.
 
 ## Key Entry Points
 

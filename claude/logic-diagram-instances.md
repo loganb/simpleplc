@@ -1,6 +1,6 @@
 # Logic Diagram Instances
 
-Status: implemented locally on 2026-10-07; not committed or deployed.
+Status: deployed to production at commit `c0bd734` on 2026-10-07.
 
 ## Design
 
@@ -357,10 +357,9 @@ full suite.
 
 ## Implementation result
 
-The implementation follows the model and UX above. The development and test
-databases have the instance migration applied; the development database had no
-legacy diagrams, inputs, outputs, or traces at migration time. Production was
-not migrated or restarted.
+The implementation follows the model and UX above. The development, test, and
+production databases have the instance migration applied. The development
+database had no legacy diagrams, inputs, outputs, or traces at migration time.
 
 Verification completed on 2026-10-07:
 
@@ -379,3 +378,12 @@ Verification completed on 2026-10-07:
   Rails HostAuthorization, and the MagicDNS Cable origin. A Playwright run from
   `executivealpha.hamlet-vibes.ts.net:5174` loaded API data and reached `Live
   updates connected` without console errors.
+- Production preflight found that the disabled circulation-test diagram shares
+  three relay channels with the active heat-control diagram. The migration
+  preserves those standby bindings while activation validation prevents two
+  active writers. Deployment backfilled two instances, ten input bindings, and
+  eleven output bindings without changing their enable states.
+- After deployment, web, poller, and logic runner were active with zero
+  restarts. Both instances emitted schema-v2 traces, both relay devices resumed
+  fresh `ok` polls with no output-write errors, and all physical outputs
+  remained off as required by the current logic inputs.

@@ -218,3 +218,19 @@ zero restarts, `/up` returns 200, and the served `app.js` has the new
 single Output box and no longer contains "Pending poller write". Traces kept
 arriving (latest 22:55:23 UTC), and relay devices 3 and 4 polled at
 22:55:17–18 UTC. npm audit still reports the same nine existing findings.
+
+## Logic diagram instances deployed — 2026-10-07
+
+Pushed and deployed `c0bd734`. The irreversible instance migration completed
+and preserved two diagrams as two instances, ten input bindings, eleven output
+bindings, historical traces, schedules, and enable gates. Production preflight
+found three physical relay channels shared by the active heat-control diagram
+and disabled circulation-test diagram; inactive overlap is now preserved while
+activation validation prevents two active writers.
+
+Web, poller, and logic runner are active with zero restarts, and `/up` returns
+200. Both instances emitted schema-v2 traces after restart. Devices 3 and 4
+resumed fresh `ok` polls with no output-write errors; the active instance's
+eight bindings all computed false and every physical output remained off. The
+frontend install now reports one high-severity npm audit finding; it was not
+changed during this deployment.
