@@ -116,7 +116,9 @@ class Poller
   end
 
   def open_connection(iface)
-    connection = Connection.open(iface, read_retry_timeout: READ_RETRY_TIMEOUT, read_retries: READ_RETRIES)
+    # Fully qualified: this instance outlives dev code reloads, and after one
+    # the class it was built from no longer has a Connection constant.
+    connection = ::Poller::Connection.open(iface, read_retry_timeout: READ_RETRY_TIMEOUT, read_retries: READ_RETRIES)
     @connections[iface.id] = connection
 
     # The `online: true` write is left to poll_interface at the end of the

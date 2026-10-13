@@ -27,10 +27,21 @@ module Drivers
     end
 
     # Where the module wants to live when the operator has asked to reprogram
-    # its address. Called by the poller after a failed read: return the new
-    # address once the module answers there, else nil. The poller then commits
-    # it to the device. `client` is the open bus client.
-    def relocated_address(client) = nil
+    # its address (settings["address"]). Called by the poller after a failed
+    # read: returns the new address once the module answers there, else nil.
+    # The poller then commits it to the device. `client` is the open bus client.
+    # Drivers supporting this define the "address" setting and #address_confirmed?.
+    def relocated_address(client)
+      wanted = settings["address"]
+      return nil if wanted.nil? || wanted == device.modbus_address
+
+      address_confirmed?(client.with_slave(wanted)) ? wanted : nil
+    rescue ModBus::Errors::ModBusException
+      nil
+    end
+
+    # True when `slave` (at the wanted address) is demonstrably this kind of module.
+    def address_confirmed?(_slave) = false
 
     # Read current values from the device.
     # Returns a Hash of { channel_or_key => value }.
@@ -47,6 +58,12 @@ module Drivers
     # { key:, label:, type: "boolean"|"integer", min:, max:, requires_power_cycle:, help: }.
     # A key absent from Device#settings is unmanaged: the driver leaves it alone.
     def self.settings_schema = []
+
+    # The standard "address" entry for settings_schema.
+    def self.address_setting(requires_power_cycle:, help:)
+      { key: "address", label: "Module address", type: "integer", min: 1, max: 247,
+        requires_power_cycle: requires_power_cycle, help: help }
+    end
 
     # What starting normal polling does to the device, shown beside the driver choice.
     def self.configuration_effects = "None"

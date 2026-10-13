@@ -10,14 +10,16 @@ module Drivers
   # Fault value: 0x8000 (32768) — sensor anomaly / no probe connected
   #
   # Special function registers (FC 03, holding registers):
-  #   0x00FD (253) : RS485 address
-  #   0x00FE (254) : Baud rate code
-  #   0x00FF (255) : Parity
+  #   0x00FD (253) : RS485 address (1–247). Takes effect immediately; the
+  #                  module echoes the write from its old address.
+  #   0x00FE (254) : Baud rate code (power cycle)
+  #   0x00FF (255) : Parity (power cycle)
   #
   class N4DSC08 < Base
     CHANNEL_COUNT  = 8
     TEMP_REG_BASE  = 0x0000
     SENSOR_FAULT   = 0x8000
+    ADDRESS_REG    = 0x00FD
 
     def self.device_support(probe)
       result = probe.read(:input_registers, 0..7)
@@ -27,6 +29,31 @@ module Drivers
 
     def self.display_name  = "N4DSC08 8-Ch DS18B20 Temperature"
     def self.channel_count = CHANNEL_COUNT
+    def self.configuration_effects = "Programs the module address if one is set; the module moves to it immediately."
+    def self.settings_schema
+      [ address_setting(requires_power_cycle: false,
+          help: "Programs the module to this address. It moves at once and the device address then updates.") ]
+    end
+
+    # Writes the address register only when it differs. The module changes
+    # address as it answers, so the reply may be lost or arrive from the new
+    # address; either way #relocated_address verifies where it ended up.
+    def configure!
+      return unless settings.key?("address")
+      return if slave.holding_registers[ADDRESS_REG] == settings["address"]
+
+      slave.holding_registers[ADDRESS_REG] = settings["address"]
+    rescue ModBus::Errors::ModBusTimeout, ModBus::Errors::ResponseMismatch
+      nil
+    end
+
+    # No product ID exists, so require both signs of this board: the address
+    # register holds the address we programmed, and the temperature registers
+    # answer.
+    def address_confirmed?(slave)
+      slave.holding_registers[ADDRESS_REG] == settings["address"] &&
+        slave.input_registers[TEMP_REG_BASE..(TEMP_REG_BASE + CHANNEL_COUNT - 1)].size == CHANNEL_COUNT
+    end
     def self.inputs
       CHANNEL_COUNT.times.map do |index|
         { path: "temperatures[#{index}]", label: "Temperature #{index + 1}", value_type: "number", units: "°C" }

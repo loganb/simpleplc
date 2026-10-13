@@ -55,8 +55,8 @@ module Drivers
     end
 
     def self.settings_schema
-      [ { key: "address", label: "Module address", type: "integer", min: 1, max: 247, requires_power_cycle: true,
-          help: "Programs the module to this address. Once power-cycled it is found there and the device address updates." },
+      [ address_setting(requires_power_cycle: true,
+          help: "Programs the module to this address. Once power-cycled it is found there and the device address updates."),
         { key: "pull_up", label: "Input pull-up", type: "boolean", requires_power_cycle: false,
           help: "On for NPN, dry-contact and reed-switch sensors." },
         { key: "filter_a_ms", label: "Channel A filter (ms)", type: "integer", min: 0, max: 65_535, requires_power_cycle: true,
@@ -95,17 +95,9 @@ module Drivers
       { counts: counts, frequencies: frequencies }
     end
 
-    # After an address change and power cycle the module answers at the address
-    # in settings rather than the one the device is stored at.
-    def relocated_address(client)
-      wanted = settings["address"]
-      return nil if wanted.nil? || wanted == device.modbus_address
-
-      id = client.with_slave(wanted).holding_registers[PRODUCT_REG]
-      id == PRODUCT_ID ? wanted : nil
-    rescue ModBus::Errors::ModBusException
-      nil
-    end
+    # After an address change and power cycle the module answers at the
+    # address in settings, and says so with its product ID.
+    def address_confirmed?(slave) = slave.holding_registers[PRODUCT_REG] == PRODUCT_ID
 
     private
 

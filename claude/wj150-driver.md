@@ -116,6 +116,20 @@ the operator wants the module to *be*.
    cause the driver to program the stale value again). The changed
    fingerprint rebuilds the driver at the new address.
 
+### N4DSC08 reuses this
+
+The N4DSC08 (register 0x00FD, no power cycle noted for the address) declares
+the same `address` setting. Its write takes effect at once, so the module
+vanishes from the old address mid-transaction: `configure!` tolerates the lost
+reply, and the next failed read triggers the relocation probe. It has no
+product ID, so `address_confirmed?` requires the address register at the new
+address to equal the programmed value and the temperature registers to answer.
+`Base#relocated_address` is now generic; a driver supplies only the `address`
+setting (`Base.address_setting`) and `address_confirmed?`.
+
+Commissioning on a bus with two factory-address-1 modules: move one first
+(N4DSC08 moves immediately), let the poller commit it, then bring up the other.
+
 The generic parts are `Base#relocated_address` (default `nil`) and the
 poller's commit step; everything WJ150-specific stays in the driver.
 
