@@ -170,6 +170,7 @@ class Poller
         rescue *CONNECTION_ERRORS
           raise
         rescue => e
+          connection.flush_line
           Rails.logger.warn "Poller: error writing output binding #{command.output_binding.id} to device #{device.id} channel #{command.channel}: #{e.message}"
           output_errors << {
             logic_output_binding_id: command.output_binding.id,
@@ -188,6 +189,8 @@ class Poller
       raise
     rescue => e
       Rails.logger.warn "Poller: error reading device #{device.id} (addr #{device.modbus_address}): #{e.message}"
+      # Before relocate, which transacts on the bus, and before the next device.
+      connection.flush_line
       relocate(device, connection, driver)
       { polled_at: Time.now.utc.iso8601, status: "error", error: e.message, data: nil }
     end

@@ -28,6 +28,9 @@ class Poller
       client = interface.modbus_client
       client.read_retry_timeout = read_retry_timeout
       client.read_retries = read_retries
+      # Bytes left from before this open (another process, a bus fault) would
+      # otherwise be read as the first response.
+      client.flush_line
 
       new(client, settings_for(interface), bus_lock: bus_lock)
     rescue Exception
@@ -64,6 +67,14 @@ class Poller
       driver.configure!
       @drivers[device.id] = [ fingerprint, driver ]
       driver
+    end
+
+    # Discards anything queued on the line in either direction. Called after a
+    # device fails, so a late or garbled reply (or a request stuck behind a
+    # stalled adapter) can't poison the next transaction. Raises if the port is
+    # gone, which the poller treats as a dead connection.
+    def flush_line
+      client.flush_line
     end
 
     # Drops cached drivers for devices no longer on this interface, so a long

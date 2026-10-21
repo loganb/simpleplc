@@ -8,10 +8,14 @@
 # is the property the online/offline feature is about.
 class FakeRtuClient
   attr_accessor :read_retry_timeout, :read_retries
+  attr_reader :flushes
 
   def initialize
     @closed = false
+    @flushes = 0
   end
+
+  def flush_line = @flushes += 1
 
   def closed? = @closed
   def close = @closed = true
@@ -38,6 +42,9 @@ class FakePollerDriver < Drivers::Base
 
   def self.display_name = "Fake"
   def self.channel_count = 8
+
+  def open(_channel); end
+  def close(_channel); end
 
   def read
     self.class.reads += 1

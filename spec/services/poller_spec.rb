@@ -302,4 +302,43 @@ RSpec.describe Poller do
       expect(interface.reload.online).to be(true)
     end
   end
+
+  describe "flushing the line" do
+    it "flushes a bus once when it is opened, and not again while devices answer" do
+      2.times { poller.run_cycle }
+
+      expect(clients.sole.flushes).to eq(1)
+    end
+
+    it "flushes after a device fails, so its stale bytes can't reach the next transaction" do
+      poller.run_cycle
+      FakePollerDriver.read_behaviour = -> { raise ModBus::Errors::ModBusTimeout, "timed out" }
+
+      expect { poller.run_cycle }.to change { clients.sole.flushes }.by(1)
+    end
+
+    it "flushes after a failed output write" do
+      binding = instance_double(LogicOutputBinding, id: 1)
+      command = Logic::OutputWriter::Command.new(output_binding: binding, device: device, channel: 2, desired_output: true)
+      allow_any_instance_of(Logic::OutputWriter).to receive(:enabled_commands_by_device_id).and_return(device.id => [ command ])
+      allow_any_instance_of(FakePollerDriver).to receive(:open).and_raise(ModBus::Errors::ModBusTimeout, "no ack")
+      poller.run_cycle
+      before = clients.sole.flushes
+
+      poller.run_cycle
+
+      expect(clients.sole.flushes).to eq(before + 1)
+    end
+
+    it "treats a flush that hits a dead port as a connection error" do
+      poller.run_cycle
+      allow(clients.sole).to receive(:flush_line).and_raise(Errno::EIO)
+      FakePollerDriver.read_behaviour = -> { raise ModBus::Errors::ModBusTimeout, "timed out" }
+
+      poller.run_cycle
+
+      expect(clients.sole).to be_closed
+      expect(interface.reload.connection_error).to include("Errno::EIO")
+    end
+  end
 end

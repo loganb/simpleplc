@@ -72,6 +72,12 @@ RSpec.describe Poller::Connection do
     end
   end
 
+  describe "#flush_line" do
+    it "flushes the client's line" do
+      expect { connection.flush_line }.to change(client, :flushes).by(1)
+    end
+  end
+
   describe "#close" do
     it "swallows an error from a port that is already gone" do
       # Closing is how we reach "port released"; a port that died on its own is
