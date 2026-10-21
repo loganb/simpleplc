@@ -41,4 +41,28 @@ RSpec.describe Logic::OutputWriter do
     writer.write(driver, described_class::Command.new(output_binding: binding, device: device, channel: 2, desired_output: false))
     expect(driver.writes).to eq([ [ :open, 2 ], [ :close, 2 ] ])
   end
+
+  describe "#pending?" do
+    def command(desired_output, channel: 2)
+      described_class::Command.new(output_binding: binding, device: device, channel: channel, desired_output: desired_output)
+    end
+
+    it "skips relays whose read-back already matches" do
+      writer = described_class.new
+      data = { outputs: [ false, true, false ] }
+
+      expect(writer.pending?(command(true), data)).to be(false)
+      expect(writer.pending?(command(false, channel: 1), data)).to be(false)
+      expect(writer.pending?(command(false), data)).to be(true)
+      expect(writer.pending?(command(true, channel: 3), data)).to be(true)
+    end
+
+    it "writes when the read-back is unknown" do
+      writer = described_class.new
+
+      expect(writer.pending?(command(true), { ok: true })).to be(true)
+      expect(writer.pending?(command(true), nil)).to be(true)
+      expect(writer.pending?(command(true, channel: 8), { outputs: [ true ] })).to be(true)
+    end
+  end
 end

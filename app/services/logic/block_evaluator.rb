@@ -25,10 +25,10 @@ module Logic
 
     attr_reader :block, :trace, :recorded_at, :context
 
+    # The prior evaluation's result. During an evaluation the instance's state
+    # row still holds it; TraceEvaluator writes the new results only at the end.
     def previous_result
-      trace.logic_instance.traces.where.not(id: trace.id).order(recorded_at: :desc, id: :desc).find do |previous_trace|
-        previous_trace.result_for(block)
-      end&.result_for(block)
+      trace.logic_instance.result_for(block)
     end
 
     def result_payload(value, state, input_values)

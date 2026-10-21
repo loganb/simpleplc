@@ -11,8 +11,8 @@ module Logic
     end
 
     def identifier_value(name)
-      block = logic_diagram&.logic_blocks&.find_by(name: name)
-      input = logic_diagram&.logic_inputs&.find_by(name: name)
+      block = blocks_by_name[name]
+      input = inputs_by_name[name]
 
       raise Expression::Error, "ambiguous reference #{name}" if block && input
       return trace_value_for(block) if block
@@ -24,6 +24,16 @@ module Logic
     private
 
     attr_reader :logic_diagram, :trace, :results
+
+    # Indexed from the diagram's loaded associations, so identifiers resolve
+    # without a query per lookup.
+    def blocks_by_name
+      @blocks_by_name ||= Array(logic_diagram&.logic_blocks).index_by(&:name)
+    end
+
+    def inputs_by_name
+      @inputs_by_name ||= Array(logic_diagram&.logic_inputs).index_by(&:name)
+    end
 
     def trace_value_for(source)
       if trace

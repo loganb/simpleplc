@@ -91,8 +91,8 @@ class HostInterface < ApplicationRecord
 
   # Reports run through normal validations, callbacks, timestamps and locking.
   # Concurrent edits are preserved by retrying only the observation fields.
-  def report_connection(online:, error: nil)
-    persist_observation({ online: online, connection_error: error, poller_reported_at: Time.current })
+  def report_connection(online:, error: nil, at: Time.current)
+    persist_observation({ online: online, connection_error: error, poller_reported_at: at })
   end
 
   # With a block, opens a client, yields it, and closes it (rmodbus's own

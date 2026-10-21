@@ -197,7 +197,7 @@ module RestfulApiController
         inst = api_instance_for(group.first.class)
         group.map do |object|
           serialized = inst.serialize(object)
-          object.is_a?(ApplicationRecord) ? serialized.merge(lock_version: object.lock_version) : serialized
+          object.class.try(:locking_enabled?) ? serialized.merge(lock_version: object.lock_version) : serialized
         end
       end
   end

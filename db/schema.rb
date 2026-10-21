@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_07_100000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_13_000002) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -108,6 +108,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_07_100000) do
     t.index ["logic_diagram_id"], name: "index_logic_inputs_on_logic_diagram_id"
   end
 
+  create_table "logic_instance_states", force: :cascade do |t|
+    t.bigint "logic_instance_id", null: false
+    t.datetime "recorded_at", null: false
+    t.jsonb "results", default: {}, null: false
+    t.index ["logic_instance_id"], name: "index_logic_instance_states_on_logic_instance_id", unique: true
+  end
+
   create_table "logic_instances", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.integer "lock_version", default: 0, null: false
@@ -149,6 +156,15 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_07_100000) do
     t.index ["logic_diagram_id"], name: "index_logic_outputs_on_logic_diagram_id"
   end
 
+  create_table "trace_rollups", force: :cascade do |t|
+    t.datetime "bucket_start", null: false
+    t.bigint "logic_instance_id", null: false
+    t.jsonb "results", default: {}, null: false
+    t.integer "sample_count", null: false
+    t.index ["bucket_start"], name: "index_trace_rollups_on_bucket_start"
+    t.index ["logic_instance_id", "bucket_start"], name: "index_trace_rollups_on_logic_instance_id_and_bucket_start", unique: true
+  end
+
   create_table "traces", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.integer "lock_version", default: 0, null: false
@@ -156,7 +172,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_07_100000) do
     t.datetime "recorded_at", null: false
     t.jsonb "results", default: {}, null: false
     t.datetime "updated_at", null: false
-    t.index ["logic_instance_id"], name: "index_traces_on_logic_instance_id"
+    t.index ["logic_instance_id", "recorded_at"], name: "index_traces_on_logic_instance_id_and_recorded_at"
   end
 
   add_foreign_key "devices", "host_interfaces"
@@ -165,10 +181,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_07_100000) do
   add_foreign_key "logic_input_bindings", "logic_inputs"
   add_foreign_key "logic_input_bindings", "logic_instances"
   add_foreign_key "logic_inputs", "logic_diagrams"
+  add_foreign_key "logic_instance_states", "logic_instances"
   add_foreign_key "logic_instances", "logic_diagrams"
   add_foreign_key "logic_output_bindings", "devices"
   add_foreign_key "logic_output_bindings", "logic_instances"
   add_foreign_key "logic_output_bindings", "logic_outputs"
   add_foreign_key "logic_outputs", "logic_diagrams"
+  add_foreign_key "trace_rollups", "logic_instances"
   add_foreign_key "traces", "logic_instances"
 end

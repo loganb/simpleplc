@@ -70,6 +70,130 @@ RSpec.describe LogicRunner do
     end
   end
 
+  describe "scheduling" do
+    let(:t0) { Time.utc(2026, 10, 13, 12) }
+    let(:diagram) { LogicDiagram.create!(name: "Fast definition") }
+    let!(:instance) { LogicInstance.create!(logic_diagram: diagram, name: "Fast", update_period: 1) }
+
+    it "keeps a one-second grid despite late cycles, without drifting" do
+      runner = described_class.new
+
+      runner.run_cycle(now: t0)
+      runner.run_cycle(now: t0 + 0.4)
+      expect(instance.traces.count).to eq(1)
+
+      runner.run_cycle(now: t0 + 1.1) # late by 0.1s
+      expect(instance.traces.count).to eq(2)
+
+      runner.run_cycle(now: t0 + 1.9) # the next slot is t0 + 2, not t0 + 2.1
+      expect(instance.traces.count).to eq(2)
+      runner.run_cycle(now: t0 + 2.05)
+      expect(instance.traces.count).to eq(3)
+    end
+
+    it "skips ahead after a stall instead of catching up" do
+      runner = described_class.new
+
+      runner.run_cycle(now: t0)
+      runner.run_cycle(now: t0 + 10.5)
+      runner.run_cycle(now: t0 + 10.9)
+      expect(instance.traces.count).to eq(2)
+
+      runner.run_cycle(now: t0 + 11.01)
+      expect(instance.traces.count).to eq(3)
+    end
+
+    it "derives the schedule from the state row after a restart" do
+      described_class.new.run_cycle(now: t0)
+
+      restarted = described_class.new
+      restarted.run_cycle(now: t0 + 0.5)
+      expect(instance.traces.count).to eq(1)
+      restarted.run_cycle(now: t0 + 1.0)
+      expect(instance.traces.count).to eq(2)
+    end
+
+    it "sleeps until the earliest due instance, at most the check interval" do
+      runner = described_class.new
+      expect(runner.seconds_until_next_wakeup(t0)).to eq(described_class::CHECK_INTERVAL)
+
+      runner.run_cycle(now: t0)
+
+      expect(runner.seconds_until_next_wakeup(t0 + 0.25)).to be_within(0.001).of(0.75)
+      expect(runner.seconds_until_next_wakeup(t0 + 2)).to eq(0)
+      instance.update!(update_period: 60)
+      runner.run_cycle(now: t0 + 3)
+      expect(runner.seconds_until_next_wakeup(t0 + 3.1)).to eq(described_class::CHECK_INTERVAL)
+    end
+
+    it "waits out a failed instance's retry delay rather than spinning" do
+      runner = described_class.new
+      runner.run_cycle(now: t0)
+      allow(Logic::InstanceEvaluator).to receive(:evaluate!).and_raise(StandardError, "bad instance")
+      allow(Rails.logger).to receive(:error)
+      runner.run_cycle(now: t0 + 1)
+
+      expect(runner.seconds_until_next_wakeup(t0 + 1.1)).to eq(described_class::CHECK_INTERVAL)
+    end
+  end
+
+  describe "history maintenance" do
+    it "runs at most once a minute, sooner while there is a backlog" do
+      runner = described_class.new
+      maintenance = instance_double(Logic::HistoryMaintenance)
+      allow(Logic::HistoryMaintenance).to receive(:new).and_return(maintenance)
+      allow(maintenance).to receive(:run).and_return(true, false, false)
+
+      runner.maintain_if_due(now: now)
+      runner.maintain_if_due(now: now + 0.5)
+      expect(maintenance).to have_received(:run).once
+      runner.maintain_if_due(now: now + 1)
+      runner.maintain_if_due(now: now + 30)
+      expect(maintenance).to have_received(:run).twice
+      runner.maintain_if_due(now: now + 61)
+      expect(maintenance).to have_received(:run).exactly(3).times
+    end
+
+    it "logs a failure and keeps going" do
+      runner = described_class.new
+      allow(Logic::HistoryMaintenance).to receive(:new).and_raise(StandardError, "boom")
+      allow(Rails.logger).to receive(:error)
+
+      expect { runner.maintain_if_due(now: now) }.not_to raise_error
+      expect(Rails.logger).to have_received(:error).with(/history maintenance failed: StandardError: boom/)
+    end
+  end
+
+  describe "commit durability" do
+    let(:diagram) { LogicDiagram.create!(name: "Durability definition") }
+    let!(:instance) { LogicInstance.create!(logic_diagram: diagram, name: "Durable") }
+
+    def record_commit_mode
+      modes = []
+      allow(Logic::TraceEvaluator).to receive(:evaluate!).and_wrap_original do |original, *args|
+        modes << ActiveRecord::Base.connection.select_value("SHOW synchronous_commit")
+        original.call(*args)
+      end
+      modes
+    end
+
+    it "commits runner evaluations asynchronously" do
+      modes = record_commit_mode
+
+      described_class.new.run_cycle(now: now)
+
+      expect(modes).to eq([ "off" ])
+    end
+
+    it "keeps web-initiated traces synchronous" do
+      modes = record_commit_mode
+
+      Trace.create!(logic_instance: instance)
+
+      expect(modes).to eq([ "on" ])
+    end
+  end
+
   describe "#run" do
     it "stops its loop cleanly" do
       runner = described_class.new(sleeper: ->(_seconds) { runner.stop! })
@@ -78,6 +202,7 @@ RSpec.describe LogicRunner do
       allow(connection).to receive(:execute)
       allow(LogicInstance.connection_pool).to receive(:with_connection).and_yield(connection)
       allow(runner).to receive(:trap_signals)
+      allow(runner).to receive(:maintain_if_due)
       expect(runner).to receive(:run_cycle).once
       runner.run
       expect(connection).to have_received(:execute).with(/pg_advisory_unlock/)

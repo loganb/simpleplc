@@ -1,5 +1,7 @@
 class Poller
-  POLL_INTERVAL = 10 # seconds
+  POLL_INTERVAL = 1.second
+  # Every this many cycles, the log gets a summary of cycle times.
+  CYCLE_LOG_EVERY = 60
 
   # Per-transaction timeouts, applied to each client when it is opened.
   READ_RETRY_TIMEOUT = 0.5
@@ -17,6 +19,12 @@ class Poller
     # stale HostInterface instance.
     @connections = {}
     @stopping = false
+    # Writes buffered during a cycle and persisted together at its end, so serial
+    # IO never waits on the database and a cycle costs one commit.
+    @pending = []
+    @cycle_count = 0
+    @cycle_total = 0.0
+    @cycle_max = 0.0
   end
 
   # One RTUClient is held open per HostInterface across cycles, so the
@@ -27,14 +35,15 @@ class Poller
     trap_signals
 
     until @stopping
-      cycle_start = Time.now
+      cycle_start = Process.clock_gettime(Process::CLOCK_MONOTONIC)
 
       # Wrap each cycle in the Rails reloader so constants (driver classes, models)
       # are available and correctly reloaded in development between iterations.
       Rails.application.reloader.wrap { run_cycle }
 
-      elapsed = Time.now - cycle_start
-      sleep_for = POLL_INTERVAL - elapsed
+      elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - cycle_start
+      record_cycle_time(elapsed)
+      sleep_for = POLL_INTERVAL.to_f - elapsed
       # A trapped signal wakes this early, so shutdown doesn't wait out the interval.
       sleep(sleep_for) if sleep_for > 0 && !@stopping
     end
@@ -42,8 +51,24 @@ class Poller
     shut_down
   end
 
+  # Logs a warning when a cycle overruns POLL_INTERVAL (the next one starts
+  # late), debug-logs every cycle, and info-logs a summary periodically.
+  def record_cycle_time(elapsed)
+    Rails.logger.warn format("Poller: cycle took %.3fs, over the %ss interval", elapsed, POLL_INTERVAL) if elapsed > POLL_INTERVAL
+    Rails.logger.debug { format("Poller: cycle took %.3fs", elapsed) }
+    @cycle_count += 1
+    @cycle_total += elapsed
+    @cycle_max = [ @cycle_max, elapsed ].max
+    return unless (@cycle_count % CYCLE_LOG_EVERY).zero?
+
+    Rails.logger.info format("Poller: last %d cycles averaged %.3fs, max %.3fs", CYCLE_LOG_EVERY, @cycle_total / CYCLE_LOG_EVERY, @cycle_max)
+    @cycle_total = 0.0
+    @cycle_max = 0.0
+  end
+
   # One pass over every interface. Public because it is the poller's unit of
   # work — `run` is just the loop, the signal trap, and the sleep around it.
+  # Database writes are buffered and committed in one transaction at the end.
   def run_cycle
     output_writer = Logic::OutputWriter.new
     output_commands_by_device_id = output_writer.enabled_commands_by_device_id
@@ -54,6 +79,7 @@ class Poller
       iface.reload
       if !iface.enabled? && iface.scan_active?
         release([ iface.id ])
+        flush_pending
         iface.report_connection(online: false)
         HardwareScan.new(iface, stopping: -> { @stopping }).run
         next
@@ -67,6 +93,8 @@ class Poller
 
     # Interfaces deleted since the last cycle still hold an open port.
     release(@connections.keys - interfaces.map(&:id))
+  ensure
+    flush_pending
   end
 
   # Releases every held port and marks those buses offline, rather than leaving
@@ -98,7 +126,8 @@ class Poller
       # `online: false` is written only after the port is actually closed, so
       # "offline" always means the bus is genuinely free.
       release([ iface.id ])
-      iface.report_connection(online: false)
+      # Nothing to say about a bus already recorded as cleanly offline.
+      report_connection(iface, online: false) if iface.online || iface.connection_error
       return nil
     end
 
@@ -135,7 +164,7 @@ class Poller
       poll_device(device, connection, output_writer, output_commands_by_device_id)
     end
 
-    iface.report_connection(online: true)
+    report_connection(iface, online: true)
   rescue *CONNECTION_ERRORS => e
     # The port died mid-cycle. Drop it and let the next cycle reopen.
     release([ iface.id ])
@@ -146,7 +175,32 @@ class Poller
   # write the same line every 10 seconds forever.
   def report_offline(iface, error)
     Rails.logger.error "Poller: #{iface.name} (#{iface.port}) offline: #{error}" if iface.online || iface.connection_error != error
-    iface.report_connection(online: false, error: error)
+    report_connection(iface, online: false, error: error)
+  end
+
+  def report_connection(iface, online:, error: nil)
+    at = Time.current
+    @pending << -> { iface.report_connection(online: online, error: error, at: at) }
+  end
+
+  def observe(device, attributes, identity)
+    @pending << -> { device.persist_observation(attributes, identity: identity) }
+  end
+
+  # Persists the cycle's buffered writes in one async-commit transaction. Each
+  # write has its own savepoint, so one that fails is logged and skipped
+  # without rolling back the others.
+  def flush_pending
+    return if @pending.empty?
+
+    writes, @pending = @pending, []
+    ApplicationRecord.async_commit_transaction do
+      writes.each do |write|
+        ActiveRecord::Base.transaction(requires_new: true) { write.call }
+      rescue => e
+        Rails.logger.warn "Poller: dropped a buffered write: #{e.class}: #{e.message}"
+      end
+    end
   end
 
   def release(interface_ids)
@@ -165,6 +219,9 @@ class Poller
       output_errors = []
 
       output_commands_by_device_id.fetch(device.id, []).each do |command|
+        # Only relays whose read-back differs are written, to keep the cycle short.
+        next unless output_writer.pending?(command, data)
+
         begin
           output_writer.write(driver, command)
         rescue *CONNECTION_ERRORS
@@ -195,7 +252,7 @@ class Poller
       { polled_at: Time.now.utc.iso8601, status: "error", error: e.message, data: nil }
     end
 
-    device.persist_observation({ current_state: state, last_polled_at: Time.current }, identity: identity)
+    observe(device, { current_state: state, last_polled_at: Time.current }, identity)
   end
 
   # A driver that reprogrammed its module's address reports where the module

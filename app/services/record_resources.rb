@@ -11,7 +11,8 @@ module RecordResources
     "logic_instance" => "LogicInstanceApi",
     "logic_input_binding" => "LogicInputBindingApi",
     "logic_output_binding" => "LogicOutputBindingApi",
-    "trace" => "TraceApi"
+    "trace" => "TraceApi",
+    "trace_rollup" => "TraceRollupApi"
   }.freeze
   MODELS = {
     "Device" => "device", "HostInterface" => "host_interface",
@@ -22,7 +23,7 @@ module RecordResources
     "LogicOutput" => "logic_output", "LogicInstance" => "logic_instance",
     "LogicInputBinding" => "logic_input_binding",
     "LogicOutputBinding" => "logic_output_binding",
-    "Trace" => "trace"
+    "Trace" => "trace", "TraceRollup" => "trace_rollup"
   }.freeze
 
   def self.api_class_name(klass)

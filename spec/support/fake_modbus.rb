@@ -55,7 +55,7 @@ end
 RSpec.configure do |config|
   config.before do |example|
     if example.metadata[:file_path].include?("poller") || example.metadata[:file_path].include?("record_locking")
-      allow(Drivers::Registry).to receive(:all).and_wrap_original { |original| original.call + [FakePollerDriver] }
+      allow(Drivers::Registry).to receive(:all).and_wrap_original { |original| original.call + [ FakePollerDriver ] }
     end
   end
 end

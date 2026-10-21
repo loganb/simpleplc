@@ -47,3 +47,10 @@ permit the configured MagicDNS name, and Action Cable permitted only localhost
 origins. REST CORS itself was already correct. The development defaults now use
 the current page hostname and narrowly configure the shared `PLC_DEV_HOST` for
 Rails HTTP and Cable access.
+
+## Local (non-Pi) dev
+
+`Procfile.dev` defaults `PLC_DEV_HOST` to the Pi's MagicDNS name only when the
+variable is unset (`${PLC_DEV_HOST-...}`). On another machine, put
+`PLC_DEV_HOST=` (empty) in a gitignored `.env`, which foreman loads; esbuild
+then falls back to binding `0.0.0.0` and Rails skips the extra host entry.

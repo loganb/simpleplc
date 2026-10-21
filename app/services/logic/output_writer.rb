@@ -19,6 +19,13 @@ module Logic
       commands.group_by { |command| command.device.id }
     end
 
+    # False when the device's read-back already shows the desired state, so
+    # the poller leaves that relay alone. Unknown read-back counts as pending.
+    def pending?(command, data)
+      readback = data[:outputs][command.channel - 1] if data.is_a?(Hash) && data[:outputs].is_a?(Array)
+      readback.nil? || readback != !!command.desired_output
+    end
+
     def write(driver, command)
       command.desired_output ? driver.open(command.channel) : driver.close(command.channel)
     end

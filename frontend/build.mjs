@@ -5,7 +5,7 @@ import { watch } from 'node:fs';
 import { sassPlugin } from 'esbuild-sass-plugin';
 
 const isWatch = process.argv.includes('--watch');
-const devHost = process.env.PLC_DEV_HOST ?? '0.0.0.0';
+const devHost = process.env.PLC_DEV_HOST || '0.0.0.0';
 const PUBLIC_DIR = 'public';
 const OUT_DIR = 'dist';
 

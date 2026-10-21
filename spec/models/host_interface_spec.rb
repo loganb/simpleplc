@@ -100,7 +100,7 @@ RSpec.describe HostInterface, type: :model do
       # Guards the two constants against drifting apart: if the poll interval
       # ever grows past the staleness window, every healthy bus reads as
       # unknown between cycles.
-      expect(HostInterface::STALE_AFTER).to be > Poller::POLL_INTERVAL.seconds * 2
+      expect(HostInterface::STALE_AFTER).to be > Poller::POLL_INTERVAL * 2
     end
   end
 

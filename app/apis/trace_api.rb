@@ -1,8 +1,12 @@
 class TraceApi < RestfulApi
+  include TimeRangeQuery
+
   def by_query(params)
     scope = Trace.all.order(recorded_at: :desc, id: :desc)
     scope = scope.where(logic_instance_id: params[:logic_instance_id]) if params[:logic_instance_id].present?
-    scope.limit(params.fetch(:limit, 100).to_i.clamp(1, 1000))
+    scope = within_time_range(scope, :recorded_at, params)
+    # Newest first, so a range wider than the limit returns its most recent end.
+    scope.limit(limit_param(params, default: 100, max: 1000))
   end
 
   def serialize(trace)

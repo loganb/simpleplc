@@ -92,7 +92,7 @@ RSpec.describe "Record locking", type: :request do
     expect(interface.reload.name).to eq("Concurrent edit")
   end
 
-  it "serializes the persisted trace version after its creation callback computes results" do
+  it "serializes a trace written once, with its results computed before insert" do
     diagram = LogicDiagram.create!(name: "Test")
     input = LogicInput.create!(logic_diagram: diagram, name: "temperature")
     instance = LogicInstance.create!(logic_diagram: diagram, name: "Test room")
@@ -100,7 +100,8 @@ RSpec.describe "Record locking", type: :request do
     post "/traces", params: { trace: { logic_instance_id: instance.id } }
     expect(response).to have_http_status(:created)
     trace = Trace.find(response.parsed_body.fetch("id"))
-    expect(trace.lock_version).to eq(1)
+    expect(trace.lock_version).to eq(0)
+    expect(trace.results.fetch("logic_inputs")).not_to be_empty
     expect(response.parsed_body.fetch("traces").first.fetch("lock_version")).to eq(trace.lock_version)
   end
 end

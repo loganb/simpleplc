@@ -360,6 +360,38 @@ export const Trace: ModelDefinition<TraceFields> = {
   singleton: false,
 };
 
+// Per-source statistics for one minute; see Logic::TraceRollupBuilder.
+export interface TraceRollupStats {
+  null_count: number;
+  count?: number;
+  last?: number | boolean;
+  min?: number;
+  max?: number;
+  mean?: number;
+  true_fraction?: number;
+  transitions?: number;
+}
+
+// Read-only history: query with logic_instance_id and optional since/until.
+export interface TraceRollupFields {
+  id: number;
+  logic_instance_id: number;
+  bucket_start: string;
+  sample_count: number;
+  results: {
+    schema_version: number;
+    logic_inputs: Record<string, TraceRollupStats>;
+    logic_blocks: Record<string, TraceRollupStats>;
+    logic_outputs: Record<string, TraceRollupStats>;
+  };
+}
+
+export const TraceRollup: ModelDefinition<TraceRollupFields> = {
+  name: 'trace_rollup',
+  inflections: { plural: 'trace_rollups', title: 'TraceRollup' },
+  singleton: false,
+};
+
 // Open the connection with the mounted app, not merely by importing model definitions.
 export function connectLiveRecords() {
   const cableUrl = new URL('/cable', new URL(API_BASE, window.location.href));

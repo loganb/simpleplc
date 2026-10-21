@@ -303,6 +303,100 @@ RSpec.describe Poller do
     end
   end
 
+  describe "batched persistence" do
+    let!(:second_device) do
+      Device.create!(name: "Second board", host_interface: interface, driver: "FakePollerDriver", modbus_address: 4)
+    end
+
+    it "keeps database writes out of serial IO and commits them asynchronously at the end" do
+      seen_during_reads = []
+      FakePollerDriver.read_behaviour = -> {
+        seen_during_reads << Device.where.not(last_polled_at: nil).count
+        { ok: true }
+      }
+      commit_modes = []
+      allow_any_instance_of(Device).to receive(:persist_observation).and_wrap_original do |original, *args, **kwargs|
+        commit_modes << ActiveRecord::Base.connection.select_value("SHOW synchronous_commit")
+        original.call(*args, **kwargs)
+      end
+
+      poller.run_cycle
+
+      expect(seen_during_reads).to eq([ 0, 0 ])
+      expect(commit_modes).to eq([ "off", "off" ])
+      expect(Device.where.not(last_polled_at: nil).count).to eq(2)
+      expect(interface.reload.online).to be(true)
+    end
+
+    it "logs and skips one record that fails without blocking the others" do
+      first_id = device.id
+      callback = ->(record) { record.errors.add(:base, "rejected") if record.id == first_id }
+      Device.set_callback(:validation, :before, callback)
+      allow(Rails.logger).to receive(:warn)
+      begin
+        poller.run_cycle
+      ensure
+        Device.skip_callback(:validation, :before, callback)
+      end
+
+      expect(device.reload.current_state).to be_nil
+      expect(second_device.reload.current_state).to include("status" => "ok")
+      expect(interface.reload.online).to be(true)
+      expect(Rails.logger).to have_received(:warn).with(/unable to persist Device #{first_id}/)
+    end
+
+    it "rolls a failed statement back to its savepoint so later records still commit" do
+      first_id = device.id
+      allow(Rails.logger).to receive(:warn)
+      allow_any_instance_of(Device).to receive(:persist_observation).and_wrap_original do |original, *args, **kwargs|
+        if original.receiver.id == first_id
+          ActiveRecord::Base.connection.execute("SELECT * FROM table_that_does_not_exist")
+        end
+        original.call(*args, **kwargs)
+      end
+
+      poller.run_cycle
+
+      expect(device.reload.current_state).to be_nil
+      expect(second_device.reload.current_state).to include("status" => "ok")
+      expect(interface.reload.online).to be(true)
+      expect(Rails.logger).to have_received(:warn).with(/dropped a buffered write: ActiveRecord::StatementInvalid/)
+    end
+
+    it "retries a stale record without touching the others" do
+      FakePollerDriver.read_behaviour = -> {
+        Device.where(id: second_device.id).update_all("lock_version = lock_version + 1")
+        { ok: true }
+      }
+
+      poller.run_cycle
+
+      expect(second_device.reload.current_state).to include("status" => "ok")
+      expect(device.reload.current_state).to include("status" => "ok")
+    end
+
+    it "records the offline report, and earlier devices' observations, after a mid-cycle connection error" do
+      FakePollerDriver.read_behaviour = -> {
+        FakePollerDriver.reads == 1 ? { ok: true } : raise(Errno::EIO)
+      }
+
+      poller.run_cycle
+
+      expect(device.reload.current_state).to include("status" => "ok")
+      expect(interface.reload).to have_attributes(online: false)
+      expect(interface.connection_error).to include("Errno::EIO")
+      expect(clients.sole).to be_closed
+    end
+
+    it "still flushes buffered writes when the cycle fails outright" do
+      allow(poller).to receive(:release).and_raise("boom")
+
+      expect { poller.run_cycle }.to raise_error("boom")
+
+      expect(device.reload.current_state).to include("status" => "ok")
+    end
+  end
+
   describe "flushing the line" do
     it "flushes a bus once when it is opened, and not again while devices answer" do
       2.times { poller.run_cycle }
@@ -339,6 +433,67 @@ RSpec.describe Poller do
 
       expect(clients.sole).to be_closed
       expect(interface.reload.connection_error).to include("Errno::EIO")
+    end
+  end
+
+  describe "output writes" do
+    let(:binding) { instance_double(LogicOutputBinding, id: 1) }
+    let(:command) do
+      Logic::OutputWriter::Command.new(output_binding: binding, device: device, channel: 2, desired_output: true)
+    end
+    let(:writes) { [] }
+
+    before do
+      allow_any_instance_of(Logic::OutputWriter).to receive(:enabled_commands_by_device_id).and_return(device.id => [ command ])
+      allow_any_instance_of(FakePollerDriver).to receive(:open) { |_driver, channel| writes << [ :open, channel ] }
+      allow_any_instance_of(FakePollerDriver).to receive(:close) { |_driver, channel| writes << [ :close, channel ] }
+    end
+
+    it "writes a relay whose read-back differs from the desired state" do
+      FakePollerDriver.read_behaviour = -> { { outputs: [ false, false ] } }
+
+      poller.run_cycle
+
+      expect(writes).to eq([ [ :open, 2 ] ])
+    end
+
+    it "leaves a relay alone when its read-back already matches" do
+      FakePollerDriver.read_behaviour = -> { { outputs: [ false, true ] } }
+
+      poller.run_cycle
+
+      expect(writes).to be_empty
+      expect(device.reload.current_state).to include("status" => "ok")
+    end
+
+    it "writes when the driver reports no read-back" do
+      poller.run_cycle
+
+      expect(writes).to eq([ [ :open, 2 ] ])
+    end
+  end
+
+  describe "cycle timing" do
+    it "polls once a second" do
+      expect(described_class::POLL_INTERVAL).to eq(1.second)
+    end
+
+    it "warns about an overrunning cycle only" do
+      allow(Rails.logger).to receive(:warn)
+
+      poller.record_cycle_time(0.2)
+      expect(Rails.logger).not_to have_received(:warn)
+
+      poller.record_cycle_time(1.4)
+      expect(Rails.logger).to have_received(:warn).with(/cycle took 1\.400s, over the 1s interval/)
+    end
+
+    it "logs a summary every CYCLE_LOG_EVERY cycles" do
+      allow(Rails.logger).to receive(:info)
+
+      described_class::CYCLE_LOG_EVERY.times { |n| poller.record_cycle_time(n.zero? ? 0.5 : 0.1) }
+
+      expect(Rails.logger).to have_received(:info).with(/last 60 cycles averaged 0\.107s, max 0\.500s/)
     end
   end
 end

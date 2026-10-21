@@ -72,12 +72,11 @@ RSpec.describe Logic::TraceEvaluator do
     )
     output = LogicOutput.create!(logic_diagram: diagram, name: "Enable", value_type: "boolean", input_expression: "Ready")
     instance = LogicInstance.create!(logic_diagram: diagram, name: "Null room")
-    previous = Trace.create!(logic_instance: instance, recorded_at: 1.minute.ago)
-    previous.update!(results: Trace.empty_results.merge(
+    LogicInstanceState.create!(logic_instance: instance, recorded_at: 1.minute.ago, results: Trace.empty_results.merge(
       "logic_blocks" => { block.id.to_s => {
         "id" => block.id, "name" => block.name, "type" => block.type,
         "value" => 1.0, "state" => { "output" => true }, "input_values" => {},
-        "recorded_at" => previous.recorded_at.iso8601
+        "recorded_at" => 1.minute.ago.iso8601
       } }
     ))
 
@@ -107,5 +106,69 @@ RSpec.describe Logic::TraceEvaluator do
     stopped = Trace.create!(logic_instance: instance, recorded_at: t0 + 60)
     expect(stopped.value_for(timer)).to eq(0.0)
     expect(stopped.value_for(output)).to eq(false)
+  end
+
+  it "writes each trace once and updates the instance's state row in place" do
+    input = LogicInput.create!(logic_diagram: diagram, name: "Temp")
+    instance = LogicInstance.create!(logic_diagram: diagram, name: "Single write")
+    LogicInputBinding.create!(logic_instance: instance, logic_input: input, source_kind: "fixed_value", fixed_value: 5)
+    t0 = Time.zone.parse("2026-10-13 12:00:00")
+
+    first = Trace.create!(logic_instance: instance, recorded_at: t0)
+    second = Trace.create!(logic_instance: instance, recorded_at: t0 + 1)
+
+    state = LogicInstanceState.sole
+    expect(state).to have_attributes(logic_instance_id: instance.id, recorded_at: t0 + 1, results: second.results)
+    expect(state.results).not_to eq(first.results)
+    expect([ first.lock_version, second.lock_version ]).to eq([ 0, 0 ])
+    expect(first.reload.results.dig("logic_inputs", input.id.to_s, "value")).to eq(5.0)
+  end
+
+  it "takes the state row lock while evaluating" do
+    instance = LogicInstance.create!(logic_diagram: diagram, name: "Locked")
+    statements = []
+    subscriber = ActiveSupport::Notifications.subscribe("sql.active_record") { |*, payload| statements << payload[:sql] }
+
+    Trace.create!(logic_instance: instance)
+
+    ActiveSupport::Notifications.unsubscribe(subscriber)
+    expect(statements.grep(/FROM "logic_instance_states".*FOR UPDATE/m)).not_to be_empty
+  end
+
+  it "takes block state from the state row, not from stored traces" do
+    block = LatchLogicBlock.create!(
+      logic_diagram: diagram, name: "Latched", stratum: 1,
+      input_expressions: { "set" => "false", "reset" => "false" },
+      config: { "mode" => "latch_high", "initial_output" => false }
+    )
+    instance = LogicInstance.create!(logic_diagram: diagram, name: "State only")
+    block_result = ->(output) {
+      { "id" => block.id, "name" => block.name, "type" => block.type, "value" => output ? 1.0 : 0.0,
+        "state" => { "output" => output }, "input_values" => {}, "recorded_at" => 1.minute.ago.iso8601 }
+    }
+    stale = Trace.create!(logic_instance: instance, recorded_at: 2.minutes.ago)
+    stale.update_columns(results: Trace.empty_results.merge("logic_blocks" => { block.id.to_s => block_result.(false) }))
+    LogicInstanceState.find_by!(logic_instance: instance)
+      .update!(results: Trace.empty_results.merge("logic_blocks" => { block.id.to_s => block_result.(true) }))
+
+    trace = Trace.create!(logic_instance: instance)
+
+    expect(trace.value_for(block)).to eq(1.0)
+  end
+
+  it "resolves diagram names without a query per lookup" do
+    LogicInput.create!(logic_diagram: diagram, name: "A")
+    ExpressionLogicBlock.create!(logic_diagram: diagram, name: "B", stratum: 1, input_expressions: { "value" => "A + 1" })
+    ExpressionLogicBlock.create!(logic_diagram: diagram, name: "C", stratum: 2, input_expressions: { "value" => "B + A + B + A" })
+    instance = LogicInstance.create!(logic_diagram: diagram, name: "Cached lookups")
+    lookups = 0
+    subscriber = ActiveSupport::Notifications.subscribe("sql.active_record") do |*, payload|
+      lookups += 1 if payload[:sql].match?(/FROM "logic_(blocks|inputs)".*"name" =/)
+    end
+
+    Trace.create!(logic_instance: instance)
+
+    ActiveSupport::Notifications.unsubscribe(subscriber)
+    expect(lookups).to eq(0)
   end
 end
