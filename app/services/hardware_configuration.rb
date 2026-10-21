@@ -1,24 +1,4 @@
 class HardwareConfiguration
-  def self.check_revision!(record, expected)
-    raise HardwareError.new("Reload and supply configuration_revision", code: "revision_required", status: :unprocessable_entity) if expected.nil?
-    unless expected.to_s == record.configuration_revision.to_s
-      raise HardwareError.new("Configuration changed; reload and review your edits", code: "stale_configuration",
-        details: { current: record.attributes.slice(*record.class::CONFIGURATION_FIELDS, "configuration_revision") })
-    end
-  end
-
-  def self.quiet!(bus)
-    raise HardwareError, "Disable the interface before changing hardware configuration" if bus.enabled?
-    raise HardwareError, "Cancel the scan and wait before changing configuration" if bus.scan_active?
-    raise HardwareError, "Waiting for the poller to release this interface" if bus.online?
-    # Probe the cooperative lock without opening the serial device. The bus row
-    # remains locked during the caller's mutation, excluding new scan requests.
-    lock = SerialBusLock.acquire(bus.port) if bus.port_present?
-    yield
-  ensure
-    lock&.close
-  end
-
   # The dependencies that block deleting these devices, returned as error details.
   def self.impact(ids)
     { devices: Device.where(id: ids).map { |d| { id: d.id, name: d.name } },

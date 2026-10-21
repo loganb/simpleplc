@@ -89,16 +89,16 @@ RSpec.describe Poller do
       expect(interface.connection_state).to eq("disabled")
     end
 
-    it "reads as releasing until the poller confirms, then disabled" do
-      # The handshake anything waiting for the bus depends on: "disabled" is
-      # only reached once the port is genuinely free.
+    it "reads as disabled immediately, before the poller lets go" do
       poller.run_cycle
       interface.reload.update!(enabled: false)
-      expect(interface.reload.connection_state).to eq("releasing")
+
+      expect(interface.reload.connection_state).to eq("disabled")
+      expect(clients.sole).not_to be_closed
 
       poller.run_cycle
 
-      expect(interface.reload.connection_state).to eq("disabled")
+      expect(clients.sole).to be_closed
     end
 
     it "stops polling the devices on that bus" do
@@ -211,6 +211,64 @@ RSpec.describe Poller do
       expect { poller.run_cycle }.not_to raise_error
 
       expect(device.reload.modbus_address).to eq(3)
+    end
+  end
+
+  describe "device scans" do
+    let(:scan) { DeviceScan.create!(host_interface: interface, first_address: 1, last_address: 2) }
+
+    before { interface.update!(enabled: false) }
+
+    it "runs a pending scan on a disabled bus instead of polling it" do
+      scan
+      allow(HardwareScan).to receive(:new).and_call_original
+      allow_any_instance_of(HardwareScan).to receive(:run)
+      poller.run_cycle
+
+      expect(HardwareScan).to have_received(:new).with(scan, hash_including(:stopping))
+      expect(FakePollerDriver.reads).to eq(0)
+    end
+
+    it "never scans an enabled bus" do
+      interface.update!(enabled: true)
+      allow(HardwareScan).to receive(:new)
+      poller.run_cycle
+
+      expect(HardwareScan).not_to have_received(:new)
+    end
+
+    it "releases a port it was holding before scanning" do
+      interface.update!(enabled: true)
+      poller.run_cycle
+      interface.reload.update!(enabled: false)
+      scan
+      allow_any_instance_of(HardwareScan).to receive(:run)
+      poller.run_cycle
+
+      expect(clients.sole).to be_closed
+    end
+
+    it "fails scans left running by a previous poller when it starts" do
+      scan.update!(state: "running")
+      allow(poller).to receive(:trap_signals)
+      poller.instance_variable_set(:@stopping, true)
+      poller.run
+
+      expect(scan.reload).to have_attributes(state: "failed", error: "Poller restarted")
+    end
+
+    it "fails a running scan on shutdown" do
+      scan.update!(state: "running")
+      poller.shut_down
+
+      expect(scan.reload).to have_attributes(state: "failed", error: "Poller stopped")
+    end
+
+    it "leaves pending scans for the next poller" do
+      scan
+      poller.shut_down
+
+      expect(scan.reload.state).to eq("pending")
     end
   end
 

@@ -1,5 +1,7 @@
 # Interface Online State
 
+> **Partly superseded 2026-10-21 by `claude/device-management-simplify.md`.** The `releasing` connection state is gone: `connection_state` is `online | offline | disabled | unknown`, and a disabled bus reads `disabled` immediately (the poller still releases the port within a cycle). Enabling is a plain toggle; there is no review or fresh-poll verification. Everything else here (held-open connections, heartbeat staleness, reconnect on settings change) stands.
+
 Give `HostInterface` two independent states: **enabled/disabled**, which the
 operator sets from the UI, and **online/offline**, which the poller reports.
 The poller holds the serial port open across poll cycles instead of reopening

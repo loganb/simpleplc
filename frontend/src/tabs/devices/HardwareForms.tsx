@@ -31,19 +31,17 @@ function Editor({ model, editId, defaults, deletes, prepare, children, onClose, 
 }) {
   const [fields, setFields] = useState(defaults);
   const [loaded, setLoaded] = useState(editId === null);
-  const { start, busy, failure, clearFailure } = useTxn();
-  const [comparing, setComparing] = useState(false);
+  const { start, busy, failure } = useTxn();
   const [reviewing, setReviewing] = useState(false);
   const impact = useImpact(deletes, reviewing);
   const singular = model.name;
-  const pick = (record: Fields) => Object.fromEntries([...Object.keys(defaults), 'configuration_revision'].map(k => [k, record[k]]));
+  const pick = (record: Fields) => Object.fromEntries(Object.keys(defaults).map(k => [k, record[k]]));
   const { record } = useLoaders(() => ({ record: editId === null ? null : Store.m(model).fetch(editId) }), [Store], [editId]);
-  // The saved configuration as the store currently has it; null while (re)loading.
+  // The saved configuration as the store currently has it; null while loading.
   const current = record?._found && !record._loading ? pick(record as unknown as Fields) : null;
   const missing = !!record?._loaded && !record._found;
-  // The draft captures the revision the form opened with; later store updates don't touch it.
+  // The draft starts from the record as the form opened; later store updates don't touch it.
   useEffect(() => { if (!loaded && current) { setFields(current); setLoaded(true); } }, [record]);
-  const latest = comparing ? current : null;
   const done = () => { onRefresh(); onClose(); };
   const save = () => {
     const payload = (prepare ? prepare(fields) : fields) as Partial<Identifiable>;
@@ -53,16 +51,7 @@ function Editor({ model, editId, defaults, deletes, prepare, children, onClose, 
   return <section class="rounded border border-border bg-surface-alt p-4 space-y-3">
     <h3 class="font-semibold">{editId === null ? 'New' : 'Edit'} {singular === 'device' ? 'Device' : 'Host Interface'}</h3>
     {missing && <p role="alert" class="text-error">This {singular === 'device' ? 'device' : 'interface'} no longer exists.</p>}
-    {error && <div role="alert" class="text-error">{error}
-      {editId !== null && <button class={btn} disabled={busy} onClick={() => { Store.m(model).fetch(editId, true); setComparing(true); }}>Reload for comparison</button>}
-    </div>}
-    {comparing && !latest && <p class="text-sm">Loading current configuration…</p>}
-    {latest && <div class="space-y-2 text-sm">
-      <p>Your draft is preserved. Compare it with the current configuration before saving again.</p>
-      <pre class="overflow-auto">{JSON.stringify(latest, null, 2)}</pre>
-      <button class={btn} onClick={() => { setFields({ ...fields, configuration_revision: latest.configuration_revision }); setComparing(false); clearFailure(); }}>Keep my draft against this revision</button>
-      <button class={btn} onClick={() => { setFields(latest); setComparing(false); clearFailure(); }}>Use current configuration</button>
-    </div>}
+    {error && <p role="alert" class="text-error">{error}</p>}
     {!loaded ? <p>Loading…</p> : <fieldset disabled={busy} class="space-y-3">{children(fields, (key, value) => { setFields(current => ({ ...current, [key]: value })); setReviewing(false); })}</fieldset>}
     <div class="flex gap-2">
       <button class={btn} disabled={busy || !loaded} onClick={save}>{busy ? 'Working…' : 'Save'}</button>
@@ -98,7 +87,7 @@ export function InterfaceEditor({ editId, prefill, onClose, onRefresh }: {
   return <Editor model={HostInterface} editId={editId} deletes={busDevices}
     defaults={{ name: prefill?.name || '', port: prefill?.port || '', baud_rate: 9600, data_bits: 8, stop_bits: 1, parity: 'none' }} onClose={onClose} onRefresh={onRefresh}>
     {(f, change) => <>
-      <p class="text-sm text-text-muted">Disable the bus before replacing its port or serial settings. New buses start disabled.</p>
+      <p class="text-sm text-text-muted">Changes apply to a running bus within a poll cycle. New buses start disabled.</p>
       <label class="block text-sm">Name<input class={input} value={String(f.name)} onInput={e => change('name', e.currentTarget.value)} /></label>
       <label class="block text-sm">Choose / replace serial port<select class={input} value={String(f.port)} onChange={e => change('port', e.currentTarget.value)}>
         <option value={String(f.port)}>Current: {f.port || 'manual entry'}</option>

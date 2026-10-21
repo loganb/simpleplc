@@ -844,7 +844,13 @@ export default class RestfulModelStore extends EventEmitter {
         const model = this.models[name];
         if(!model) continue;
         if(invalidation === 'all' || invalidation === 'queries') model.query_version++;
-        if(invalidation === 'all' || invalidation === 'records') model.instances.clear();
+        // Stale rather than cleared: values stay on screen while they refetch.
+        // Records in this response predate nothing in it, so they stay fresh.
+        if(invalidation === 'all' || invalidation === 'records') {
+          for(const [id, record] of model.instances.entries()) model.instances.replace(id, {
+            ...record, _stale: true, _invalidated_at: Math.max(record._invalidated_at ?? -1, responseOrder), _seq: this.seq++,
+          });
+        }
       }
     }
     let added = false;

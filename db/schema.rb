@@ -10,12 +10,28 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_13_000002) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_21_000000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
+  create_table "device_scans", force: :cascade do |t|
+    t.integer "completed", default: 0, null: false
+    t.datetime "created_at", null: false
+    t.string "error"
+    t.datetime "finished_at"
+    t.integer "first_address", null: false
+    t.bigint "host_interface_id", null: false
+    t.integer "last_address", null: false
+    t.integer "lock_version", default: 0, null: false
+    t.jsonb "results", default: [], null: false
+    t.datetime "started_at"
+    t.string "state", default: "pending", null: false
+    t.integer "total", null: false
+    t.datetime "updated_at", null: false
+    t.index ["host_interface_id"], name: "index_device_scans_on_host_interface_id"
+  end
+
   create_table "devices", force: :cascade do |t|
-    t.integer "configuration_revision", default: 0, null: false
     t.datetime "created_at", null: false
     t.jsonb "current_state"
     t.string "driver", null: false
@@ -33,7 +49,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_13_000002) do
 
   create_table "host_interfaces", force: :cascade do |t|
     t.integer "baud_rate", default: 9600, null: false
-    t.integer "configuration_revision", default: 0, null: false
     t.string "connection_error"
     t.datetime "created_at", null: false
     t.integer "data_bits", default: 8, null: false
@@ -45,14 +60,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_13_000002) do
     t.datetime "poller_reported_at"
     t.string "port", null: false
     t.string "port_identity"
-    t.datetime "scan_finished_at"
-    t.jsonb "scan_options", default: {}, null: false
-    t.string "scan_request_id"
-    t.datetime "scan_requested_at"
-    t.jsonb "scan_results", default: {}, null: false
-    t.datetime "scan_started_at"
-    t.string "scan_state", default: "idle", null: false
-    t.datetime "scan_updated_at"
     t.integer "stop_bits", default: 1, null: false
     t.datetime "updated_at", null: false
     t.index ["port_identity"], name: "index_host_interfaces_on_port_identity", unique: true
@@ -175,6 +182,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_13_000002) do
     t.index ["logic_instance_id", "recorded_at"], name: "index_traces_on_logic_instance_id_and_recorded_at"
   end
 
+  add_foreign_key "device_scans", "host_interfaces"
   add_foreign_key "devices", "host_interfaces"
   add_foreign_key "logic_blocks", "logic_diagrams"
   add_foreign_key "logic_input_bindings", "devices"

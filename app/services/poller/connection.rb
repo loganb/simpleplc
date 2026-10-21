@@ -21,7 +21,7 @@ class Poller
     def self.open(interface, read_retry_timeout:, read_retries:)
       bus_lock = SerialBusLock.acquire(interface.port)
       interface.with_lock do
-        raise HardwareError, "Interface disabled or scanning" unless interface.enabled? && !interface.scan_active?
+        raise HardwareError, "Interface disabled" unless interface.enabled?
         interface.identify_port
         interface.save! if interface.changed?
       end

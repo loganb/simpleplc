@@ -37,24 +37,24 @@ RSpec.describe "Hardware setup journey", type: :request do
       bus = HostInterface.find(response.parsed_body.fetch("id"))
       relay = Device.create!(host_interface: bus, name: "Relay", driver: "Drivers::N4D8B08", modbus_address: 3)
       temp = Device.create!(host_interface: bus, name: "Absent", driver: "Drivers::N4DSC08", modbus_address: 1)
-      patch "/host_interfaces/#{bus.id}", params: { host_interface: { port: port, name: "Relay Bus", configuration_revision: bus.reload.configuration_revision } }
+      patch "/host_interfaces/#{bus.id}", params: { host_interface: { port: port, name: "Relay Bus" } }
       expect(response).to have_http_status(:ok)
-      patch "/host_interfaces/#{bus.id}", params: { host_interface: { scan_state: "requested", scan_options: { first_address: 1, last_address: 3 } } }, as: :json
-      expect(response).to have_http_status(:ok)
+      post "/device_scans", params: { device_scan: { host_interface_id: bus.id, first_address: 1, last_address: 3 } }, as: :json
+      expect(response).to have_http_status(:created)
       poller = Poller.new
       poller.run_cycle
-      get "/host_interfaces/#{bus.id}"
-      scanned = response.parsed_body.fetch("host_interfaces").first
-      expect(scanned["scan_state"]).to eq("completed")
-      expect(scanned["scan_results"]["devices"].map { |d| d["address"] }).to eq([ 1 ])
+      get "/device_scans", params: { q: { host_interface_id: bus.id }.to_json }
+      scanned = response.parsed_body.fetch("device_scans").sole
+      expect(scanned).to include("state" => "done", "completed" => 3, "total" => 3)
+      expect(scanned["results"].map { |d| d["address"] }).to eq([ 1 ])
       expect(endpoint.writes).to be_empty
       # The absent board holds address 1, so it goes first; then the relay moves there.
       delete "/devices/#{temp.id}"
       expect(response).to have_http_status(:no_content)
-      patch "/devices/#{relay.id}", params: { device: { modbus_address: 1, driver: relay.driver, configuration_revision: relay.reload.configuration_revision } }, as: :json
+      patch "/devices/#{relay.id}", params: { device: { modbus_address: 1, driver: relay.driver } }, as: :json
       expect(response).to have_http_status(:ok)
       expect(relay.reload.modbus_address).to eq(1)
-      patch "/host_interfaces/#{bus.id}", params: { host_interface: { enabled: true, configuration_revision: bus.reload.configuration_revision } }
+      patch "/host_interfaces/#{bus.id}", params: { host_interface: { enabled: true } }
       expect(response).to have_http_status(:ok)
       poller.run_cycle
       first = relay.reload.last_polled_at

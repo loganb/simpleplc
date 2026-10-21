@@ -203,6 +203,32 @@ describe('record versions', () => {
   });
 });
 
+describe('invalidation hints', () => {
+  beforeEach(installBrowserTimers);
+
+  it('bumps the query version for a queries hint', async () => {
+    const { axios, store } = makeStore();
+    const model = store.m(Thing);
+    model.queryFor(null, {});
+    await settleIo();
+    store.update_store({ data: { invalidates: { thing: 'queries' } } });
+    model.queryFor(null, {});
+    await settleIo();
+    expect(axios.get).toHaveBeenCalledTimes(2);
+  });
+
+  it('marks records stale for a records hint, keeping their values while they refetch', async () => {
+    const { axios, store } = makeStore('refetched');
+    const model = store.m(Thing);
+    store.update_store({ data: { things: [{ id: 1, name: 'cached' }, { id: 2, name: 'in response' }] } });
+    store.update_store({ data: { invalidates: { thing: 'records' }, things: [{ id: 2, name: 'in response' }] } });
+    expect(model.fetch(1)).toMatchObject({ name: 'cached', _found: true, _loading: true });
+    expect(model.fetch(2)).toMatchObject({ name: 'in response', _stale: false });
+    await settleIo();
+    expect(axios.get).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('live record updates', () => {
   beforeEach(installBrowserTimers);
 

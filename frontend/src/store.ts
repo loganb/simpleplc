@@ -30,7 +30,6 @@ const Store = new RestfulModelStore(AxiosClient, {
 // ---------------------------------------------------------------------------
 
 export interface DeviceFields {
-  configuration_revision: number;
   id: number;
   name: string;
   modbus_address: number;
@@ -93,20 +92,13 @@ export const Driver: ModelDefinition<DriverFields> = {
   inflections: { plural: 'drivers', title: 'Driver' },
   singleton: false,
 };
-export interface SerialProfile { baud_rate: number; data_bits: number; stop_bits: number; parity: string }
-export interface DriverSupport { driver: string; support: 'yes' | 'no' | 'maybe'; reason: string; evidence: unknown[] }
-export interface ScanDevice { address: number; profile_index: number; profile: SerialProfile; observed_at: string; driver_support: DriverSupport[] }
+/** One register read a scan made, and what came back. */
+export interface ProbeEvidence {
+  kind: string; address: number | [number, number]; status: string; values?: number[]; error?: string;
+}
+export interface DriverSupport { driver: string; support: 'yes' | 'no' | 'maybe'; reason: string; evidence: ProbeEvidence[] }
+export interface ScanResult { address: number; observed_at: string; driver_support: DriverSupport[] }
 export interface HostInterfaceFields {
-  configuration_revision: number;
-  /** Clients may set only 'requested' (with scan_options) or 'cancelling'; the poller owns the rest. */
-  scan_state: 'idle' | 'requested' | 'scanning' | 'cancelling' | 'completed' | 'failed' | 'cancelled' | 'interrupted';
-  scan_request_id: string | null;
-  scan_options: { port?: string; profiles?: SerialProfile[]; first_address?: number; last_address?: number };
-  scan_results: { completed?: number; total?: number; devices?: ScanDevice[]; error?: string; diagnostics?: unknown[] };
-  scan_requested_at: string | null;
-  scan_started_at: string | null;
-  scan_finished_at: string | null;
-  scan_updated_at: string | null;
   id: number;
   name: string;
   port: string;
@@ -126,11 +118,10 @@ export interface HostInterfaceFields {
    *
    * - `online` — the poller is holding the port open right now
    * - `offline` — the poller is reporting and is not holding the port
-   * - `releasing` — disabled, but the poller still has the port
-   * - `disabled` — disabled and the port is free
+   * - `disabled` — the operator turned the bus off; the poller releases the port within a cycle
    * - `unknown` — no recent report; the poller is down or has never seen this bus
    */
-  connection_state: 'online' | 'offline' | 'releasing' | 'disabled' | 'unknown';
+  connection_state: 'online' | 'offline' | 'disabled' | 'unknown';
   /** Why the port isn't open, when it isn't. Null otherwise. */
   connection_error: string | null;
   /** When the poller last reported on this bus. Null before it ever has. */
@@ -140,6 +131,31 @@ export interface HostInterfaceFields {
 export const HostInterface: ModelDefinition<HostInterfaceFields> = {
   name: 'host_interface',
   inflections: { plural: 'host_interfaces', title: 'HostInterface' },
+  singleton: false,
+};
+
+/**
+ * One sweep of a bus's address range, run by the poller. Start with `create`
+ * (the bus must be disabled); cancel by patching `state` to 'cancelled'. That is
+ * the only client-writable field after create; the rest is the poller's report.
+ */
+export interface DeviceScanFields {
+  id: number;
+  host_interface_id: number;
+  first_address: number;
+  last_address: number;
+  state: 'pending' | 'running' | 'done' | 'failed' | 'cancelled';
+  completed: number;
+  total: number;
+  results: ScanResult[];
+  error: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+}
+
+export const DeviceScan: ModelDefinition<DeviceScanFields> = {
+  name: 'device_scan',
+  inflections: { plural: 'device_scans', title: 'DeviceScan' },
   singleton: false,
 };
 

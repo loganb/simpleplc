@@ -3,6 +3,7 @@
 module RecordResources
   APIS = {
     "device" => "DeviceApi",
+    "device_scan" => "DeviceScanApi",
     "host_interface" => "HostInterfaceApi",
     "logic_diagram" => "LogicDiagramApi",
     "logic_input" => "LogicInputApi",
@@ -15,7 +16,7 @@ module RecordResources
     "trace_rollup" => "TraceRollupApi"
   }.freeze
   MODELS = {
-    "Device" => "device", "HostInterface" => "host_interface",
+    "Device" => "device", "DeviceScan" => "device_scan", "HostInterface" => "host_interface",
     "LogicDiagram" => "logic_diagram", "LogicInput" => "logic_input",
     "LogicBlock" => "logic_block", "HysteresisLogicBlock" => "logic_block",
     "LatchLogicBlock" => "logic_block", "TimerCounterLogicBlock" => "logic_block",

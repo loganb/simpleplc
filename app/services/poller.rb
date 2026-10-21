@@ -33,6 +33,8 @@ class Poller
   def run
     Rails.logger.info "Poller starting (interval: #{POLL_INTERVAL}s)"
     trap_signals
+    # A scan still marked running was abandoned by the previous poller.
+    Rails.application.reloader.wrap { HardwareScan.fail_running("Poller restarted") }
 
     until @stopping
       cycle_start = Process.clock_gettime(Process::CLOCK_MONOTONIC)
@@ -77,11 +79,13 @@ class Poller
 
     interfaces.each do |iface|
       iface.reload
-      if !iface.enabled? && iface.scan_active?
+      scan = iface.enabled? ? nil : iface.device_scans.find_by(state: "pending")
+      if scan
+        # The scan sweeps synchronously and needs the port to itself.
         release([ iface.id ])
         flush_pending
         iface.report_connection(online: false)
-        HardwareScan.new(iface, stopping: -> { @stopping }).run
+        HardwareScan.new(scan, stopping: -> { @stopping }).run
         next
       end
       connection = connection_for(iface)
@@ -100,6 +104,7 @@ class Poller
   # Releases every held port and marks those buses offline, rather than leaving
   # a phantom `online` for the staleness window to expire.
   def shut_down
+    HardwareScan.fail_running("Poller stopped")
     return if @connections.empty?
 
     Rails.logger.info "Poller: releasing #{@connections.size} port(s)"

@@ -50,17 +50,6 @@ RSpec.describe Device do
     expect(device.outputs).to be_empty
   end
 
-  it "advances the device edit revision without advancing the parent bus revision" do
-    device
-    device_revision = device.configuration_revision
-    bus_revision = interface.reload.configuration_revision
-
-    device.update!(io_labels: { outputs: { "1" => "Fan" } })
-
-    expect(device.configuration_revision).to eq(device_revision + 1)
-    expect(interface.reload.configuration_revision).to eq(bus_revision)
-  end
-
   it "does not change LogicDiagram hardware identities when labels are renamed" do
     diagram = LogicDiagram.create!(name: "Boiler")
     input = LogicInput.create!(logic_diagram: diagram, name: "Call", value_type: "boolean")
@@ -92,13 +81,6 @@ RSpec.describe Device do
     it "rejects settings the driver does not define" do
       expect(device.update(settings: { "address" => 9 })).to be(false)
       expect(device.errors[:settings].first).to match(/unknown setting address/)
-    end
-
-    it "advances configuration_revision without counting as a bus change" do
-      wj150 = Device.create!(host_interface: interface, name: "Flow", driver: "Drivers::WJ150", modbus_address: 2)
-      bus_revision = interface.reload.configuration_revision
-      expect { wj150.update!(settings: { "pull_up" => true }) }.to change { wj150.configuration_revision }.by(1)
-      expect(interface.reload.configuration_revision).to eq(bus_revision)
     end
   end
 end

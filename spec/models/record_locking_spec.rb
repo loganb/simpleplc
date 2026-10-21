@@ -6,7 +6,7 @@ RSpec.describe "Record locking", type: :request do
   it "enables locking with a non-null zero default on every application table" do
     [
       HostInterface, Device, LogicDiagram, LogicInput, LogicBlock, LogicOutput,
-      LogicInstance, LogicInputBinding, LogicOutputBinding, Trace
+      LogicInstance, LogicInputBinding, LogicOutputBinding, Trace, DeviceScan
     ].each do |model|
       column = model.columns_hash.fetch("lock_version")
       expect(column.null).to be(false)
@@ -86,7 +86,7 @@ RSpec.describe "Record locking", type: :request do
       HostInterface.find(object.id).update!(name: "Concurrent edit")
       original.call(object, params)
     end
-    patch "/host_interfaces/#{interface.id}", params: { host_interface: { name: "Stale edit", configuration_revision: interface.configuration_revision } }
+    patch "/host_interfaces/#{interface.id}", params: { host_interface: { name: "Stale edit" } }
     expect(response).to have_http_status(:conflict)
     expect(response.parsed_body.fetch("errors").fetch("base")).not_to be_empty
     expect(interface.reload.name).to eq("Concurrent edit")

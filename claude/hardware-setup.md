@@ -1,5 +1,7 @@
 # Hardware setup
 
+> **Partly superseded 2026-10-21 by `claude/device-management-simplify.md`.** Removed: the `scan_*` state machine on `host_interfaces` (now a `DeviceScan` record), `configuration_revision` and the compare / "Keep my draft" flow, `HardwareConfiguration.quiet!` and the "disable the bus first" rule for edits, the review-and-enable panel and two-fresh-polls verification, baud-profile sweeps. Still in force: read-only discovery and the driver `device_support` contract, `deletable!`, `compatible!`, `port_identity` uniqueness, poller-only `SerialBusLock`, "scans require a disabled bus". Sections below on revisions, quiet buses, scan state and enable verification describe the retired design.
+
 ## Scope and design discussed
 
 User requested production configuration cleanup matching the observed hardware, using only the HTTP API exposed to the UX. Record API/UX deficiencies; feature design and implementation come later. User selected task name `hardware-setup`.

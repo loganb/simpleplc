@@ -12,6 +12,8 @@ Rails.application.routes.draw do
   # Ids are base64url-encoded paths, so no route constraint is needed.
   resources :host_ports, only: [ :index, :show ]
   resources :devices
+  # Start a scan with create; cancel it by patching `state`. Never destroyed directly.
+  resources :device_scans, only: [ :index, :show, :create, :update ]
   resources :logic_inputs
   resources :logic_diagrams
   resources :logic_blocks

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeImpact, matchesBus, scanActive, sortedSupport, txnErrorMessage } from './hardware';
+import { bestSupport, computeImpact, describeEvidence, distinctEvidence, scanActive, sortedSupport, txnErrorMessage } from './hardware';
 import type { DriverSupport } from '../../store';
 const support: DriverSupport[] = [
   { driver: 'relay', support: 'maybe', reason: 'Ambiguous', evidence: [] },
@@ -29,11 +29,22 @@ describe('hardware helpers', () => {
       logic_output_bindings: [{ id: 9, name: 'Ventilation · Fan', logic_instance_id: 8, output_enable: true }],
     });
   });
-  it('treats cancelling as active and compares scan profiles with the bus', () => {
-    expect(scanActive('cancelling')).toBe(true);
-    expect(scanActive('cancelled')).toBe(false);
-    const bus = { baud_rate: 9600, data_bits: 8, stop_bits: 1, parity: 'none' };
-    expect(matchesBus({ ...bus }, bus)).toBe(true);
-    expect(matchesBus({ ...bus, baud_rate: 19200 }, bus)).toBe(false);
+  it('treats only pending and running scans as active', () => {
+    expect(scanActive('pending')).toBe(true);
+    expect(scanActive('running')).toBe(true);
+    for (const state of ['done', 'failed', 'cancelled'] as const) expect(scanActive(state)).toBe(false);
+  });
+  it('picks yes before maybe as the best driver, and none when all are ruled out', () => {
+    expect(bestSupport(support)?.driver).toBe('temp');
+    expect(bestSupport(support.slice(0, 2))?.driver).toBe('relay');
+    expect(bestSupport(support.slice(1, 2))).toBeNull();
+    expect(bestSupport([])).toBeNull();
+  });
+  it('describes register reads in words and lists shared evidence once', () => {
+    expect(describeEvidence({ kind: 'holding_registers', address: 247, status: 'ok', values: [2532] })).toBe('Holding register 247: ok, value 2532');
+    expect(describeEvidence({ kind: 'input_registers', address: [0, 3], status: 'ok', values: [1, 2, 3, 4] })).toBe('Input registers 0–3: ok, values 1, 2, 3, 4');
+    expect(describeEvidence({ kind: 'holding_registers', address: 0, status: 'timeout', error: 'no reply' })).toBe('Holding register 0: timeout (no reply)');
+    const read = { kind: 'holding_registers', address: 0, status: 'ok', values: [0] };
+    expect(distinctEvidence([{ ...support[0], evidence: [read] }, { ...support[1], evidence: [read, { ...read, address: 247 }] }])).toHaveLength(2);
   });
 });

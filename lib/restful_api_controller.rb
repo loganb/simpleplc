@@ -128,7 +128,7 @@ module RestfulApiController
 
     response_json = serialize_flat(expounded + [ object ])
     response_json[:id] = object.id
-    response_json[:invalidates] = api_instance.invalidates(object)
+    response_json[:invalidates] = store_invalidations(api_instance.invalidates(object))
     render json: response_json, status: :created
   end
 
@@ -159,7 +159,7 @@ module RestfulApiController
     expounded = expounded_objects_for([ object ])
 
     response_json = serialize_flat([ object ].concat(expounded))
-    response_json[:invalidates] = api_instance.invalidates(object)
+    response_json[:invalidates] = store_invalidations(api_instance.invalidates(object))
     render json: response_json
   end
 
@@ -200,6 +200,12 @@ module RestfulApiController
           object.class.try(:locking_enabled?) ? serialized.merge(lock_version: object.lock_version) : serialized
         end
       end
+  end
+
+  # APIs name invalidated models by class; the client keys its models by
+  # underscored name ("host_interface"), so hints must arrive under that name.
+  def store_invalidations(hints)
+    hints.transform_keys { |key| key.is_a?(Class) ? api_class_name_for(key).underscore : key.to_s }
   end
 
   # Returns the API-facing class name for a model class.

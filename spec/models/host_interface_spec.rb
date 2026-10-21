@@ -45,24 +45,11 @@ RSpec.describe HostInterface, type: :model do
       described_class.new({ name: "Bus A", port: "/dev/ttyUSB0" }.merge(attrs))
     end
 
-    it "is releasing while the poller still holds a port the operator turned off" do
-      # Disabling is a request; until the poller confirms, the bus is not free.
+    it "is disabled as soon as the operator turns the bus off, whatever the poller last said" do
       expect(interface(enabled: false, online: true, poller_reported_at: Time.current).connection_state)
-        .to eq("releasing")
-    end
-
-    it "is disabled once the poller has let the port go" do
+        .to eq("disabled")
       expect(interface(enabled: false, online: false, poller_reported_at: Time.current).connection_state)
         .to eq("disabled")
-    end
-
-    it "is disabled, not releasing, when the poller stopped reporting mid-release" do
-      # A dead process holds nothing — the kernel closed its ports with it.
-      iface = interface(enabled: false, online: true, poller_reported_at: Time.current)
-
-      travel_to((HostInterface::STALE_AFTER + 1.second).from_now) do
-        expect(iface.connection_state).to eq("disabled")
-      end
     end
 
     it "is online when the poller reported holding the port open just now" do

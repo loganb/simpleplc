@@ -9,7 +9,7 @@ export interface CableConsumer {
   }): CableSubscription };
   disconnect(): void;
 }
-const RESOURCES = new Set(['device', 'host_interface', 'logic_diagram', 'measurement', 'logic_block', 'output_block', 'trace']);
+const RESOURCES = new Set(['device', 'device_scan', 'host_interface', 'logic_diagram', 'measurement', 'logic_block', 'output_block', 'trace']);
 const key = (record: RecordInterest) => JSON.stringify([record.resource, record.id]);
 
 export default class RecordStream {

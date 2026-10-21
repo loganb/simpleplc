@@ -5,19 +5,22 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/pr
 const api = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() }));
 vi.mock('axios', () => ({ default: { create: () => api } }));
 import { Store } from '../../store';
-import type { DeviceFields, HostInterfaceFields, LogicInputBindingFields } from '../../store';
+import type { DeviceFields, DeviceScanFields, HostInterfaceFields, LogicInputBindingFields } from '../../store';
 import type { ReifiedQueryResult } from '../../lib/RestfulModelStore';
 import { InterfaceEditor } from './HardwareForms';
 import { DeviceForm } from './DeviceForm';
 import { DeviceScanPanel } from './DeviceScanPanel';
 import { HostInterfaceCard } from './HostInterfaceCard';
-const profile = { baud_rate: 9600, data_bits: 8, stop_bits: 1, parity: 'none' };
-const bus = { id: 1, name: 'Bus', port: '/dev/missing', ...profile, enabled: false,
-  configuration_revision: 4, scan_state: 'completed', scan_request_id: 'scan-a', scan_options: {}, scan_results: { completed: 1, total: 1, devices: [
-    { address: 1, profile_index: 0, profile, observed_at: new Date().toISOString(), driver_support: [
-      { driver: 'relay', support: 'maybe', reason: 'Binary registers', evidence: [] }, { driver: 'ntc', support: 'no', reason: 'Different ID', evidence: [] },
+const bus = { id: 1, name: 'Bus', port: '/dev/missing', baud_rate: 9600, data_bits: 8, stop_bits: 1, parity: 'none', enabled: false, port_present: true,
+  connection_state: 'disabled', connection_error: null } as unknown as HostInterfaceFields;
+const scanOf = (fields: Partial<DeviceScanFields> = {}): DeviceScanFields => ({
+  id: 9, host_interface_id: 1, first_address: 1, last_address: 247, state: 'done', completed: 247, total: 247, error: null,
+  started_at: null, finished_at: null, results: [
+    { address: 1, observed_at: new Date().toISOString(), driver_support: [
+      { driver: 'relay', support: 'maybe', reason: 'Binary registers', evidence: [{ kind: 'holding_registers', address: 0, status: 'ok', values: [0] }] },
+      { driver: 'ntc', support: 'no', reason: 'Different ID', evidence: [{ kind: 'holding_registers', address: 247, status: 'ok', values: [2532] }] },
     ] },
-  ] }, connection_state: 'disabled', connection_error: null } as unknown as HostInterfaceFields;
+  ], ...fields });
 const drivers = [
   { id: 'relay', name: 'Relay board', channel_count: 2, fields: ['inputs', 'outputs'], binary_outputs: true, configuration_effects: 'None',
     inputs: [{ path: 'inputs[0]', label: 'Input 1', value_type: 'boolean', units: null }, { path: 'inputs[1]', label: 'Input 2', value_type: 'boolean', units: null }],
@@ -27,20 +30,19 @@ const drivers = [
       { key: 'pull_up', label: 'Input pull-up', type: 'boolean', requires_power_cycle: false }] },
   { id: 'ntc', name: 'NTC board', channel_count: 1, fields: ['temperatures'], binary_outputs: false, configuration_effects: 'None', inputs: [], outputs: [] },
 ];
-const relayDevice = { id: 3, name: 'Relay', host_interface_id: 1, modbus_address: 3, driver: 'relay', configuration_revision: 7,
-  io_labels: { inputs: { 'inputs[0]': 'Boiler enable' }, outputs: {} }, inputs: drivers[0].inputs, outputs: drivers[0].outputs } as unknown as DeviceFields;
-const counterDevice = { id: 4, name: 'Flow', host_interface_id: 1, modbus_address: 2, driver: 'counter', configuration_revision: 2,
-  io_labels: {}, settings: { pull_up: true }, inputs: [], outputs: [] } as unknown as DeviceFields;
+const relayDevice = { id: 3, name: 'Relay', host_interface_id: 1, modbus_address: 3, driver: 'relay',   io_labels: { inputs: { 'inputs[0]': 'Boiler enable' }, outputs: {} }, inputs: drivers[0].inputs, outputs: drivers[0].outputs } as unknown as DeviceFields;
+const counterDevice = { id: 4, name: 'Flow', host_interface_id: 1, modbus_address: 2, driver: 'counter',   io_labels: {}, settings: { pull_up: true }, inputs: [], outputs: [] } as unknown as DeviceFields;
 const interfaces = Object.assign([{ ...bus, _found: true }], { _loaded: true }) as unknown as ReifiedQueryResult<HostInterfaceFields>;
-let current: { bus: HostInterfaceFields; inputBindings: Partial<LogicInputBindingFields>[] };
+let current: { bus: HostInterfaceFields; inputBindings: Partial<LogicInputBindingFields>[]; scans: DeviceScanFields[] };
 const index = <T extends { id: unknown },>(plural: string, rows: T[]) => ({ [plural]: rows, query: rows.map(r => r.id) });
 beforeEach(() => {
   Store.models = {}; // Fresh caches per test; models are recreated lazily by Store.m().
-  current = { bus, inputBindings: [] };
+  current = { bus, inputBindings: [], scans: [] };
   for (const method of [api.post, api.patch, api.delete]) method.mockReset().mockResolvedValue({ data: {} });
   api.get.mockReset().mockImplementation(async (url: string) => ({ data:
     url.startsWith('/drivers.json') ? index('drivers', drivers) :
     url.startsWith('/host_ports.json') ? index('host_ports', []) :
+    url.startsWith('/device_scans.json') ? index('device_scans', current.scans) :
     url.startsWith('/logic_input_bindings.json') ? index('logic_input_bindings', current.inputBindings as { id: number }[]) :
     url.startsWith('/logic_output_bindings.json') ? index('logic_output_bindings', []) :
     url.startsWith('/logic_inputs.json') ? index('logic_inputs', [{ id: 12, name: 'Supply temp' }]) :
@@ -72,7 +74,7 @@ describe('hardware editors', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(() => expect(close).toHaveBeenCalled());
     expect(api.patch).toHaveBeenCalledWith('/devices/3', {
-      device: expect.objectContaining({ configuration_revision: 7, io_labels: { outputs: { '2': 'Alarm relay' } } }),
+      device: expect.objectContaining({ io_labels: { outputs: { '2': 'Alarm relay' } } }),
     }, expect.anything());
   });
 
@@ -96,7 +98,7 @@ describe('hardware editors', () => {
     }, expect.anything());
   });
 
-  it('keeps an edit draft and its opening revision while reporting a save conflict', async () => {
+  it('keeps the draft and reports a failed save', async () => {
     const close = vi.fn();
     render(<InterfaceEditor editId={1} onClose={close} onRefresh={vi.fn()} />);
     const name = await screen.findByLabelText('Name');
@@ -104,26 +106,10 @@ describe('hardware editors', () => {
     api.patch.mockRejectedValue(conflict);
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     await screen.findByText('Configuration changed');
-    expect(api.patch).toHaveBeenCalledWith('/host_interfaces/1',
-      { host_interface: expect.objectContaining({ name: 'My draft', configuration_revision: 4 }) }, expect.anything());
+    const [, body] = api.patch.mock.calls[api.patch.mock.calls.length - 1];
+    expect(body.host_interface).toMatchObject({ name: 'My draft' });
     expect((name as HTMLInputElement).value).toBe('My draft');
     expect(close).not.toHaveBeenCalled();
-  });
-
-  it('compares a conflicted draft with the store record and keeps the draft against the shown revision', async () => {
-    render(<InterfaceEditor editId={1} onClose={vi.fn()} onRefresh={vi.fn()} />);
-    const name = await screen.findByLabelText('Name');
-    fireEvent.input(name, { target: { value: 'My draft' } });
-    api.patch.mockRejectedValueOnce(conflict);
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
-    current.bus = { ...bus, name: 'Theirs', configuration_revision: 5 };
-    fireEvent.click(await screen.findByRole('button', { name: 'Reload for comparison' }));
-    await screen.findByText(/"name": "Theirs"/);
-    fireEvent.click(screen.getByRole('button', { name: 'Keep my draft against this revision' }));
-    expect((name as HTMLInputElement).value).toBe('My draft');
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
-    await waitFor(() => expect(api.patch).toHaveBeenLastCalledWith('/host_interfaces/1',
-      { host_interface: expect.objectContaining({ name: 'My draft', configuration_revision: 5 }) }, expect.anything()));
   });
 
   it('waits for deletion and keeps the form visible on failure', async () => {
@@ -151,85 +137,139 @@ describe('hardware editors', () => {
 });
 
 describe('device scanning', () => {
-  it('requests and cancels a scan by patching the interface', async () => {
-    const idle = { ...bus, scan_state: 'idle', scan_results: {} } as HostInterfaceFields;
-    const view = render(<DeviceScanPanel iface={idle} devices={[]} onRefresh={vi.fn()} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Scan devices' }));
-    await waitFor(() => expect(api.patch).toHaveBeenCalledWith('/host_interfaces/1', { host_interface: {
-      scan_state: 'requested', scan_options: { first_address: 1, last_address: 247, profiles: [profile] } } }, expect.anything()));
-    view.rerender(<DeviceScanPanel iface={{ ...idle, scan_state: 'scanning' }} devices={[]} onRefresh={vi.fn()} />);
+  it('shows range inputs, starts a scan by creating one, and shows progress with cancel', async () => {
+    const view = render(<DeviceScanPanel iface={bus} devices={[]} onRefresh={vi.fn()} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Scan for devices' }));
+    fireEvent.input(screen.getByLabelText('Last address'), { target: { value: '40' } });
+    await waitFor(() => expect((screen.getByLabelText('Last address') as HTMLInputElement).value).toBe('40'));
+    fireEvent.click(screen.getByRole('button', { name: 'Start' }));
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith('/device_scans.json',
+      { device_scan: { host_interface_id: 1, first_address: 1, last_address: 40 } }, expect.anything()));
+    view.unmount();
+    current.scans = [scanOf({ state: 'running', completed: 10, total: 40, results: [] })];
+    render(<DeviceScanPanel iface={bus} devices={[]} onRefresh={vi.fn()} />);
+    await screen.findByText('Scanning 10/40');
+    expect((screen.getByLabelText('Scan progress') as HTMLProgressElement).value).toBe(10);
     fireEvent.click(screen.getByRole('button', { name: 'Cancel scan' }));
-    await waitFor(() => expect(api.patch).toHaveBeenLastCalledWith('/host_interfaces/1', { host_interface: { scan_state: 'cancelling' } }, expect.anything()));
-    view.rerender(<DeviceScanPanel iface={{ ...idle, scan_state: 'cancelling' }} devices={[]} onRefresh={vi.fn()} />);
-    expect((await screen.findByRole('button', { name: 'Cancelling…' }) as HTMLButtonElement).disabled).toBe(true);
+    await waitFor(() => expect(api.patch).toHaveBeenCalledWith('/device_scans/9', { device_scan: { state: 'cancelled' } }, expect.anything()));
+  });
+
+  it('says it is waiting for the poller while a scan is pending', async () => {
+    current.scans = [scanOf({ state: 'pending', completed: 0, results: [] })];
+    render(<DeviceScanPanel iface={bus} devices={[]} onRefresh={vi.fn()} />);
+    await screen.findByText('Waiting for the poller…');
+    expect(screen.queryByRole('button', { name: 'Scan for devices' })).toBeNull();
+  });
+
+  it('explains that the bus must be disabled and offers no scan while it is enabled', async () => {
+    render(<DeviceScanPanel iface={{ ...bus, enabled: true, connection_state: 'online' } as HostInterfaceFields} devices={[]} onRefresh={vi.fn()} />);
+    expect((await screen.findByRole('button', { name: 'Scan for devices' }) as HTMLButtonElement).disabled).toBe(true);
+    screen.getByText('Disable the bus to scan.');
   });
 
   it('reports a rejected scan request', async () => {
-    api.patch.mockRejectedValue({ response: { status: 409, data: { errors: { base: ['Disable the interface before scanning'] } } } });
-    render(<DeviceScanPanel iface={{ ...bus, scan_state: 'idle' } as HostInterfaceFields} devices={[]} onRefresh={vi.fn()} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Scan devices' }));
-    await screen.findByText('Disable the interface before scanning');
+    api.post.mockRejectedValue({ response: { status: 422, data: { errors: { base: ['A scan is already pending or running'] } } } });
+    render(<DeviceScanPanel iface={bus} devices={[]} onRefresh={vi.fn()} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Scan for devices' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Start' }));
+    await screen.findByText('A scan is already pending or running');
   });
 
-  it('shows all support verdicts and adds a new device only after an explicit driver choice', async () => {
+  it('says what to check when nothing responded', async () => {
+    current.scans = [scanOf({ results: [] })];
+    render(<DeviceScanPanel iface={bus} devices={[]} onRefresh={vi.fn()} />);
+    await screen.findByText(/No devices responded at 9600 baud, 8\/none\/1\. Check wiring, power and serial settings\./);
+  });
+
+  it('says why a scan failed', async () => {
+    current.scans = [scanOf({ state: 'failed', error: 'Poller restarted', results: [] })];
+    render(<DeviceScanPanel iface={bus} devices={[]} onRefresh={vi.fn()} />);
+    await screen.findByText('Scan failed: Poller restarted');
+  });
+
+  it('preselects the best driver, disables ruled-out ones, and adds a new device', async () => {
+    current.scans = [scanOf()];
     const refresh = vi.fn();
     render(<DeviceScanPanel iface={bus} devices={[]} onRefresh={refresh} />);
-    await screen.findByText(/Relay board/);
-    expect((screen.getByRole('radio', { name: /NTC board/ }) as HTMLInputElement).disabled).toBe(true);
-    const add = screen.getByRole('button', { name: 'Add as new device' }) as HTMLButtonElement;
-    expect(add.disabled).toBe(true);
-    fireEvent.click(screen.getByRole('radio', { name: /Relay board/ }));
-    fireEvent.click(add);
+    const driver = await screen.findByLabelText('Driver') as HTMLSelectElement;
+    await waitFor(() => expect(driver.value).toBe('relay'));
+    expect((screen.getByRole('option', { name: /NTC board/ }) as HTMLOptionElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Add as new device' }));
     await waitFor(() => expect(refresh).toHaveBeenCalled());
     expect(api.post).toHaveBeenCalledWith('/devices.json',
       { device: { host_interface_id: 1, name: 'Device at 1', driver: 'relay', modbus_address: 1 } }, expect.anything());
   });
 
+  it('leaves the driver unselected when every driver was ruled out', async () => {
+    const result = scanOf().results[0];
+    current.scans = [scanOf({ results: [{ ...result, driver_support: result.driver_support.map(v => ({ ...v, support: 'no' as const })) }] })];
+    render(<DeviceScanPanel iface={bus} devices={[]} onRefresh={vi.fn()} />);
+    expect(((await screen.findByLabelText('Driver')) as HTMLSelectElement).value).toBe('');
+    expect((screen.getByRole('button', { name: 'Add as new device' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
   it('points an existing device at a scan result by patching it', async () => {
-    render(<DeviceScanPanel iface={bus} devices={[relayDevice]} onRefresh={vi.fn()} />);
-    fireEvent.click(await screen.findByRole('radio', { name: /Relay board/ }));
+    current.scans = [scanOf()];
+    render(<DeviceScanPanel iface={bus} devices={[{ ...relayDevice, modbus_address: 7 }]} onRefresh={vi.fn()} />);
     // Not fireEvent.change: with preact/compat loaded it sends `input`, but a <select>'s onChange listens for `change`.
-    const useAs = screen.getByLabelText('Use as') as HTMLSelectElement;
+    const useAs = await screen.findByLabelText('Use as') as HTMLSelectElement;
     useAs.value = '3';
     fireEvent(useAs, new Event('change', { bubbles: true }));
     fireEvent.click(await screen.findByRole('button', { name: 'Use for device #3' }));
     await waitFor(() => expect(api.patch).toHaveBeenCalledWith('/devices/3',
-      { device: { driver: 'relay', modbus_address: 1, configuration_revision: 7 } }, expect.anything()));
+      { device: { driver: 'relay', modbus_address: 1 } }, expect.anything()));
   });
 
-  it('will not adopt a result found at serial settings the bus does not use', async () => {
-    const other = { ...bus, baud_rate: 19200 } as HostInterfaceFields;
-    render(<DeviceScanPanel iface={other} devices={[]} onRefresh={vi.fn()} />);
-    await screen.findByText(/Found at different serial settings/);
-    // Disabled by the enclosing fieldset, which the element's own .disabled doesn't reflect.
-    expect((await screen.findByRole('radio', { name: /Relay board/ })).matches(':disabled')).toBe(true);
-    expect(screen.getByRole('button', { name: 'Add as new device' }).matches(':disabled')).toBe(true);
+  it('shows an address that is already configured instead of an add form, warning when the evidence disagrees', async () => {
+    const result = scanOf().results[0];
+    current.scans = [scanOf({ results: [{ ...result, driver_support: [
+      { driver: 'relay', support: 'yes', reason: 'Matches', evidence: [] }, { driver: 'ntc', support: 'no', reason: 'Different ID', evidence: [] },
+    ] }] })];
+    const mine = { ...relayDevice, modbus_address: 1, driver: 'ntc' } as DeviceFields;
+    const view = render(<DeviceScanPanel iface={bus} devices={[mine]} onRefresh={vi.fn()} />);
+    await screen.findByText(/Configured as/);
+    expect(screen.queryByRole('button', { name: 'Add as new device' })).toBeNull();
+    screen.getByText(/disagrees with this driver; it looks more like Relay board/);
+    view.unmount();
+    render(<DeviceScanPanel iface={bus} devices={[{ ...mine, driver: 'relay' }]} onRefresh={vi.fn()} />);
+    await screen.findByText(/Configured as/);
+    expect(screen.queryByText(/disagrees/)).toBeNull();
+  });
+
+  it('explains the verdicts and the registers read in words', async () => {
+    current.scans = [scanOf()];
+    render(<DeviceScanPanel iface={bus} devices={[]} onRefresh={vi.fn()} />);
+    await screen.findByText('Why?');
+    screen.getByText('Binary registers');
+    screen.getByText('Holding register 247: ok, value 2532');
   });
 });
 
 describe('interface card', () => {
-  it('tracks fresh polls after enabling rather than counting old samples', async () => {
-    const device = { id: 3, name: 'Relay', last_polled_at: null, current_state: null } as DeviceFields;
+  it('enables a disabled bus with one plain patch', async () => {
     const refresh = vi.fn();
-    const props = { iface: bus, devices: [device], onEdit: vi.fn(), onRefresh: refresh };
-    const view = render(<HostInterfaceCard {...props} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Review and enable' }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Enable operation' }));
+    render(<HostInterfaceCard iface={bus} devices={[]} onEdit={vi.fn()} onRefresh={refresh} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Enable' }));
     await waitFor(() => expect(refresh).toHaveBeenCalled());
-    expect(api.patch).toHaveBeenCalledWith('/host_interfaces/1', { host_interface: { enabled: true, configuration_revision: 4 } }, expect.anything());
-    const enabled = { ...bus, enabled: true, connection_state: 'online' as const };
-    const good = (time: number) => ({ ...device, last_polled_at: new Date(time).toISOString(), current_state: { status: 'ok', error: null, data: {}, polled_at: '' } });
-    view.rerender(<HostInterfaceCard {...props} iface={enabled} devices={[good(Date.now() + 1000)]} />);
-    await screen.findByText('Waiting for two successful fresh polls per device…');
-    view.rerender(<HostInterfaceCard {...props} iface={enabled} devices={[good(Date.now() + 11000)]} />);
-    await screen.findByText('Verified: two successful fresh polls for every device.');
+    expect(api.patch).toHaveBeenCalledWith('/host_interfaces/1', { host_interface: { enabled: true } }, expect.anything());
   });
 
-  it('reports a failed disable and keeps the bus enabled', async () => {
-    api.patch.mockRejectedValue(conflict);
+  it('disables a running bus with one plain patch', async () => {
     const enabled = { ...bus, enabled: true, connection_state: 'online' } as HostInterfaceFields;
     render(<HostInterfaceCard iface={enabled} devices={[]} onEdit={vi.fn()} onRefresh={vi.fn()} />);
     fireEvent.click(screen.getByRole('button', { name: 'Disable' }));
-    await screen.findByText('Configuration changed');
+    await waitFor(() => expect(api.patch).toHaveBeenCalledWith('/host_interfaces/1', { host_interface: { enabled: false } }, expect.anything()));
+  });
+
+  it('reports the server refusing to enable a bus that is scanning', async () => {
+    api.patch.mockRejectedValue({ response: { status: 422, data: { errors: { enabled: ["can't be turned on while a scan is pending or running; cancel the scan first"] } } } });
+    render(<HostInterfaceCard iface={bus} devices={[]} onEdit={vi.fn()} onRefresh={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Enable' }));
+    await screen.findByText(/cancel the scan first/);
+  });
+
+  it('shows the connection state, disabled immediately', () => {
+    render(<HostInterfaceCard iface={bus} devices={[]} onEdit={vi.fn()} onRefresh={vi.fn()} />);
+    screen.getByText('disabled');
   });
 });

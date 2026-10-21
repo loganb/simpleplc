@@ -17,6 +17,8 @@ RSpec.describe "Logic blocks API", type: :request do
     }
 
     expect(response).to have_http_status(:created)
+    # Hints use the frontend store's model names.
+    expect(response.parsed_body.fetch("invalidates")).to eq("logic_block" => "queries", "logic_diagram" => "records")
     get "/logic_blocks", params: { logic_diagram_id: diagram.id }
     serialized = response.parsed_body.fetch("logic_blocks").first
     expect(serialized).to include(

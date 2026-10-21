@@ -1,13 +1,13 @@
 import type { TxnResult } from '../../lib/RestfulModelStore';
 import type {
+  DeviceScanFields,
   DriverSupport,
-  HostInterfaceFields,
   LogicInputBindingFields,
   LogicInputFields,
   LogicInstanceFields,
   LogicOutputBindingFields,
   LogicOutputFields,
-  SerialProfile,
+  ProbeEvidence,
 } from '../../store';
 
 /** A failed store transaction as operator-facing text: field errors when the server sent them. */
@@ -52,10 +52,27 @@ export function computeImpact(
   };
 }
 
-export const scanActive = (state: string) => state === 'requested' || state === 'scanning' || state === 'cancelling';
-export const sortedSupport = (list: DriverSupport[]) => [...list].sort((a, b) => ({ yes: 0, maybe: 1, no: 2 }[a.support] - { yes: 0, maybe: 1, no: 2 }[b.support]));
-/** A device found at other serial settings won't be polled until the bus uses them. */
-export const matchesBus = (profile: SerialProfile, iface: Pick<HostInterfaceFields, 'baud_rate' | 'data_bits' | 'stop_bits' | 'parity'>) =>
-  profile.baud_rate === iface.baud_rate && profile.data_bits === iface.data_bits && profile.stop_bits === iface.stop_bits && profile.parity === iface.parity;
+/** A pending or running scan holds the bus; anything else has ended. */
+export const scanActive = (state: DeviceScanFields['state']) => state === 'pending' || state === 'running';
+const SUPPORT_RANK = { yes: 0, maybe: 1, no: 2 };
+export const sortedSupport = (list: DriverSupport[]) => [...list].sort((a, b) => SUPPORT_RANK[a.support] - SUPPORT_RANK[b.support]);
+/** The most likely driver: `yes` before `maybe`; null when every driver ruled itself out. */
+export const bestSupport = (list: DriverSupport[]): DriverSupport | null => {
+  const [best] = sortedSupport(list);
+  return best && best.support !== 'no' ? best : null;
+};
+/** One register read as a sentence, e.g. "Holding register 247: ok, value 2532". */
+export function describeEvidence(item: ProbeEvidence): string {
+  const kind = item.kind === 'input_registers' ? 'Input' : 'Holding';
+  const where = Array.isArray(item.address) ? `registers ${item.address[0]}–${item.address[1]}` : `register ${item.address}`;
+  const values = item.values?.length ? `, ${item.values.length === 1 ? 'value' : 'values'} ${item.values.join(', ')}` : '';
+  return `${kind} ${where}: ${item.status}${values}${item.error ? ` (${item.error})` : ''}`;
+}
+/** The distinct reads behind a result's verdicts; each driver's evidence repeats the shared ones. */
+export function distinctEvidence(list: DriverSupport[]): ProbeEvidence[] {
+  const seen = new Map<string, ProbeEvidence>();
+  for (const verdict of list) for (const item of verdict.evidence ?? []) seen.set(JSON.stringify(item), item);
+  return [...seen.values()];
+}
 export const inputClass = 'mt-1 block w-full rounded border border-border bg-surface px-2 py-1.5 text-sm';
 export const buttonClass = 'rounded border border-border px-3 py-1.5 text-sm disabled:opacity-50';

@@ -1,13 +1,14 @@
 class HostInterface < ApplicationRecord
   include ObservesRecordChanges
   include PersistsObservations
-  include HardwareRevision
-  CONFIGURATION_FIELDS = %w[name port baud_rate data_bits stop_bits parity enabled].freeze
   before_validation :identify_port, if: -> { new_record? || will_save_change_to_port? }
   validates :port_identity, uniqueness: true, allow_nil: true
 
-  # Cancelling counts: the executor may still hold the port until it stops.
-  def scan_active? = %w[requested scanning cancelling].include?(scan_state)
+  # A scan needs the bus to itself, so a bus with one pending or running can't
+  # be turned back on until it's cancelled.
+  validate :not_enabled_while_scanning, if: -> { enabled? && will_save_change_to_enabled? }
+
+  def scan_active? = device_scans.active.exists?
 
   def identify_port
     found = HostPortScanner.scan.find do |p|
@@ -28,6 +29,7 @@ class HostInterface < ApplicationRecord
   STALE_AFTER = 35.seconds
 
   has_many :devices, dependent: :destroy
+  has_many :device_scans, dependent: :delete_all
 
   validates :name, presence: true
   validates :port, presence: true
@@ -58,32 +60,20 @@ class HostInterface < ApplicationRecord
   # The single state the UI renders, folding operator intent (`enabled`) together
   # with the poller's report (`online`) and how recently that report arrived.
   #
-  #   "online"    — the poller is holding the port open right now
-  #   "offline"   — the poller is reporting and is not holding the port
-  #   "releasing" — the operator turned the bus off and the poller still has the
-  #                 port; it will let go within a cycle
-  #   "disabled"  — the operator turned the bus off and the port is free
-  #   "unknown"   — nobody is reporting; the poller is down, wedged, or has never
-  #                 run since this bus was configured
+  #   "online"   — the poller is holding the port open right now
+  #   "offline"  — the poller is reporting and is not holding the port
+  #   "disabled" — the operator turned the bus off; the poller releases the port
+  #                within a cycle
+  #   "unknown"  — nobody is reporting; the poller is down, wedged, or has never
+  #                run since this bus was configured
   #
-  # "releasing" exists because disabling is a request, not an act: the web
-  # process never touches the serial port. Anything waiting for the bus — an
-  # operator with minicom, or eventually a device scan — needs to know the
-  # difference between "asked for" and "handed over".
-  #
-  # Staleness gates both directions, not just `online`: a poller that dies
-  # holding a port would otherwise leave `online` true forever, and a bus that
-  # no poller has ever seen is not the same thing as one a poller decided not
-  # to open.
+  # Staleness gates `online`/`offline`: a poller that dies holding a port would
+  # otherwise leave `online` true forever, and a bus that no poller has ever
+  # seen is not the same thing as one a poller decided not to open.
   def connection_state
+    return "disabled" unless enabled
+
     reporting = poller_reported_at.present? && poller_reported_at >= STALE_AFTER.ago
-
-    unless enabled
-      # A poller that stopped reporting is a poller that no longer holds
-      # anything: the kernel closed its ports when the process died.
-      return online && reporting ? "releasing" : "disabled"
-    end
-
     return "unknown" unless reporting
 
     online ? "online" : "offline"
@@ -106,5 +96,11 @@ class HostInterface < ApplicationRecord
       parity: parity.to_sym,
       &block
     )
+  end
+
+  private
+
+  def not_enabled_while_scanning
+    errors.add(:enabled, "can't be turned on while a scan is pending or running; cancel the scan first") if scan_active?
   end
 end
