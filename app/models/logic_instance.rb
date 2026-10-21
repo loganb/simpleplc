@@ -7,6 +7,7 @@ class LogicInstance < ApplicationRecord
   has_many :traces, dependent: :delete_all
   has_many :trace_rollups, dependent: :delete_all
   has_one :logic_instance_state, dependent: :delete
+  has_many :measurement_sources, dependent: :destroy
 
   validates :name, presence: true, uniqueness: true
   validates :update_period, presence: true,
@@ -64,6 +65,7 @@ class LogicInstance < ApplicationRecord
   end
 
   def clear_diagram_specific_records
+    measurement_sources.destroy_all
     logic_input_bindings.destroy_all
     logic_output_bindings.destroy_all
     traces.delete_all

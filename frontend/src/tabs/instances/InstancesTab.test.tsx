@@ -18,6 +18,7 @@ import type {
   LogicInstanceFields,
   LogicOutputBindingFields,
   LogicOutputFields,
+  MeasurementFields,
 } from '../../store';
 import type { AppUXTree } from '../../uxTree';
 import { InstancesTab } from './InstancesTab';
@@ -62,10 +63,12 @@ function renderTab({
   instances = loaded<LogicInstanceFields>(instance),
   inputBindings = loaded<LogicInputBindingFields>(),
   outputBindings = loaded<LogicOutputBindingFields>(),
+  measurements = loaded<MeasurementFields>(),
 }: {
   instances?: ReifiedQueryResult<LogicInstanceFields>;
   inputBindings?: ReifiedQueryResult<LogicInputBindingFields>;
   outputBindings?: ReifiedQueryResult<LogicOutputBindingFields>;
+  measurements?: ReifiedQueryResult<MeasurementFields>;
 } = {}) {
   const ux = new TreeStore<AppUXTree>().subtree().subtree('instances');
   return render(<InstancesTab
@@ -76,6 +79,8 @@ function renderTab({
     outputs={loaded(output)}
     inputBindings={inputBindings}
     outputBindings={outputBindings}
+    measurements={measurements}
+    onOpenMeasurements={vi.fn()}
     devices={loaded(device)}
     onRefresh={vi.fn()}
   />);
@@ -93,6 +98,13 @@ describe('InstancesTab', () => {
     expect(screen.getByText('FanCall')).toBeTruthy();
     expect(screen.getByRole('option', { name: 'Relay board · Supply probe' })).toBeTruthy();
     expect(screen.getByRole('option', { name: 'Relay board · Supply fan' })).toBeTruthy();
+  });
+
+  it('shows a measured icon beside an attached instance port', () => {
+    const measurement = { id: 5, name: 'Supply trend', logic_instance_id: 2, logic_input_id: 10, logic_output_id: null } as ExistingRecord<MeasurementFields>;
+    renderTab({ measurements: loaded(measurement) });
+    expect(screen.getByRole('button', { name: 'View measurements for SupplyTemp' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'View measurements for FanCall' })).toBeNull();
   });
 
   it('live-patches the master output gate and computes the selected instance', () => {

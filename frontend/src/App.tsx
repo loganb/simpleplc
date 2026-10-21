@@ -4,6 +4,7 @@ import { DashboardTab } from './tabs/dashboard/DashboardTab';
 import { DevicesTab } from './tabs/devices/DevicesTab';
 import { LogicTab } from './tabs/logic/LogicTab';
 import { InstancesTab } from './tabs/instances/InstancesTab';
+import { MeasurementsTab } from './tabs/measurements/MeasurementsTab';
 import {
   Device,
   HostInterface,
@@ -14,6 +15,7 @@ import {
   LogicInstance,
   LogicOutput,
   LogicOutputBinding,
+  Measurement,
   Store,
   connectLiveRecords,
 } from './store';
@@ -27,6 +29,7 @@ const TABS: { id: TabName; label: string }[] = [
   { id: 'dashboard', label: 'Dashboard' },
   { id: 'instances', label: 'Instances' },
   { id: 'logic', label: 'Logic' },
+  { id: 'measurements', label: 'Measurements' },
   { id: 'devices', label: 'Devices' },
 ];
 
@@ -59,6 +62,7 @@ export function App() {
   const {
     devices, interfaces, logicInputs, logicDiagrams, logicBlocks, logicOutputs,
     logicInstances, logicInputBindings, logicOutputBindings,
+    measurements,
   } = useLoaders(() => {
     const force = refreshToken > lastForcedRefreshToken.current;
     if (force) lastForcedRefreshToken.current = refreshToken;
@@ -71,9 +75,11 @@ export function App() {
     const logicInstances = Store.m(LogicInstance).queryFor(null, {}, force);
     const logicInputBindings = Store.m(LogicInputBinding).queryFor(null, {}, force);
     const logicOutputBindings = Store.m(LogicOutputBinding).queryFor(null, {}, force);
+    const measurements = Store.m(Measurement).queryFor(null, {}, force);
     return {
       devices, interfaces, logicInputs, logicDiagrams, logicBlocks, logicOutputs,
       logicInstances, logicInputBindings, logicOutputBindings,
+      measurements,
     };
   }, [Store], [refreshToken]);
 
@@ -134,6 +140,11 @@ export function App() {
             outputBindings={logicOutputBindings}
             devices={devices}
             onRefresh={refresh}
+            measurements={measurements}
+            onOpenMeasurements={(source) => {
+              rootUx.subtree('measurements').set('sourceFilter', source);
+              rootUx.setActiveSubtree('measurements');
+            }}
           />
         )}
 
@@ -153,6 +164,18 @@ export function App() {
             blocks={logicBlocks}
             outputs={logicOutputs}
             inputs={logicInputs}
+            onRefresh={refresh}
+          />
+        )}
+
+        {activeTab === 'measurements' && (
+          <MeasurementsTab
+            ux={rootUx.subtree('measurements')}
+            measurements={measurements}
+            instances={logicInstances}
+            diagrams={logicDiagrams}
+            inputs={logicInputs}
+            outputs={logicOutputs}
             onRefresh={refresh}
           />
         )}

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_13_000002) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_21_000000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -156,6 +156,45 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_13_000002) do
     t.index ["logic_diagram_id"], name: "index_logic_outputs_on_logic_diagram_id"
   end
 
+  create_table "measurement_rollups", force: :cascade do |t|
+    t.datetime "bucket_start", null: false
+    t.bigint "measurement_id", null: false
+    t.integer "sample_count", null: false
+    t.jsonb "stats", default: {}, null: false
+    t.index ["bucket_start"], name: "index_measurement_rollups_on_bucket_start"
+    t.index ["measurement_id", "bucket_start"], name: "index_measurement_rollups_on_measurement_id_and_bucket_start", unique: true
+  end
+
+  create_table "measurement_samples", force: :cascade do |t|
+    t.bigint "measurement_id", null: false
+    t.datetime "recorded_at", null: false
+    t.jsonb "value"
+    t.index ["measurement_id", "recorded_at", "id"], name: "idx_on_measurement_id_recorded_at_id_58357fb5c3"
+  end
+
+  create_table "measurement_sources", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.bigint "logic_input_id"
+    t.bigint "logic_instance_id", null: false
+    t.bigint "logic_output_id"
+    t.bigint "measurement_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["logic_input_id"], name: "index_measurement_sources_on_logic_input_id"
+    t.index ["logic_instance_id"], name: "index_measurement_sources_on_logic_instance_id"
+    t.index ["logic_output_id"], name: "index_measurement_sources_on_logic_output_id"
+    t.index ["measurement_id"], name: "index_measurement_sources_on_measurement_id", unique: true
+    t.check_constraint "(logic_input_id IS NOT NULL) <> (logic_output_id IS NOT NULL)", name: "measurement_source_one_port"
+  end
+
+  create_table "measurements", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.integer "lock_version", default: 0, null: false
+    t.string "name", null: false
+    t.string "units"
+    t.datetime "updated_at", null: false
+    t.index ["name"], name: "index_measurements_on_name", unique: true
+  end
+
   create_table "trace_rollups", force: :cascade do |t|
     t.datetime "bucket_start", null: false
     t.bigint "logic_instance_id", null: false
@@ -187,6 +226,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_13_000002) do
   add_foreign_key "logic_output_bindings", "logic_instances"
   add_foreign_key "logic_output_bindings", "logic_outputs"
   add_foreign_key "logic_outputs", "logic_diagrams"
+  add_foreign_key "measurement_rollups", "measurements", on_delete: :cascade
+  add_foreign_key "measurement_samples", "measurements", on_delete: :cascade
+  add_foreign_key "measurement_sources", "logic_inputs", on_delete: :cascade
+  add_foreign_key "measurement_sources", "logic_instances", on_delete: :cascade
+  add_foreign_key "measurement_sources", "logic_outputs", on_delete: :cascade
+  add_foreign_key "measurement_sources", "measurements", on_delete: :cascade
   add_foreign_key "trace_rollups", "logic_instances"
   add_foreign_key "traces", "logic_instances"
 end

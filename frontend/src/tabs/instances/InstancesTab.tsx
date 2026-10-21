@@ -18,21 +18,24 @@ import type {
   LogicInstanceFields,
   LogicOutputBindingFields,
   LogicOutputFields,
+  MeasurementFields,
 } from '../../store';
 import type { InstancesUXState } from '../../uxTree';
 
 type RecordOf<T extends { id: number }> = ExistingRecord<T>;
 
-export function InstancesTab({ instances, diagrams, inputs, outputs, inputBindings, outputBindings, devices, ux, onRefresh }: {
+export function InstancesTab({ instances, diagrams, inputs, outputs, inputBindings, outputBindings, measurements, devices, ux, onRefresh, onOpenMeasurements }: {
   instances: ReifiedQueryResult<LogicInstanceFields>;
   diagrams: ReifiedQueryResult<LogicDiagramFields>;
   inputs: ReifiedQueryResult<LogicInputFields>;
   outputs: ReifiedQueryResult<LogicOutputFields>;
   inputBindings: ReifiedQueryResult<LogicInputBindingFields>;
   outputBindings: ReifiedQueryResult<LogicOutputBindingFields>;
+  measurements: ReifiedQueryResult<MeasurementFields>;
   devices: ReifiedQueryResult<DeviceFields>;
   ux: InstancesUXState;
   onRefresh: () => void;
+  onOpenMeasurements: (source: { logic_instance_id: number; logic_input_id?: number; logic_output_id?: number }) => void;
 }) {
   const { selectedInstanceId, showInstanceForm } = useLoaders(() => ({
     selectedInstanceId: ux.get('selectedInstanceId') ?? null,
@@ -44,6 +47,7 @@ export function InstancesTab({ instances, diagrams, inputs, outputs, inputBindin
   const foundOutputs = found(outputs);
   const foundInputBindings = found(inputBindings);
   const foundOutputBindings = found(outputBindings);
+  const foundMeasurements = found(measurements);
   const foundDevices = found(devices);
   const current = foundInstances.find(instance => instance.id === selectedInstanceId) ?? foundInstances[0] ?? null;
 
@@ -87,7 +91,8 @@ export function InstancesTab({ instances, diagrams, inputs, outputs, inputBindin
           outputs={foundOutputs.filter(output => output.logic_diagram_id === current.logic_diagram_id)}
           inputBindings={foundInputBindings.filter(binding => binding.logic_instance_id === current.id)}
           outputBindings={foundOutputBindings.filter(binding => binding.logic_instance_id === current.id)}
-          devices={foundDevices} onRefresh={onRefresh}
+          measurements={foundMeasurements.filter(measurement => measurement.logic_instance_id === current.id)}
+          devices={foundDevices} onRefresh={onRefresh} onOpenMeasurements={onOpenMeasurements}
           onDeleted={() => { ux.set('selectedInstanceId', null); onRefresh(); }} />}
       </div>}
   </section>;
@@ -133,16 +138,18 @@ function NewInstanceForm({ diagrams, onClose, onCreated }: {
   </div>;
 }
 
-function InstanceEditor({ instance, diagrams, inputs, outputs, inputBindings, outputBindings, devices, onRefresh, onDeleted }: {
+function InstanceEditor({ instance, diagrams, inputs, outputs, inputBindings, outputBindings, measurements, devices, onRefresh, onDeleted, onOpenMeasurements }: {
   instance: RecordOf<LogicInstanceFields>;
   diagrams: RecordOf<LogicDiagramFields>[];
   inputs: RecordOf<LogicInputFields>[];
   outputs: RecordOf<LogicOutputFields>[];
   inputBindings: RecordOf<LogicInputBindingFields>[];
   outputBindings: RecordOf<LogicOutputBindingFields>[];
+  measurements: RecordOf<MeasurementFields>[];
   devices: RecordOf<DeviceFields>[];
   onRefresh: () => void;
   onDeleted: () => void;
+  onOpenMeasurements: (source: { logic_instance_id: number; logic_input_id?: number; logic_output_id?: number }) => void;
 }) {
   const [name, setName] = useState(instance.name);
   const [period, setPeriod] = useState(String(instance.update_period));
@@ -197,14 +204,16 @@ function InstanceEditor({ instance, diagrams, inputs, outputs, inputBindings, ou
     <ConnectionSection title="Input connections" helper="Values this diagram receives">
       {inputs.map(input => <InputConnection key={input.id} instance={instance} input={input}
         binding={inputBindings.find(candidate => candidate.logic_input_id === input.id) ?? null}
-        devices={devices} run={run} />)}
+        measured={measurements.some(candidate => candidate.logic_input_id === input.id)}
+        onOpenMeasurements={onOpenMeasurements} devices={devices} run={run} />)}
       {inputs.length === 0 && <EmptyConnections text="This diagram has no inputs." />}
     </ConnectionSection>
 
     <ConnectionSection title="Output connections" helper="Commands this diagram sends">
       {outputs.map(output => <OutputConnection key={output.id} instance={instance} output={output}
         binding={outputBindings.find(candidate => candidate.logic_output_id === output.id) ?? null}
-        devices={devices} run={run} />)}
+        measured={measurements.some(candidate => candidate.logic_output_id === output.id)}
+        onOpenMeasurements={onOpenMeasurements} devices={devices} run={run} />)}
       {outputs.length === 0 && <EmptyConnections text="This diagram has no outputs." />}
     </ConnectionSection>
 
@@ -232,9 +241,11 @@ function ConnectionSection({ title, helper, children }: { title: string; helper:
   </section>;
 }
 
-function InputConnection({ instance, input, binding, devices, run }: {
+function InputConnection({ instance, input, binding, measured, onOpenMeasurements, devices, run }: {
   instance: RecordOf<LogicInstanceFields>; input: RecordOf<LogicInputFields>;
   binding: RecordOf<LogicInputBindingFields> | null; devices: RecordOf<DeviceFields>[];
+  measured: boolean;
+  onOpenMeasurements: (source: { logic_instance_id: number; logic_input_id?: number; logic_output_id?: number }) => void;
   run: (txn: Txn | undefined) => void;
 }) {
   const compatible = devices.flatMap(device => device.inputs
@@ -262,7 +273,8 @@ function InputConnection({ instance, input, binding, devices, run }: {
     run(binding ? Store.m(LogicInputBinding).patch(binding.id, fields)
       : Store.m(LogicInputBinding).create({ ...fields, logic_instance_id: instance.id, logic_input_id: input.id }));
   };
-  return <ConnectionRow name={input.name} type={input.value_type} units={input.units}>
+  return <ConnectionRow name={input.name} type={input.value_type} units={input.units} measured={measured}
+    onOpenMeasurements={() => onOpenMeasurements({ logic_instance_id: instance.id, logic_input_id: input.id })}>
     <select aria-label={`${input.name} source`} class={selectClass} value={selectedSource} onChange={event => setSource((event.target as HTMLSelectElement).value)}>
       <option value="">Not connected</option>
       <option value="fixed_value">Fixed value</option>
@@ -279,14 +291,17 @@ function InputConnection({ instance, input, binding, devices, run }: {
   </ConnectionRow>;
 }
 
-function OutputConnection({ instance, output, binding, devices, run }: {
+function OutputConnection({ instance, output, binding, measured, onOpenMeasurements, devices, run }: {
   instance: RecordOf<LogicInstanceFields>; output: RecordOf<LogicOutputFields>;
   binding: RecordOf<LogicOutputBindingFields> | null; devices: RecordOf<DeviceFields>[];
+  measured: boolean;
+  onOpenMeasurements: (source: { logic_instance_id: number; logic_input_id?: number; logic_output_id?: number }) => void;
   run: (txn: Txn | undefined) => void;
 }) {
   const compatible = devices.flatMap(device => device.outputs.filter(target => target.value_type === output.value_type)
     .map(target => ({ device, target })));
-  return <ConnectionRow name={output.name} type={output.value_type} units={output.units}>
+  return <ConnectionRow name={output.name} type={output.value_type} units={output.units} measured={measured}
+    onOpenMeasurements={() => onOpenMeasurements({ logic_instance_id: instance.id, logic_output_id: output.id })}>
     <select aria-label={`${output.name} target`} class={selectClass} value={binding ? `${binding.device_id}:${binding.channel}` : ''}
       onChange={event => {
         const [deviceId, channel] = (event.target as HTMLSelectElement).value.split(':');
@@ -308,11 +323,19 @@ function OutputConnection({ instance, output, binding, devices, run }: {
   </ConnectionRow>;
 }
 
-function ConnectionRow({ name, type, units, children }: {
-  name: string; type: string; units: string | null; children: ComponentChildren;
+function ConnectionRow({ name, type, units, measured, onOpenMeasurements, children }: {
+  name: string; type: string; units: string | null; measured: boolean;
+  onOpenMeasurements: () => void; children: ComponentChildren;
 }) {
   return <div class="grid items-center gap-3 rounded-lg bg-surface-alt p-3 md:grid-cols-[16rem_minmax(0,1fr)]">
-    <div><p class="font-mono text-sm font-semibold">{name}</p><p class="text-xs capitalize text-text-muted">{type}{units ? ` · ${units}` : ''}</p></div>
+    <div><p class="flex items-center gap-1.5 font-mono text-sm font-semibold">{name}
+      {measured && <button type="button" aria-label={`View measurements for ${name}`} title="Measured"
+        class="rounded p-0.5 text-active hover:bg-active-bg" onClick={onOpenMeasurements}>
+        <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M1 12h3l2-7 3 9 2-6 1 2h3" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </button>}
+    </p><p class="text-xs capitalize text-text-muted">{type}{units ? ` · ${units}` : ''}</p></div>
     <div class="flex min-w-0 gap-2">{children}</div>
   </div>;
 }

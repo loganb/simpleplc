@@ -392,6 +392,47 @@ export const TraceRollup: ModelDefinition<TraceRollupFields> = {
   singleton: false,
 };
 
+export interface MeasurementFields {
+  id: number;
+  name: string;
+  units: string | null;
+  logic_instance_id: number | null;
+  logic_input_id: number | null;
+  logic_output_id: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export const Measurement: ModelDefinition<MeasurementFields> = {
+  name: 'measurement',
+  inflections: { plural: 'measurements', title: 'Measurement' },
+  singleton: false,
+};
+
+export interface MeasurementStats {
+  null_count: number;
+  number?: { min: number; max: number; mean: number; first?: number; last?: number; count: number };
+  boolean?: { true_fraction: number; true_count?: number; transitions?: number; first?: boolean; last?: boolean; count: number };
+}
+
+export type MeasurementPoint =
+  | { recorded_at: string; precision: 'exact'; value: number | boolean | null }
+  | { recorded_at: string; precision: 'rollup'; interval_seconds: number; sample_count: number; stats: MeasurementStats };
+
+export interface MeasurementSeriesFields {
+  id: string;
+  measurement_id: number;
+  since: string;
+  until: string;
+  points: MeasurementPoint[];
+}
+
+export const MeasurementSeries: ModelDefinition<MeasurementSeriesFields> = {
+  name: 'measurement_series',
+  inflections: { plural: 'measurement_series', title: 'MeasurementSeries' },
+  singleton: false,
+};
+
 // Open the connection with the mounted app, not merely by importing model definitions.
 export function connectLiveRecords() {
   const cableUrl = new URL('/cable', new URL(API_BASE, window.location.href));

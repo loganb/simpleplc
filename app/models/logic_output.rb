@@ -5,6 +5,7 @@ class LogicOutput < ApplicationRecord
 
   belongs_to :logic_diagram
   has_many :logic_output_bindings, dependent: :destroy
+  has_many :measurement_sources, dependent: :destroy
 
   validates :name, presence: true
   validates :name, uniqueness: { scope: :logic_diagram_id }

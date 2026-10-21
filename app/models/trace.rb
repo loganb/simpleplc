@@ -11,9 +11,14 @@ class Trace < ApplicationRecord
   # Results are computed before the single INSERT. This also locks and updates
   # the instance's state row inside the create transaction.
   before_create :compute!
+  after_create :record_measurements!
 
   def compute!
     Logic::TraceEvaluator.evaluate!(self)
+  end
+
+  def record_measurements!
+    Logic::MeasurementRecorder.record!(self)
   end
 
   private

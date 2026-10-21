@@ -1,7 +1,7 @@
 import TreeStore from './lib/TreeStore';
 import type { URLTreeState, UXTreeDefinition } from './lib/TreeStore';
 
-export type TabName = 'dashboard' | 'instances' | 'logic' | 'devices';
+export type TabName = 'dashboard' | 'instances' | 'logic' | 'measurements' | 'devices';
 
 export type DashboardUXTree = {
   data: Record<string, never>;
@@ -35,6 +35,13 @@ export type InstancesUXTree = {
   };
 };
 
+export type MeasurementsUXTree = {
+  data: {
+    selectedMeasurementId: number | null;
+    sourceFilter: { logic_instance_id: number; logic_input_id?: number; logic_output_id?: number } | null;
+  };
+};
+
 export type AppUXTree = UXTreeDefinition & {
   data: Record<string, never>;
   pages: {
@@ -42,6 +49,7 @@ export type AppUXTree = UXTreeDefinition & {
     instances: InstancesUXTree;
     devices: DevicesUXTree;
     logic: LogicUXTree;
+    measurements: MeasurementsUXTree;
   };
 };
 
@@ -50,5 +58,6 @@ export type DashboardUXState = URLTreeState<DashboardUXTree>;
 export type DevicesUXState = URLTreeState<DevicesUXTree>;
 export type InstancesUXState = URLTreeState<InstancesUXTree>;
 export type LogicUXState = URLTreeState<LogicUXTree>;
+export type MeasurementsUXState = URLTreeState<MeasurementsUXTree>;
 
 export const appTree = new TreeStore<AppUXTree>();

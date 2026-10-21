@@ -20,5 +20,7 @@ Rails.application.routes.draw do
   resources :logic_input_bindings
   resources :logic_output_bindings
   resources :traces
+  resources :measurements
+  resources :measurement_series, only: [ :index ]
   resources :trace_rollups, only: [ :index, :show ]
 end

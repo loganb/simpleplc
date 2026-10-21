@@ -18,7 +18,9 @@ module Logic
         backlog |= roll_up(instance, now)
         backlog |= prune_traces(instance, now)
       end
-      prune_rollups(now) || backlog
+      backlog |= prune_rollups(now)
+      backlog |= MeasurementHistoryMaintenance.new.run(now: now)
+      backlog
     end
 
     private
