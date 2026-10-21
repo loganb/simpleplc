@@ -15,7 +15,16 @@ RSpec.describe HardwareScan do
     interface.update!(baud_rate: 19_200)
     registers = Object.new
     def registers.[](range)
-      return 2532 if range == 247
+      return 2608 if range == 247
+      if range == (0..31)
+        return Array.new(32, Drivers::NT48C32::NO_PROBE_RAW).tap do |values|
+          values[0, 3] = [ 205, 205, 204 ]
+          values[24] = 210
+        end
+      end
+      if range == (32..63)
+        return Array.new(32, 6553).tap { |values| values[0, 3] = [ 1221, 1222, 1226 ] }
+      end
       range.is_a?(Range) ? Array.new(range.size, 0) : 0
     end
     client = stub_bus(slave: Struct.new(:holding_registers, :input_registers).new(registers, registers))
@@ -48,10 +57,84 @@ RSpec.describe HardwareScan do
     allow(slave).to receive(:holding_registers).and_raise(ModBus::Errors::ModBusTimeout)
     verdict = Drivers::NT48C32.device_support(Drivers::Probe.new(slave))
     expect(verdict[:support]).to eq("maybe")
-    regs = double
-    allow(regs).to receive(:[]).with(247).and_return(2608)
-    allow(slave).to receive(:holding_registers).and_return(regs)
-    expect(Drivers::NT48C32.device_support(Drivers::Probe.new(slave))[:support]).to eq("no")
+  end
+
+  it "identifies either NT48C32 product ID directly" do
+    [ 2532, 2632 ].each do |product_id|
+      registers = double
+      allow(registers).to receive(:[]).with(247).and_return(product_id)
+      slave = double(holding_registers: registers)
+      verdict = Drivers::NT48C32.device_support(Drivers::Probe.new(slave))
+      expect(verdict[:support]).to eq("yes")
+    end
+  end
+
+  it "identifies the observed 2608 product ID from the 32-channel NTC register fingerprint" do
+    holding = double
+    allow(holding).to receive(:[]).with(247).and_return(2608)
+    temperatures = Array.new(32, Drivers::NT48C32::NO_PROBE_RAW)
+    temperatures[0, 3] = [ 205, 205, 204 ]
+    temperatures[24] = 210
+    resistances = Array.new(32, 6553)
+    resistances[0, 3] = [ 1221, 1222, 1226 ]
+    input = double
+    allow(input).to receive(:[]) do |range|
+      case range
+      when 0..31 then temperatures
+      when 32..63 then resistances
+      else raise ModBus::Errors::IllegalDataAddress
+      end
+    end
+    slave = double(holding_registers: holding, input_registers: input)
+
+    verdict = Drivers::NT48C32.device_support(Drivers::Probe.new(slave))
+
+    expect(verdict[:support]).to eq("yes")
+    expect(verdict[:reason]).to include("2608", "32-channel")
+    expect(verdict[:evidence].map { |item| item[:address] }).to include([ 0, 31 ], [ 32, 63 ])
+  end
+
+  it "rejects product ID 2608 when the 32-channel banks are unsupported" do
+    holding = double
+    allow(holding).to receive(:[]).with(247).and_return(2608)
+    input = double
+    allow(input).to receive(:[]).with(0..31).and_raise(ModBus::Errors::IllegalDataAddress)
+    slave = double(holding_registers: holding, input_registers: input)
+
+    verdict = Drivers::NT48C32.device_support(Drivers::Probe.new(slave))
+
+    expect(verdict[:support]).to eq("no")
+  end
+
+  it "keeps product ID 2608 inconclusive when a bank read times out" do
+    holding = double
+    allow(holding).to receive(:[]).with(247).and_return(2608)
+    input = double
+    allow(input).to receive(:[]).with(0..31).and_return(Array.new(32, 205))
+    allow(input).to receive(:[]).with(32..63).and_raise(ModBus::Errors::ModBusTimeout)
+    slave = double(holding_registers: holding, input_registers: input)
+
+    verdict = Drivers::NT48C32.device_support(Drivers::Probe.new(slave))
+
+    expect(verdict[:support]).to eq("maybe")
+  end
+
+  it "keeps product ID 2608 inconclusive when no live channel above 20 proves the model size" do
+    holding = double
+    allow(holding).to receive(:[]).with(247).and_return(2608)
+    temperatures = Array.new(32, Drivers::NT48C32::NO_PROBE_RAW)
+    temperatures[0] = 205
+    resistances = Array.new(32, 6553)
+    resistances[0] = 1221
+    input = double
+    allow(input).to receive(:[]) do |range|
+      range == (0..31) ? temperatures : resistances
+    end
+    slave = double(holding_registers: holding, input_registers: input)
+
+    verdict = Drivers::NT48C32.device_support(Drivers::Probe.new(slave))
+
+    expect(verdict[:support]).to eq("maybe")
   end
 
   it "stops between serial transactions when cancelled and closes the client" do

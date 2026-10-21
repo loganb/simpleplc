@@ -311,7 +311,7 @@ processes. Options to weigh then:
 - a global pause-poller flag the scanner sets and clears
 
 Also open for phase 2: identification is weak. Only `NT48C32` has a product-ID
-register (`0x00F7` = 2532); `N4DSC08` and `N4D8B08` have to be inferred from
+register (`0x00F7` = 2632); `N4DSC08` and `N4D8B08` have to be inferred from
 which register ranges respond plausibly. And baud rate isn't discoverable
 either, so a thorough scan is an address sweep × a baud sweep — slow, and a
 reason to make it a background job rather than a synchronous request.

@@ -18,7 +18,7 @@ const scanOf = (fields: Partial<DeviceScanFields> = {}): DeviceScanFields => ({
   started_at: null, finished_at: null, results: [
     { address: 1, observed_at: new Date().toISOString(), driver_support: [
       { driver: 'relay', support: 'maybe', reason: 'Binary registers', evidence: [{ kind: 'holding_registers', address: 0, status: 'ok', values: [0] }] },
-      { driver: 'ntc', support: 'no', reason: 'Different ID', evidence: [{ kind: 'holding_registers', address: 247, status: 'ok', values: [2532] }] },
+      { driver: 'ntc', support: 'no', reason: 'Different product ID: 2608', evidence: [{ kind: 'holding_registers', address: 247, status: 'ok', values: [2608] }] },
     ] },
   ], ...fields });
 const drivers = [
@@ -241,7 +241,7 @@ describe('device scanning', () => {
     render(<DeviceScanPanel iface={bus} devices={[]} onRefresh={vi.fn()} />);
     await screen.findByText('Why?');
     screen.getByText('Binary registers');
-    screen.getByText('Holding register 247: ok, value 2532');
+    screen.getByText('Holding register 247: ok, value 2608');
   });
 });
 

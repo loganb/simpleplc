@@ -41,7 +41,8 @@ describe('hardware helpers', () => {
     expect(bestSupport([])).toBeNull();
   });
   it('describes register reads in words and lists shared evidence once', () => {
-    expect(describeEvidence({ kind: 'holding_registers', address: 247, status: 'ok', values: [2532] })).toBe('Holding register 247: ok, value 2532');
+    expect(describeEvidence({ kind: 'holding_registers', address: 247, status: 'ok', values: [2632] })).toBe('Holding register 247: ok, value 2632');
+    expect(describeEvidence({ kind: 'holding_registers', address: 247, status: 'ok', values: 2632 })).toBe('Holding register 247: ok, value 2632');
     expect(describeEvidence({ kind: 'input_registers', address: [0, 3], status: 'ok', values: [1, 2, 3, 4] })).toBe('Input registers 0–3: ok, values 1, 2, 3, 4');
     expect(describeEvidence({ kind: 'holding_registers', address: 0, status: 'timeout', error: 'no reply' })).toBe('Holding register 0: timeout (no reply)');
     const read = { kind: 'holding_registers', address: 0, status: 'ok', values: [0] };

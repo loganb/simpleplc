@@ -61,11 +61,12 @@ export const bestSupport = (list: DriverSupport[]): DriverSupport | null => {
   const [best] = sortedSupport(list);
   return best && best.support !== 'no' ? best : null;
 };
-/** One register read as a sentence, e.g. "Holding register 247: ok, value 2532". */
+/** One register read as a sentence, e.g. "Holding register 247: ok, value 2632". */
 export function describeEvidence(item: ProbeEvidence): string {
   const kind = item.kind === 'input_registers' ? 'Input' : 'Holding';
   const where = Array.isArray(item.address) ? `registers ${item.address[0]}–${item.address[1]}` : `register ${item.address}`;
-  const values = item.values?.length ? `, ${item.values.length === 1 ? 'value' : 'values'} ${item.values.join(', ')}` : '';
+  const readings = item.values === undefined ? [] : Array.isArray(item.values) ? item.values : [item.values];
+  const values = readings.length ? `, ${readings.length === 1 ? 'value' : 'values'} ${readings.join(', ')}` : '';
   return `${kind} ${where}: ${item.status}${values}${item.error ? ` (${item.error})` : ''}`;
 }
 /** The distinct reads behind a result's verdicts; each driver's evidence repeats the shared ones. */

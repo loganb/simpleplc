@@ -94,7 +94,7 @@ export const Driver: ModelDefinition<DriverFields> = {
 };
 /** One register read a scan made, and what came back. */
 export interface ProbeEvidence {
-  kind: string; address: number | [number, number]; status: string; values?: number[]; error?: string;
+  kind: string; address: number | [number, number]; status: string; values?: number | number[]; error?: string;
 }
 export interface DriverSupport { driver: string; support: 'yes' | 'no' | 'maybe'; reason: string; evidence: ProbeEvidence[] }
 export interface ScanResult { address: number; observed_at: string; driver_support: DriverSupport[] }
