@@ -64,6 +64,21 @@ function StatusBadge({ status }: { status: string | null }) {
 }
 
 function DeviceData({ data }: { data: Record<string, unknown> }) {
+  if (Array.isArray(data.counts) && Array.isArray(data.frequencies)) {
+    const counts = data.counts as number[];
+    const frequencies = data.frequencies as number[];
+    return (
+      <div class="grid grid-cols-2 gap-1">
+        {counts.map((count, i) => (
+          <div key={i} class="flex justify-between rounded bg-surface-alt px-2 py-1 text-sm">
+            <span class="text-text-muted">Ch {i + 1}</span>
+            <span class="font-mono font-medium">{count} ({frequencies[i]} Hz)</span>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
   if ('temperatures' in data) {
     const temps = data.temperatures as (number | null)[];
     const active = temps
