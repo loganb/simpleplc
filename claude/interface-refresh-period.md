@@ -23,4 +23,4 @@ Use fake Modbus clients in RSpec and frontend component tests. Do not start anot
 
 ## Implementation status
 
-The migration, poller schedule, API, editor, and freshness display are implemented. The development and test databases have the migration applied. Production has not been migrated or restarted. Verification: 335 RSpec examples pass; 68 frontend tests pass; TypeScript typecheck and frontend build pass. The running development poller must be restarted to load the new scheduling code.
+The migration, poller schedule, API, editor, and freshness display are implemented and deployed from `main` at `26f4dea`. On the main branch, 344 RSpec examples and 77 frontend tests pass; TypeScript typecheck and frontend build pass. The production migration is applied and all services are active with zero restarts. The running development poller must be restarted to load the new scheduling code.

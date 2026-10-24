@@ -234,3 +234,15 @@ resumed fresh `ok` polls with no output-write errors; the active instance's
 eight bindings all computed false and every physical output remained off. The
 frontend install now reports one high-severity npm audit finding; it was not
 changed during this deployment.
+
+## Interface update period deployed — 2026-10-24
+
+Cherry-picked the production pulse-counter dashboard commit and interface
+update-period commit onto `main`, then deployed `26f4dea`. The production
+database migration gave interface 1 the 10-second default. The frontend build
+succeeded; the target, web, poller, and logic runner are active with zero
+restarts. Direct database observations show the interface online with fresh
+heartbeats, and devices 3, 5, and 6 resumed fresh `ok` polls across two checks.
+Device 4 continued to report a read timeout, also present in the poller log
+before this deployment. No requests were sent to production port 3001 during
+verification. npm reported five audit findings (two moderate, three high).
