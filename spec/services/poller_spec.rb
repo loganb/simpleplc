@@ -3,7 +3,7 @@ require "tmpdir"
 
 # FakeRtuClient and FakePollerDriver live in spec/support/fake_modbus.rb.
 RSpec.describe Poller do
-  subject(:poller) { described_class.new }
+  subject(:poller) { described_class.new(clock: -> { @time || 0.0 }) }
 
   # A real path on disk, so HostInterface#port_present? answers honestly rather
   # than being stubbed out.
@@ -36,7 +36,9 @@ RSpec.describe Poller do
 
   describe "holding the port open" do
     it "opens the port once and reuses it across cycles" do
-      2.times { poller.run_cycle }
+      poller.run_cycle
+      @time = 10.0
+      poller.run_cycle
 
       expect(ModBus::RTUClient).to have_received(:connect).once
       expect(clients.sole).not_to be_closed
@@ -46,7 +48,9 @@ RSpec.describe Poller do
     it "reuses driver instances, so a driver's setup writes happen once per connection" do
       # Drivers::N4D8B08#configure! writes the relationship register; rebuilding
       # a driver every cycle would mean a bus write every 10 seconds forever.
-      2.times { poller.run_cycle }
+      poller.run_cycle
+      @time = 10.0
+      poller.run_cycle
 
       expect(FakePollerDriver.instantiations).to eq(1)
     end
@@ -75,6 +79,68 @@ RSpec.describe Poller do
       poller.run_cycle
 
       expect(ModBus::RTUClient).to have_received(:connect).once
+    end
+  end
+
+  describe "interface update periods" do
+    it "schedules interfaces independently" do
+      other_port = File.join(File.dirname(port_path), "ttyUSB1")
+      FileUtils.touch(other_port)
+      other = HostInterface.create!(name: "Slow Bus", port: other_port, update_period: 30)
+      Device.create!(name: "Sensor", host_interface: other, driver: "FakePollerDriver", modbus_address: 1)
+      poller.run_cycle
+      expect(FakePollerDriver.reads).to eq(2)
+      @time = 10.0
+      poller.run_cycle
+      expect(FakePollerDriver.reads).to eq(3)
+      @time = 30.0
+      poller.run_cycle
+      expect(FakePollerDriver.reads).to eq(5)
+    end
+
+    it "reads only when due and applies a period edit immediately without reconnecting" do
+      poller.run_cycle
+      @time = 9.0
+      poller.run_cycle
+      expect(FakePollerDriver.reads).to eq(1)
+      @time = 10.0
+      poller.run_cycle
+      expect(FakePollerDriver.reads).to eq(2)
+      interface.reload.update!(update_period: 30)
+      @time = 11.0
+      poller.run_cycle
+      expect(FakePollerDriver.reads).to eq(3)
+      expect(ModBus::RTUClient).to have_received(:connect).once
+      @time = 41.0
+      poller.run_cycle
+      expect(FakePollerDriver.reads).to eq(4)
+    end
+
+    it "reads immediately after serial settings force a reconnect" do
+      poller.run_cycle
+      interface.reload.update!(baud_rate: 19_200)
+      @time = 1.0
+      poller.run_cycle
+      expect(FakePollerDriver.reads).to eq(2)
+      expect(ModBus::RTUClient).to have_received(:connect).twice
+    end
+
+    it "does not backfill missed reads after a delayed cycle" do
+      poller.run_cycle
+      @time = 100.0
+      poller.run_cycle
+      @time = 101.0
+      poller.run_cycle
+      expect(FakePollerDriver.reads).to eq(2)
+    end
+
+    it "releases a disabled interface before its next read is due" do
+      poller.run_cycle
+      interface.reload.update!(enabled: false)
+      @time = 1.0
+      poller.run_cycle
+      expect(clients.sole).to be_closed
+      expect(FakePollerDriver.reads).to eq(1)
     end
   end
 
@@ -465,6 +531,7 @@ RSpec.describe Poller do
     it "flushes after a device fails, so its stale bytes can't reach the next transaction" do
       poller.run_cycle
       FakePollerDriver.read_behaviour = -> { raise ModBus::Errors::ModBusTimeout, "timed out" }
+      @time = 10.0
 
       expect { poller.run_cycle }.to change { clients.sole.flushes }.by(1)
     end
@@ -477,6 +544,7 @@ RSpec.describe Poller do
       poller.run_cycle
       before = clients.sole.flushes
 
+      @time = 10.0
       poller.run_cycle
 
       expect(clients.sole.flushes).to eq(before + 1)
@@ -487,6 +555,7 @@ RSpec.describe Poller do
       allow(clients.sole).to receive(:flush_line).and_raise(Errno::EIO)
       FakePollerDriver.read_behaviour = -> { raise ModBus::Errors::ModBusTimeout, "timed out" }
 
+      @time = 10.0
       poller.run_cycle
 
       expect(clients.sole).to be_closed

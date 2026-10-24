@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_21_000000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_24_000000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -61,6 +61,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_21_000000) do
     t.string "port", null: false
     t.string "port_identity"
     t.integer "stop_bits", default: 1, null: false
+    t.integer "update_period", default: 10, null: false
     t.datetime "updated_at", null: false
     t.index ["port_identity"], name: "index_host_interfaces_on_port_identity", unique: true
   end

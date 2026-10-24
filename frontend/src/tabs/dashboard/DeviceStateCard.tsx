@@ -15,7 +15,8 @@ export function DeviceStateCard({ device, interfaces }: {
   // whenever it last worked. They're kept — the last good value is the most
   // useful thing to look at when diagnosing why a bus went away — but they must
   // not be presented as current.
-  const stale = !d.last_polled_at || Date.now() - Date.parse(d.last_polled_at) > 35000 || (ifaceFound !== null && (!ifaceFound.enabled || ifaceFound.connection_state !== 'online'));
+  const maxSampleAge = Math.max(35, (ifaceFound?.update_period ?? 10) * 3) * 1000;
+  const stale = !d.last_polled_at || Date.now() - Date.parse(d.last_polled_at) > maxSampleAge || (ifaceFound !== null && (!ifaceFound.enabled || ifaceFound.connection_state !== 'online'));
 
   return (
     <div class="rounded-lg border border-border bg-surface p-4 space-y-3">

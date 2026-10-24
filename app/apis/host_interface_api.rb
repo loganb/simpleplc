@@ -11,7 +11,7 @@ class HostInterfaceApi < RestfulApi
   # and `poller_reported_at` are the poller's to write and are deliberately not
   # permitted — a client that could set `online` could fake a bus being held.
   def create_params(params)
-    params.require(:host_interface).permit(:name, :enabled, :port, :baud_rate, :data_bits, :stop_bits, :parity)
+    params.require(:host_interface).permit(:name, :enabled, :port, :baud_rate, :data_bits, :stop_bits, :parity, :update_period)
   end
 
   def create(params)
@@ -41,6 +41,7 @@ class HostInterfaceApi < RestfulApi
       data_bits:       hi.data_bits,
       stop_bits:       hi.stop_bits,
       parity:          hi.parity,
+      update_period:   hi.update_period,
       enabled:         hi.enabled,
       # Computed, not columns: whether the configured port exists right now, and
       # the poller's report folded together with how recently it arrived.

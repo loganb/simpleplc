@@ -1,5 +1,6 @@
 class Poller
   POLL_INTERVAL = 1.second
+  Schedule = Data.define(:due_at, :period)
   # Every this many cycles, the log gets a summary of cycle times.
   CYCLE_LOG_EVERY = 60
 
@@ -13,11 +14,13 @@ class Poller
   # one device is unhappy, not that the bus is dead.
   CONNECTION_ERRORS = [ SystemCallError, IOError ].freeze
 
-  def initialize
+  def initialize(clock: -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) })
     # host_interface_id => Poller::Connection. Keyed by id rather than by record
     # so a development-mode class reload can't strand an open port behind a
     # stale HostInterface instance.
     @connections = {}
+    @schedules = {}
+    @clock = clock
     @stopping = false
     # Writes buffered during a cycle and persisted together at its end, so serial
     # IO never waits on the database and a cycle costs one commit.
@@ -79,6 +82,7 @@ class Poller
 
     interfaces.each do |iface|
       iface.reload
+      @schedules.delete(iface.id) unless iface.enabled?
       scan = iface.enabled? ? nil : iface.device_scans.find_by(state: "pending")
       if scan
         # The scan sweeps synchronously and needs the port to itself.
@@ -89,14 +93,25 @@ class Poller
         next
       end
       connection = connection_for(iface)
-      next unless connection
+      unless connection
+        @schedules.delete(iface.id)
+        next
+      end
 
       connection.retain_drivers_for(iface.devices.map(&:id))
+      schedule = @schedules[iface.id]
+      if schedule && schedule.period == iface.update_period && @clock.call < schedule.due_at
+        report_connection(iface, online: true)
+        next
+      end
+
       poll_interface(iface, connection, output_writer, output_commands_by_device_id)
+      @schedules[iface.id] = Schedule.new(@clock.call + iface.update_period, iface.update_period) if @connections.key?(iface.id)
     end
 
     # Interfaces deleted since the last cycle still hold an open port.
     release(@connections.keys - interfaces.map(&:id))
+    @schedules.delete_if { |id, _| interfaces.none? { |iface| iface.id == id } }
   ensure
     flush_pending
   end
@@ -210,6 +225,7 @@ class Poller
 
   def release(interface_ids)
     interface_ids.each do |id|
+      @schedules.delete(id)
       connection = @connections.delete(id)
       connection&.close
     end

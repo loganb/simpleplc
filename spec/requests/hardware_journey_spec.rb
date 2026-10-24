@@ -41,7 +41,8 @@ RSpec.describe "Hardware setup journey", type: :request do
       expect(response).to have_http_status(:ok)
       post "/device_scans", params: { device_scan: { host_interface_id: bus.id, first_address: 1, last_address: 3 } }, as: :json
       expect(response).to have_http_status(:created)
-      poller = Poller.new
+      monotonic_now = 0.0
+      poller = Poller.new(clock: -> { monotonic_now })
       poller.run_cycle
       get "/device_scans", params: { q: { host_interface_id: bus.id }.to_json }
       scanned = response.parsed_body.fetch("device_scans").sole
@@ -59,6 +60,7 @@ RSpec.describe "Hardware setup journey", type: :request do
       poller.run_cycle
       first = relay.reload.last_polled_at
       travel 10.seconds do
+        monotonic_now = bus.reload.update_period.to_f
         poller.run_cycle
         expect(relay.reload.last_polled_at).to be > first
       end

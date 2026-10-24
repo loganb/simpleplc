@@ -85,7 +85,7 @@ export function InterfaceEditor({ editId, prefill, onClose, onRefresh }: {
   const { devices } = useLoaders(() => ({ devices: Store.m(Device).queryFor(null, {}) }), [Store], []);
   const busDevices = (devices.filter(d => d._found) as ExistingRecord<DeviceFields>[]).filter(d => d.host_interface_id === editId);
   return <Editor model={HostInterface} editId={editId} deletes={busDevices}
-    defaults={{ name: prefill?.name || '', port: prefill?.port || '', baud_rate: 9600, data_bits: 8, stop_bits: 1, parity: 'none' }} onClose={onClose} onRefresh={onRefresh}>
+    defaults={{ name: prefill?.name || '', port: prefill?.port || '', baud_rate: 9600, data_bits: 8, stop_bits: 1, parity: 'none', update_period: 10 }} onClose={onClose} onRefresh={onRefresh}>
     {(f, change) => <>
       <p class="text-sm text-text-muted">Changes apply to a running bus within a poll cycle. New buses start disabled.</p>
       <label class="block text-sm">Name<input class={input} value={String(f.name)} onInput={e => change('name', e.currentTarget.value)} /></label>
@@ -103,6 +103,7 @@ export function InterfaceEditor({ editId, prefill, onClose, onRefresh }: {
         <label>Data bits<select class={input} value={String(f.data_bits)} onChange={e => change('data_bits', Number(e.currentTarget.value))}>{[5, 6, 7, 8].map(n => <option value={n}>{n}</option>)}</select></label>
         <label>Stop bits<select class={input} value={String(f.stop_bits)} onChange={e => change('stop_bits', Number(e.currentTarget.value))}>{[1, 2].map(n => <option value={n}>{n}</option>)}</select></label>
         <label>Parity<select class={input} value={String(f.parity)} onChange={e => change('parity', e.currentTarget.value)}>{['none', 'even', 'odd'].map(v => <option value={v}>{v}</option>)}</select></label>
+        <label>Update period (seconds)<input type="number" min="1" max="300" step="1" class={input} value={String(f.update_period)} onInput={e => change('update_period', e.currentTarget.value === '' ? '' : Number(e.currentTarget.value))} /></label>
       </div>
     </>}
   </Editor>;

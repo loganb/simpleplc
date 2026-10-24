@@ -1,6 +1,17 @@
 require "rails_helper"
 
 RSpec.describe HostInterface, type: :model do
+  it "defaults to a ten-second update period and rejects periods outside 1..300 seconds" do
+    iface = described_class.new(name: "Bus", port: "/dev/missing")
+    expect(iface.update_period).to eq(10)
+    [ 0, 301, 1.5 ].each do |period|
+      iface.update_period = period
+      expect(iface).not_to be_valid
+    end
+    iface.update_period = 30
+    expect(iface).to be_valid
+  end
+
   it "requires a name so the UI has something readable to show for a by-id port" do
     interface = described_class.new(
       name: "",

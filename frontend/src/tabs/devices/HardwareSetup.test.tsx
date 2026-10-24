@@ -11,7 +11,7 @@ import { InterfaceEditor } from './HardwareForms';
 import { DeviceForm } from './DeviceForm';
 import { DeviceScanPanel } from './DeviceScanPanel';
 import { HostInterfaceCard } from './HostInterfaceCard';
-const bus = { id: 1, name: 'Bus', port: '/dev/missing', baud_rate: 9600, data_bits: 8, stop_bits: 1, parity: 'none', enabled: false, port_present: true,
+const bus = { id: 1, name: 'Bus', port: '/dev/missing', baud_rate: 9600, data_bits: 8, stop_bits: 1, parity: 'none', update_period: 10, enabled: false, port_present: true,
   connection_state: 'disabled', connection_error: null } as unknown as HostInterfaceFields;
 const scanOf = (fields: Partial<DeviceScanFields> = {}): DeviceScanFields => ({
   id: 9, host_interface_id: 1, first_address: 1, last_address: 247, state: 'done', completed: 247, total: 247, error: null,
@@ -56,6 +56,16 @@ afterEach(cleanup);
 const conflict = { response: { status: 409, data: { errors: { base: ['Configuration changed'] } } } };
 
 describe('hardware editors', () => {
+  it('saves an interface update period through the store', async () => {
+    render(<InterfaceEditor editId={1} onClose={vi.fn()} onRefresh={vi.fn()} />);
+    const period = await screen.findByLabelText('Update period (seconds)') as HTMLInputElement;
+    expect(period.value).toBe('10');
+    fireEvent.input(period, { target: { value: '30' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(api.patch).toHaveBeenCalledWith('/host_interfaces/1',
+      { host_interface: expect.objectContaining({ update_period: 30 }) }, expect.anything()));
+  });
+
   it('closes the Device modal with Escape', async () => {
     const close = vi.fn();
     render(<DeviceForm editId={3} interfaces={interfaces} onClose={close} onRefresh={vi.fn()} />);

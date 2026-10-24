@@ -106,6 +106,8 @@ export interface HostInterfaceFields {
   data_bits: number;
   stop_bits: number;
   parity: string;
+  /** Seconds between hardware reads and output writes on this bus. */
+  update_period: number;
   /** Operator intent: should the poller open this bus at all. Writable from here. */
   enabled: boolean;
   /** Whether `port` currently resolves on the host — false means the bus is missing. */

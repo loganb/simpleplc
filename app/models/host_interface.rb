@@ -37,6 +37,8 @@ class HostInterface < ApplicationRecord
   validates :data_bits, inclusion: { in: 5..8 }
   validates :stop_bits, inclusion: { in: [ 1, 2 ] }
   validates :parity, inclusion: { in: PARITIES }
+  validates :update_period, presence: true,
+    numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: 300 }
 
   # Whether this interface's port currently exists on the host. A configured
   # interface whose adapter has been unplugged (or whose stable alias no longer

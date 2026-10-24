@@ -12,7 +12,7 @@ export function HostInterfaceCard({ iface, devices, onEdit, onRefresh }: { iface
   return <section class="rounded-lg border border-border bg-surface p-4 space-y-3">
     <div class="flex items-start justify-between"><h3 class="font-semibold">{iface.name}</h3><span class="text-sm capitalize">{!iface.port_present ? 'Missing · ' : ''}{iface.connection_state}</span></div>
     <p class="text-xs font-mono break-all">{iface.port}</p>
-    <p class="text-sm text-text-muted">{iface.baud_rate} baud · {iface.data_bits}/{iface.parity}/{iface.stop_bits}</p>
+    <p class="text-sm text-text-muted">{iface.baud_rate} baud · {iface.data_bits}/{iface.parity}/{iface.stop_bits} · every {iface.update_period}s</p>
     {iface.connection_error && <p class="text-error text-sm">{iface.connection_error}</p>}
     {error && <p role="alert" class="text-error">{error}</p>}
     <div class="flex flex-wrap gap-2">

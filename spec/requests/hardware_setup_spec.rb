@@ -3,6 +3,17 @@ require "rails_helper"
 RSpec.describe "Hardware setup API", type: :request do
   let(:interface) { HostInterface.create!(name: "Bus", port: "/dev/missing", enabled: false) }
 
+  it "exposes and updates the interface period" do
+    get "/host_interfaces/#{interface.id}"
+    expect(response.parsed_body.fetch("host_interfaces").first.fetch("update_period")).to eq(10)
+    patch "/host_interfaces/#{interface.id}", params: { host_interface: { update_period: 30 } }
+    expect(response).to have_http_status(:ok)
+    expect(interface.reload.update_period).to eq(30)
+    patch "/host_interfaces/#{interface.id}", params: { host_interface: { update_period: 0 } }
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(interface.reload.update_period).to eq(30)
+  end
+
   it "lists friendly drivers and rejects arbitrary Ruby classes" do
     get "/drivers"
     expect(response).to have_http_status(:ok)

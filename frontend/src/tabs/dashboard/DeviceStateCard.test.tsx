@@ -28,3 +28,16 @@ it('shows both pulse counter channels with their matching frequencies', () => {
   expect(screen.getByText('Ch 2').nextElementSibling?.textContent).toBe('4294967295 (2.75 Hz)');
   expect(screen.queryByText(/"counts"/)).toBeNull();
 });
+
+it('uses the interface period when deciding whether a reading is stale', () => {
+  const device = {
+    _found: true, id: 4, name: 'Sensor', host_interface_id: 1, modbus_address: 2,
+    last_polled_at: new Date(Date.now() - 60_000).toISOString(), current_state: { status: 'ok', error: null, data: {}, polled_at: '' },
+  } as unknown as ReifiedQueryResult<DeviceFields>[number];
+  const iface = { _found: true, id: 1, name: 'Bus', enabled: true, connection_state: 'online', update_period: 30 } as unknown as HostInterfaceFields;
+  const interfaces = [iface] as unknown as ReifiedQueryResult<HostInterfaceFields>;
+  const view = render(<DeviceStateCard device={device} interfaces={interfaces} />);
+  expect(screen.queryByText('Stale')).toBeNull();
+  view.rerender(<DeviceStateCard device={device} interfaces={[{ ...iface, update_period: 10 }] as unknown as ReifiedQueryResult<HostInterfaceFields>} />);
+  expect(screen.getByText('Stale')).toBeTruthy();
+});
