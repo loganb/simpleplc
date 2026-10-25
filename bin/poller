@@ -2,4 +2,8 @@
 # Device state polling daemon — see claude/deployment.md.
 require_relative "../config/environment"
 
+# Under systemd stdout is a pipe, so Ruby block-buffers it and journald stamps
+# whole batches with one time. Line timing matters for correlating bus faults.
+$stdout.sync = true
+
 Poller.new.run
