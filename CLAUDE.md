@@ -1,5 +1,7 @@
 # Claude Code Instructions
 
+Read AGENTS.md too. 
+
 ## Running Things (read this before hunting for `ruby`)
 
 Ruby 4.0.2 and Node 22 come from **mise** (`mise.toml`), and `mise` itself lives
