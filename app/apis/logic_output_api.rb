@@ -33,6 +33,7 @@ class LogicOutputApi < RestfulApi
   end
 
   def invalidates(_object)
-    { LogicOutput => :queries, LogicDiagram => :records, LogicOutputBinding => :queries }
+    {
+      Measurement => :queries, LogicOutput => :queries, LogicDiagram => :records, LogicOutputBinding => :queries }
   end
 end

@@ -4,6 +4,9 @@ class LogicOutput < ApplicationRecord
   VALUE_TYPES = LogicInput::VALUE_TYPES
 
   belongs_to :logic_diagram
+  has_many :measurements, as: :source
+  before_destroy :detach_measurements, prepend: true
+  before_update :detach_measurements, if: :will_save_change_to_logic_diagram_id?
   has_many :logic_output_bindings, dependent: :destroy
 
   validates :name, presence: true
@@ -44,5 +47,11 @@ class LogicOutput < ApplicationRecord
         errors.add(:input_expression, "references unknown name #{name}")
       end
     end
+  end
+  private
+
+  def detach_measurements
+    self.class.where(id: id).lock.load
+    Measurement.detach_all(measurements)
   end
 end

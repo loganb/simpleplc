@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_24_000000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_29_000000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -164,6 +164,43 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_24_000000) do
     t.index ["logic_diagram_id"], name: "index_logic_outputs_on_logic_diagram_id"
   end
 
+  create_table "measurement_rollups", force: :cascade do |t|
+    t.datetime "bucket_start", null: false
+    t.datetime "created_at", null: false
+    t.bigint "measurement_id", null: false
+    t.integer "sample_count", null: false
+    t.jsonb "summaries", null: false
+    t.datetime "updated_at", null: false
+    t.index ["measurement_id", "bucket_start"], name: "index_measurement_rollups_on_measurement_id_and_bucket_start", unique: true
+    t.index ["measurement_id"], name: "index_measurement_rollups_on_measurement_id"
+  end
+
+  create_table "measurement_samples", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.bigint "measurement_id", null: false
+    t.datetime "recorded_at", null: false
+    t.boolean "rolled_up", default: false, null: false
+    t.jsonb "snapshot", null: false
+    t.datetime "updated_at", null: false
+    t.index ["measurement_id", "recorded_at", "id"], name: "idx_on_measurement_id_recorded_at_id_58357fb5c3"
+    t.index ["measurement_id", "recorded_at", "id"], name: "index_measurement_samples_pending_rollup", where: "(rolled_up = false)"
+    t.index ["measurement_id"], name: "index_measurement_samples_on_measurement_id"
+  end
+
+  create_table "measurements", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.integer "lock_version", default: 0, null: false
+    t.bigint "logic_instance_id"
+    t.string "name", null: false
+    t.bigint "source_id"
+    t.string "source_type"
+    t.datetime "updated_at", null: false
+    t.index ["logic_instance_id"], name: "index_measurements_on_logic_instance_id"
+    t.index ["name"], name: "index_measurements_on_name", unique: true
+    t.index ["source_type", "source_id"], name: "index_measurements_on_source_type_and_source_id"
+    t.check_constraint "logic_instance_id IS NULL AND source_type IS NULL AND source_id IS NULL OR logic_instance_id IS NOT NULL AND source_type IS NOT NULL AND (source_type::text = ANY (ARRAY['LogicInput'::character varying, 'LogicOutput'::character varying]::text[])) AND source_id IS NOT NULL", name: "measurements_attachment_tuple"
+  end
+
   create_table "trace_rollups", force: :cascade do |t|
     t.datetime "bucket_start", null: false
     t.bigint "logic_instance_id", null: false
@@ -196,6 +233,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_24_000000) do
   add_foreign_key "logic_output_bindings", "logic_instances"
   add_foreign_key "logic_output_bindings", "logic_outputs"
   add_foreign_key "logic_outputs", "logic_diagrams"
+  add_foreign_key "measurement_rollups", "measurements"
+  add_foreign_key "measurement_samples", "measurements"
+  add_foreign_key "measurements", "logic_instances"
   add_foreign_key "trace_rollups", "logic_instances"
   add_foreign_key "traces", "logic_instances"
 end

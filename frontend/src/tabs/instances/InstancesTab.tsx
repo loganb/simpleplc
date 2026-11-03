@@ -1,5 +1,5 @@
 import type { ComponentChildren } from 'preact';
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useEffect, useId, useRef, useState } from 'preact/hooks';
 import { useTxnStatus } from '../../components/useTxnStatus';
 import { useLoaders } from '../../lib/DataLoader2';
 import type { ExistingRecord, ReifiedQueryResult, Txn } from '../../lib/RestfulModelStore';
@@ -7,6 +7,7 @@ import {
   LogicInputBinding,
   LogicInstance,
   LogicOutputBinding,
+  Measurement,
   Store,
   Trace,
 } from '../../store';
@@ -18,12 +19,14 @@ import type {
   LogicInstanceFields,
   LogicOutputBindingFields,
   LogicOutputFields,
+  MeasurementFields,
+  MeasurementSourceType,
 } from '../../store';
 import type { InstancesUXState } from '../../uxTree';
 
 type RecordOf<T extends { id: number }> = ExistingRecord<T>;
 
-export function InstancesTab({ instances, diagrams, inputs, outputs, inputBindings, outputBindings, devices, ux, onRefresh }: {
+export function InstancesTab({ instances, diagrams, inputs, outputs, inputBindings, outputBindings, devices, measurements, ux, onRefresh }: {
   instances: ReifiedQueryResult<LogicInstanceFields>;
   diagrams: ReifiedQueryResult<LogicDiagramFields>;
   inputs: ReifiedQueryResult<LogicInputFields>;
@@ -31,6 +34,7 @@ export function InstancesTab({ instances, diagrams, inputs, outputs, inputBindin
   inputBindings: ReifiedQueryResult<LogicInputBindingFields>;
   outputBindings: ReifiedQueryResult<LogicOutputBindingFields>;
   devices: ReifiedQueryResult<DeviceFields>;
+  measurements?: ReifiedQueryResult<MeasurementFields>;
   ux: InstancesUXState;
   onRefresh: () => void;
 }) {
@@ -87,7 +91,7 @@ export function InstancesTab({ instances, diagrams, inputs, outputs, inputBindin
           outputs={foundOutputs.filter(output => output.logic_diagram_id === current.logic_diagram_id)}
           inputBindings={foundInputBindings.filter(binding => binding.logic_instance_id === current.id)}
           outputBindings={foundOutputBindings.filter(binding => binding.logic_instance_id === current.id)}
-          devices={foundDevices} onRefresh={onRefresh}
+          devices={foundDevices} measurements={measurements ? found(measurements) : []} onRefresh={onRefresh}
           onDeleted={() => { ux.set('selectedInstanceId', null); onRefresh(); }} />}
       </div>}
   </section>;
@@ -133,7 +137,7 @@ function NewInstanceForm({ diagrams, onClose, onCreated }: {
   </div>;
 }
 
-function InstanceEditor({ instance, diagrams, inputs, outputs, inputBindings, outputBindings, devices, onRefresh, onDeleted }: {
+function InstanceEditor({ instance, diagrams, inputs, outputs, inputBindings, outputBindings, devices, measurements, onRefresh, onDeleted }: {
   instance: RecordOf<LogicInstanceFields>;
   diagrams: RecordOf<LogicDiagramFields>[];
   inputs: RecordOf<LogicInputFields>[];
@@ -141,6 +145,7 @@ function InstanceEditor({ instance, diagrams, inputs, outputs, inputBindings, ou
   inputBindings: RecordOf<LogicInputBindingFields>[];
   outputBindings: RecordOf<LogicOutputBindingFields>[];
   devices: RecordOf<DeviceFields>[];
+  measurements: RecordOf<MeasurementFields>[];
   onRefresh: () => void;
   onDeleted: () => void;
 }) {
@@ -148,6 +153,28 @@ function InstanceEditor({ instance, diagrams, inputs, outputs, inputBindings, ou
   const [period, setPeriod] = useState(String(instance.update_period));
   const [txn, setTxn] = useState<Txn | undefined>();
   const [deleting, setDeleting] = useState(false);
+  const [showMeasurements, setShowMeasurements] = useState(false);
+  const [selection, setSelection] = useState<{ id: number; name: string } | null>(null);
+  const [measurementTxn, setMeasurementTxn] = useState<Txn | undefined>();
+  const measurementStatus = useTxnStatus(measurementTxn);
+  const handledMeasurement = useRef<number | null>(null);
+  useEffect(() => {
+    const result = measurementStatus.txnResult;
+    if (!result || handledMeasurement.current === result.seq) return;
+    handledMeasurement.current = result.seq;
+    if (result.status === 'succeeded') { setSelection(null); onRefresh(); }
+  }, [measurementStatus.txnResult, onRefresh]);
+  useEffect(() => {
+    if (!selection) return;
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') setSelection(null); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [selection]);
+  useEffect(() => { setSelection(null); }, [instance.logic_diagram_id]);
+  const attach = (source_type: MeasurementSourceType, source_id: number) => {
+    if (selection && !measurementStatus.saving) setMeasurementTxn(Store.m(Measurement).patch(selection.id, { logic_instance_id: instance.id, source_type, source_id }));
+  };
+  const detach = (id: number) => !measurementStatus.saving && setMeasurementTxn(Store.m(Measurement).patch(id, { logic_instance_id: null, source_type: null, source_id: null }));
   const handledSeq = useRef<number | null>(null);
   const { txnResult, saving } = useTxnStatus(txn);
   useEffect(() => {
@@ -194,17 +221,27 @@ function InstanceEditor({ instance, diagrams, inputs, outputs, inputBindings, ou
       </label>
     </div>
 
+    <div class="flex items-center gap-3">
+      <button class="rounded border border-border px-3 py-1.5 text-sm" onClick={() => setShowMeasurements(true)}>Attach measurement</button>
+      {selection && <p role="status" class="text-sm text-active">Select an input or output for {selection.name}. <button class="underline" onClick={() => setSelection(null)}>Cancel</button></p>}
+    </div>
+    {measurementStatus.txnResult?.status === 'error' && <p role="alert" class="text-sm text-error">Measurement change could not be saved. Try again.</p>}
+    {showMeasurements && <MeasurementPicker measurements={measurements} onClose={() => setShowMeasurements(false)} onRefresh={onRefresh}
+      onSelect={measurement => { setSelection(measurement); setShowMeasurements(false); }} />}
+
     <ConnectionSection title="Input connections" helper="Values this diagram receives">
       {inputs.map(input => <InputConnection key={input.id} instance={instance} input={input}
         binding={inputBindings.find(candidate => candidate.logic_input_id === input.id) ?? null}
-        devices={devices} run={run} />)}
+        devices={devices} run={run} selection={selection !== null} attach={() => attach('LogicInput', input.id)}
+        measurements={measurements.filter(m => m.logic_instance_id === instance.id && m.source_type === 'LogicInput' && m.source_id === input.id)} detach={detach} />)}
       {inputs.length === 0 && <EmptyConnections text="This diagram has no inputs." />}
     </ConnectionSection>
 
     <ConnectionSection title="Output connections" helper="Commands this diagram sends">
       {outputs.map(output => <OutputConnection key={output.id} instance={instance} output={output}
         binding={outputBindings.find(candidate => candidate.logic_output_id === output.id) ?? null}
-        devices={devices} run={run} />)}
+        devices={devices} run={run} selection={selection !== null} attach={() => attach('LogicOutput', output.id)}
+        measurements={measurements.filter(m => m.logic_instance_id === instance.id && m.source_type === 'LogicOutput' && m.source_id === output.id)} detach={detach} />)}
       {outputs.length === 0 && <EmptyConnections text="This diagram has no outputs." />}
     </ConnectionSection>
 
@@ -232,10 +269,11 @@ function ConnectionSection({ title, helper, children }: { title: string; helper:
   </section>;
 }
 
-function InputConnection({ instance, input, binding, devices, run }: {
+function InputConnection({ instance, input, binding, devices, run, selection, attach, measurements, detach }: {
   instance: RecordOf<LogicInstanceFields>; input: RecordOf<LogicInputFields>;
   binding: RecordOf<LogicInputBindingFields> | null; devices: RecordOf<DeviceFields>[];
   run: (txn: Txn | undefined) => void;
+  selection: boolean; attach: () => void; measurements: RecordOf<MeasurementFields>[]; detach: (id: number) => void;
 }) {
   const compatible = devices.flatMap(device => device.inputs
     .filter(source => source.value_type === input.value_type || (input.value_type === 'number' && source.value_type === 'boolean'))
@@ -262,7 +300,7 @@ function InputConnection({ instance, input, binding, devices, run }: {
     run(binding ? Store.m(LogicInputBinding).patch(binding.id, fields)
       : Store.m(LogicInputBinding).create({ ...fields, logic_instance_id: instance.id, logic_input_id: input.id }));
   };
-  return <ConnectionRow name={input.name} type={input.value_type} units={input.units}>
+  return <ConnectionRow name={input.name} type={input.value_type} units={input.units} selection={selection} attach={attach} measurements={measurements} detach={detach}>
     <select aria-label={`${input.name} source`} class={selectClass} value={selectedSource} onChange={event => setSource((event.target as HTMLSelectElement).value)}>
       <option value="">Not connected</option>
       <option value="fixed_value">Fixed value</option>
@@ -279,14 +317,15 @@ function InputConnection({ instance, input, binding, devices, run }: {
   </ConnectionRow>;
 }
 
-function OutputConnection({ instance, output, binding, devices, run }: {
+function OutputConnection({ instance, output, binding, devices, run, selection, attach, measurements, detach }: {
   instance: RecordOf<LogicInstanceFields>; output: RecordOf<LogicOutputFields>;
   binding: RecordOf<LogicOutputBindingFields> | null; devices: RecordOf<DeviceFields>[];
   run: (txn: Txn | undefined) => void;
+  selection: boolean; attach: () => void; measurements: RecordOf<MeasurementFields>[]; detach: (id: number) => void;
 }) {
   const compatible = devices.flatMap(device => device.outputs.filter(target => target.value_type === output.value_type)
     .map(target => ({ device, target })));
-  return <ConnectionRow name={output.name} type={output.value_type} units={output.units}>
+  return <ConnectionRow name={output.name} type={output.value_type} units={output.units} selection={selection} attach={attach} measurements={measurements} detach={detach}>
     <select aria-label={`${output.name} target`} class={selectClass} value={binding ? `${binding.device_id}:${binding.channel}` : ''}
       onChange={event => {
         const [deviceId, channel] = (event.target as HTMLSelectElement).value.split(':');
@@ -308,13 +347,59 @@ function OutputConnection({ instance, output, binding, devices, run }: {
   </ConnectionRow>;
 }
 
-function ConnectionRow({ name, type, units, children }: {
+function ConnectionRow({ name, type, units, children, selection, attach, measurements, detach }: {
   name: string; type: string; units: string | null; children: ComponentChildren;
+  selection: boolean; attach: () => void; measurements: RecordOf<MeasurementFields>[]; detach: (id: number) => void;
 }) {
-  return <div class="grid items-center gap-3 rounded-lg bg-surface-alt p-3 md:grid-cols-[16rem_minmax(0,1fr)]">
-    <div><p class="font-mono text-sm font-semibold">{name}</p><p class="text-xs capitalize text-text-muted">{type}{units ? ` · ${units}` : ''}</p></div>
-    <div class="flex min-w-0 gap-2">{children}</div>
+  if (selection) return <button type="button" aria-label={`Attach to ${name}`} onClick={attach}
+    class="grid w-full cursor-crosshair items-center gap-3 rounded-lg border border-active bg-active-bg p-3 text-left hover:bg-active/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-active md:grid-cols-[16rem_minmax(0,1fr)]">
+    <span><span class="block font-mono text-sm font-semibold">{name}</span><span class="block text-xs capitalize text-text-muted">{type}{units ? ` · ${units}` : ''}</span></span>
+    <span class="text-sm text-active">Attach to {name}</span>
+  </button>;
+  return <div class="rounded-lg bg-surface-alt p-3">
+    <div class="flex items-center justify-between gap-3">
+      <p class="min-w-0 font-mono text-sm font-semibold">{name}</p>
+      {measurements.length > 0 && <MeasurementMenu name={name} measurements={measurements} detach={detach} />}
+    </div>
+    <div class="grid items-center gap-3 md:grid-cols-[16rem_minmax(0,1fr)]">
+      <p class="text-xs capitalize text-text-muted">{type}{units ? ` · ${units}` : ''}</p>
+      <div class="flex min-w-0 gap-2">{children}</div>
+    </div>
   </div>;
+}
+function MeasurementMenu({ name, measurements, detach }: {
+  name: string; measurements: RecordOf<MeasurementFields>[]; detach: (id: number) => void;
+}) {
+  const id = useId();
+  const trigger = useRef<HTMLButtonElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
+  const position = () => {
+    if (!trigger.current || !panel.current) return;
+    const rect = trigger.current.getBoundingClientRect();
+    const below = window.innerHeight - rect.bottom;
+    const above = rect.top;
+    const opensAbove = below < 160 && above > below;
+    Object.assign(panel.current.style, {
+      left: 'auto',
+      right: `${Math.max(8, window.innerWidth - rect.right)}px`,
+      top: opensAbove ? 'auto' : `${rect.bottom}px`,
+      bottom: opensAbove ? `${window.innerHeight - rect.top}px` : 'auto',
+      maxHeight: `${Math.max(0, (opensAbove ? above : below) - 8)}px`,
+    });
+  };
+  useEffect(() => {
+    window.addEventListener('resize', position);
+    window.addEventListener('scroll', position, true);
+    return () => { window.removeEventListener('resize', position); window.removeEventListener('scroll', position, true); };
+  }, []);
+  return <>
+    <button ref={trigger} type="button" popovertarget={id} aria-label={`Measurements for ${name}`}
+      class="shrink-0 cursor-pointer rounded px-1 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-active"
+      title="Measurements" onClick={position}>◉</button>
+    <div ref={panel} id={id} popover="auto" class="fixed m-0 min-w-48 max-w-[calc(100vw-1rem)] overflow-auto rounded border border-border bg-surface p-2 shadow-lg">
+      {measurements.map(m => <div key={m.id} class="flex items-center justify-between gap-3 py-1 text-sm"><span>{m.name}</span><button class="text-error underline" onClick={() => detach(m.id)}>Detach</button></div>)}
+    </div>
+  </>;
 }
 
 function EmptyConnections({ text }: { text: string }) {
@@ -326,3 +411,51 @@ function found<T extends { id: number }>(query: ReifiedQueryResult<T>): RecordOf
 }
 
 const selectClass = 'min-w-0 flex-1 rounded border border-border bg-surface px-2 py-1.5 text-sm';
+
+function MeasurementPicker({ measurements, onClose, onSelect, onRefresh }: {
+  measurements: RecordOf<MeasurementFields>[]; onClose: () => void;
+  onSelect: (measurement: { id: number; name: string }) => void; onRefresh: () => void;
+}) {
+  const [name, setName] = useState('');
+  const [txn, setTxn] = useState<Txn | undefined>();
+  const { txnResult, saving } = useTxnStatus(txn);
+  const handled = useRef<number | null>(null);
+  useEffect(() => {
+    if (!txnResult || handled.current === txnResult.seq) return;
+    handled.current = txnResult.seq;
+    if (txnResult.status === 'succeeded' && typeof txnResult.id === 'number') {
+      onRefresh(); onSelect({ id: txnResult.id, name });
+    }
+  }, [txnResult, name, onRefresh, onSelect]);
+  const dialog = useRef<HTMLDivElement>(null);
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  useEffect(() => {
+    const previousFocus = document.activeElement as HTMLElement | null;
+    dialog.current?.focus();
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') { event.preventDefault(); closeRef.current(); return; }
+      if (event.key !== 'Tab' || !dialog.current) return;
+      const controls = Array.from(dialog.current.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex="-1"])'));
+      if (!controls.length) { event.preventDefault(); return; }
+      const first = controls[0]; const last = controls[controls.length - 1];
+      if (event.shiftKey && (document.activeElement === first || document.activeElement === dialog.current)) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => { window.removeEventListener('keydown', onKey); previousFocus?.focus(); };
+  }, []);
+  return <div class="fixed inset-0 z-20 flex items-center justify-center bg-black/40 p-4" role="presentation">
+    <div ref={dialog} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="measurement-picker-title" class="w-full max-w-lg space-y-4 rounded-lg bg-surface p-5 shadow-lg">
+      <h3 id="measurement-picker-title" class="font-semibold">Attach measurement</h3>
+      <p class="text-sm text-text-muted">Select an existing measurement or create a new one.</p>
+      <div class="max-h-64 space-y-2 overflow-auto">{measurements.map(m => <button key={m.id} disabled={saving} class="block w-full rounded border border-border p-2 text-left disabled:opacity-50" onClick={() => onSelect({ id: m.id, name: m.name })}>
+        <span class="block font-medium">{m.name}</span><span class="text-xs text-text-muted">{m.source ? `${m.source.logic_instance_name} · ${m.source.name}` : 'Detached'}</span>
+      </button>)}{measurements.length === 0 && <p class="text-sm text-text-muted">No existing measurements.</p>}</div>
+      <label class="block text-sm">New measurement name<input class="mt-1 block w-full rounded border border-border bg-surface px-2 py-1.5" disabled={saving} value={name} onInput={event => setName((event.target as HTMLInputElement).value)} /></label>
+      {txnResult?.status === 'error' && <p role="alert" class="text-sm text-error">Could not create measurement. Check the name and try again.</p>}
+      <div class="flex gap-2"><button disabled={!name.trim() || saving} class="rounded bg-active px-3 py-1.5 text-sm text-white disabled:opacity-50" onClick={() => setTxn(Store.m(Measurement).create({ name: name.trim() }))}>{saving ? 'Creating…' : 'Create and select'}</button>
+        <button class="rounded border border-border px-3 py-1.5 text-sm" onClick={onClose}>Cancel</button></div>
+    </div>
+  </div>;
+}

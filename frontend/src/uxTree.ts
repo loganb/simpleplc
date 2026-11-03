@@ -1,7 +1,7 @@
 import TreeStore from './lib/TreeStore';
 import type { URLTreeState, UXTreeDefinition } from './lib/TreeStore';
 
-export type TabName = 'dashboard' | 'instances' | 'logic' | 'devices';
+export type TabName = 'dashboard' | 'instances' | 'logic' | 'devices' | 'measurements';
 
 export type DashboardUXTree = {
   data: Record<string, never>;
@@ -39,6 +39,7 @@ export type AppUXTree = UXTreeDefinition & {
   data: Record<string, never>;
   pages: {
     dashboard: DashboardUXTree;
+    measurements: DashboardUXTree;
     instances: InstancesUXTree;
     devices: DevicesUXTree;
     logic: LogicUXTree;

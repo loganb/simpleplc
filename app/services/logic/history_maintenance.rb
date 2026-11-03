@@ -18,6 +18,11 @@ module Logic
         backlog |= roll_up(instance, now)
         backlog |= prune_traces(instance, now)
       end
+      Measurement.find_each do |measurement|
+        backlog |= roll_up_measurement(measurement, now)
+        backlog |= prune_measurement_samples(measurement, now)
+      end
+      backlog |= prune_in_batches(MeasurementRollup.where(bucket_start: ...(now - ROLLUP_RETENTION)))
       prune_rollups(now) || backlog
     end
 
@@ -47,6 +52,54 @@ module Logic
         TraceRollup.insert_all(rows, unique_by: %i[logic_instance_id bucket_start]) if rows.any?
       end
       window_end < limit && traces.exists?(recorded_at: window_end...limit)
+    end
+
+    def roll_up_measurement(measurement, now)
+      backlog = false
+      ApplicationRecord.async_commit_transaction do
+        # Sampling takes the same lock, so no point can arrive between reading
+        # a minute and marking its points as represented by the rollup.
+        measurement.lock!
+        limit = (now - GRACE).beginning_of_minute
+        samples = measurement.measurement_samples.where(rolled_up: false)
+        first = samples.where(recorded_at: ...limit).minimum(:recorded_at)
+        next unless first
+
+        window_start = first.beginning_of_minute
+        window_end = [ limit, window_start + MAX_ROLLUP_MINUTES.minutes ].min
+        points = samples.where(recorded_at: window_start...window_end).order(:recorded_at, :id).limit(PRUNE_BATCH).pluck(:id, :recorded_at, :snapshot)
+        minutes = points.group_by { |_, time, _| time.beginning_of_minute }
+        existing = measurement.measurement_rollups.where(bucket_start: minutes.keys).index_by(&:bucket_start)
+        minutes.each do |bucket, minute|
+          late = existing.key?(bucket)
+          groups = minute.map(&:last).group_by { |snapshot| snapshot.except("value") }
+          summaries = groups.map do |identity, snapshots|
+            group = identity.merge("statistics" => TraceRollupBuilder.summarize(snapshots.map { |snapshot| snapshot["value"] }))
+            group["late"] = true if late
+            group
+          end
+          if late
+            rollup = existing.fetch(bucket)
+            rollup.update!(sample_count: rollup.sample_count + minute.size, summaries: rollup.summaries + summaries)
+          else
+            MeasurementRollup.create!(measurement_id: measurement.id, bucket_start: bucket, sample_count: minute.size, summaries: summaries)
+          end
+        end
+        MeasurementSample.where(id: points.map(&:first)).update_all(rolled_up: true) if points.any?
+        backlog = samples.exists?(recorded_at: ...limit)
+      end
+      backlog
+    end
+
+    def measurement_rollup_horizon(measurement)
+      newest = measurement.measurement_rollups.maximum(:bucket_start)
+      newest && newest + 1.minute
+    end
+
+    def prune_measurement_samples(measurement, now)
+      horizon = measurement_rollup_horizon(measurement)
+      return false unless horizon
+      prune_in_batches(measurement.measurement_samples.where(rolled_up: true, recorded_at: ...[ now - RAW_RETENTION, horizon ].min))
     end
 
     # Raw traces are deleted only before this instant: every minute up to it

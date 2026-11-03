@@ -3,6 +3,7 @@ import { useLoaders } from './lib/DataLoader2';
 import { DashboardTab } from './tabs/dashboard/DashboardTab';
 import { DevicesTab } from './tabs/devices/DevicesTab';
 import { LogicTab } from './tabs/logic/LogicTab';
+import { MeasurementsTab } from './tabs/measurements/MeasurementsTab';
 import { InstancesTab } from './tabs/instances/InstancesTab';
 import {
   Device,
@@ -14,6 +15,7 @@ import {
   LogicInstance,
   LogicOutput,
   LogicOutputBinding,
+  Measurement,
   Store,
   connectLiveRecords,
 } from './store';
@@ -26,6 +28,7 @@ const rootUx = appTree.subtree();
 const TABS: { id: TabName; label: string }[] = [
   { id: 'dashboard', label: 'Dashboard' },
   { id: 'instances', label: 'Instances' },
+  { id: 'measurements', label: 'Measurements' },
   { id: 'logic', label: 'Logic' },
   { id: 'devices', label: 'Devices' },
 ];
@@ -58,7 +61,7 @@ export function App() {
 
   const {
     devices, interfaces, logicInputs, logicDiagrams, logicBlocks, logicOutputs,
-    logicInstances, logicInputBindings, logicOutputBindings,
+    logicInstances, logicInputBindings, logicOutputBindings, measurements,
   } = useLoaders(() => {
     const force = refreshToken > lastForcedRefreshToken.current;
     if (force) lastForcedRefreshToken.current = refreshToken;
@@ -71,9 +74,10 @@ export function App() {
     const logicInstances = Store.m(LogicInstance).queryFor(null, {}, force);
     const logicInputBindings = Store.m(LogicInputBinding).queryFor(null, {}, force);
     const logicOutputBindings = Store.m(LogicOutputBinding).queryFor(null, {}, force);
+    const measurements = Store.m(Measurement).queryFor(null, {}, force);
     return {
       devices, interfaces, logicInputs, logicDiagrams, logicBlocks, logicOutputs,
-      logicInstances, logicInputBindings, logicOutputBindings,
+      logicInstances, logicInputBindings, logicOutputBindings, measurements,
     };
   }, [Store], [refreshToken]);
 
@@ -92,7 +96,7 @@ export function App() {
                   'Live updates disconnected — showing last received data'}
             </p>
           </div>
-          <nav class="flex gap-1 rounded border border-border bg-surface-alt p-1" aria-label="Main sections">
+          <nav class="flex flex-wrap gap-1 rounded border border-border bg-surface-alt p-1" aria-label="Main sections">
             {TABS.map((tab) => (
               <button
                 key={tab.id}
@@ -133,9 +137,12 @@ export function App() {
             inputBindings={logicInputBindings}
             outputBindings={logicOutputBindings}
             devices={devices}
+            measurements={measurements}
             onRefresh={refresh}
           />
         )}
+
+        {activeTab === 'measurements' && <MeasurementsTab measurements={measurements} />}
 
         {activeTab === 'devices' && (
           <DevicesTab

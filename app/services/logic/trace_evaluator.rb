@@ -27,6 +27,7 @@ module Logic
         evaluate_outputs!
         state.update!(recorded_at: trace.recorded_at, results: results)
         trace.results = results
+        record_measurements!
       end
       trace
     end
@@ -34,6 +35,24 @@ module Logic
     private
 
     attr_reader :trace, :instance, :diagram, :results, :context
+
+    def record_measurements!
+      rows = Measurement.where(logic_instance_id: instance.id).order(:id).lock.filter_map do |measurement|
+        bucket = measurement.source_type == "LogicInput" ? "logic_inputs" : "logic_outputs"
+        source = (measurement.source_type == "LogicInput" ? diagram.logic_inputs : diagram.logic_outputs).find { |port| port.id == measurement.source_id }
+        next unless source
+        result = results.fetch(bucket)[source.id.to_s]
+        next unless result
+        {
+          measurement_id: measurement.id, recorded_at: trace.recorded_at,
+          snapshot: { value: result["value"], value_type: source.value_type,
+            logic_instance_id: instance.id, logic_instance_name: instance.name,
+            logic_diagram_id: diagram.id, logic_diagram_name: diagram.name,
+            source_type: measurement.source_type, source_id: source.id, source_name: source.name }
+        }
+      end
+      MeasurementSample.insert_all!(rows) if rows.any?
+    end
 
     def snapshot_inputs!
       # Instances are long-lived in the runner. Query bindings for every trace

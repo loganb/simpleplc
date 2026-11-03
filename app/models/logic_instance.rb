@@ -4,6 +4,8 @@ class LogicInstance < ApplicationRecord
   belongs_to :logic_diagram
   has_many :logic_input_bindings, dependent: :destroy
   has_many :logic_output_bindings, dependent: :destroy
+  has_many :measurements
+  before_destroy :detach_measurements, prepend: true
   has_many :traces, dependent: :delete_all
   has_many :trace_rollups, dependent: :delete_all
   has_one :logic_instance_state, dependent: :delete
@@ -63,7 +65,14 @@ class LogicInstance < ApplicationRecord
     errors.add(:output_enable, "cannot be enabled because a physical output is already controlled by an active instance")
   end
 
+  def detach_measurements
+    self.class.where(id: id).lock.load
+    LogicInstanceState.where(logic_instance_id: id).lock.load
+    Measurement.detach_all(measurements)
+  end
+
   def clear_diagram_specific_records
+    detach_measurements
     logic_input_bindings.destroy_all
     logic_output_bindings.destroy_all
     traces.delete_all

@@ -12,6 +12,9 @@ module RecordResources
     "logic_instance" => "LogicInstanceApi",
     "logic_input_binding" => "LogicInputBindingApi",
     "logic_output_binding" => "LogicOutputBindingApi",
+    "measurement" => "MeasurementApi",
+    "measurement_sample" => "MeasurementSampleApi",
+    "measurement_rollup" => "MeasurementRollupApi",
     "trace" => "TraceApi",
     "trace_rollup" => "TraceRollupApi"
   }.freeze
@@ -24,6 +27,8 @@ module RecordResources
     "LogicOutput" => "logic_output", "LogicInstance" => "logic_instance",
     "LogicInputBinding" => "logic_input_binding",
     "LogicOutputBinding" => "logic_output_binding",
+    "Measurement" => "measurement", "MeasurementSample" => "measurement_sample",
+    "MeasurementRollup" => "measurement_rollup",
     "Trace" => "trace", "TraceRollup" => "trace_rollup"
   }.freeze
 

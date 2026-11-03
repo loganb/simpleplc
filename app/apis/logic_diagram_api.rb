@@ -27,6 +27,7 @@ class LogicDiagramApi < RestfulApi
   end
 
   def invalidates(_object)
-    { LogicDiagram => :queries }
+    {
+      Measurement => :queries, LogicDiagram => :queries }
   end
 end

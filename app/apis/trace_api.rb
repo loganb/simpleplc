@@ -29,6 +29,7 @@ class TraceApi < RestfulApi
 
   def invalidates(_object)
     {
+      Measurement => :queries,
       Trace => :queries,
       LogicInstance => :records,
       LogicInputBinding => :records,

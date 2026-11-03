@@ -419,3 +419,35 @@ export function connectLiveRecords() {
 
 // The axios client stays private: all server I/O goes through Store.
 export { Store };
+
+export type MeasurementSourceType = 'LogicInput' | 'LogicOutput';
+export interface MeasurementSource {
+  id: number; name: string; value_type: LogicValueType; logic_diagram_id: number;
+  logic_diagram_name: string; logic_instance_name: string;
+}
+export interface MeasurementSnapshot {
+  value: number | boolean | null; value_type: LogicValueType;
+  logic_instance_id: number; logic_instance_name: string; logic_diagram_id: number;
+  logic_diagram_name: string; source_type: MeasurementSourceType; source_id: number; source_name: string;
+}
+export interface MeasurementSampleFields {
+  id: number; measurement_id: number; recorded_at: string; snapshot: MeasurementSnapshot;
+}
+export interface MeasurementSummary extends Omit<MeasurementSnapshot, 'value'> { statistics: TraceRollupStats; late?: boolean }
+export interface MeasurementRollupFields {
+  id: number; measurement_id: number; bucket_start: string; sample_count: number; summaries: MeasurementSummary[];
+}
+export interface MeasurementFields {
+  id: number; name: string; logic_instance_id: number | null; source_type: MeasurementSourceType | null;
+  source_id: number | null; source: MeasurementSource | null; preview_kind: 'samples' | 'rollups' | null;
+  preview: (MeasurementSampleFields | MeasurementRollupFields)[];
+}
+export const Measurement: ModelDefinition<MeasurementFields> = {
+  name: 'measurement', inflections: { plural: 'measurements', title: 'Measurement' }, singleton: false,
+};
+export const MeasurementSample: ModelDefinition<MeasurementSampleFields> = {
+  name: 'measurement_sample', inflections: { plural: 'measurement_samples', title: 'MeasurementSample' }, singleton: false,
+};
+export const MeasurementRollup: ModelDefinition<MeasurementRollupFields> = {
+  name: 'measurement_rollup', inflections: { plural: 'measurement_rollups', title: 'MeasurementRollup' }, singleton: false,
+};

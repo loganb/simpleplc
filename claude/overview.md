@@ -23,6 +23,19 @@ HVAC PLC controller application — a web interface for monitoring and controlli
 
 ## Current State
 
+- **Instance measurements (implemented locally, not deployed)** — Independent
+  named probes attach through a polymorphic source to an instance input/output.
+  Each evaluation snapshots value, type and source identity, including Compute
+  now and computed outputs with hardware writes disabled. Detach/reattach keeps
+  history; source/instance deletion or diagram reassignment detaches probes.
+  Raw samples last 48 hours and minute summaries two years, maintained alongside
+  traces. Measurements has its own tiled-card tab with the latest five raw
+  points or labeled summaries; Instances has a create/select modal, crosshair
+  attachment mode and per-port measurement menus. All frontend I/O uses Store.
+  Backdated samples are retained in separately marked summary segments before
+  pruning. See `claude/instance-measurements.md`; the older `claude/measurements.md`
+  describes the removed diagram/device feature, not this implementation.
+
 - **Logic diagram instances — deployed at `c0bd734`**: LogicDiagrams are reusable,
   hardware-independent definitions with typed inputs, blocks, and outputs.
   Top-level Instances bind those ports to fixed values or Device I/O and own
