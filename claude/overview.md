@@ -29,8 +29,15 @@ HVAC PLC controller application — a web interface for monitoring and controlli
   now and computed outputs with hardware writes disabled. Detach/reattach keeps
   history; source/instance deletion or diagram reassignment detaches probes.
   Raw samples last 48 hours and minute summaries two years, maintained alongside
-  traces. Measurements has its own tiled-card tab with the latest five raw
-  points or labeled summaries; Instances has a create/select modal, crosshair
+  traces. Measurements has its own tab with a shared ECharts history graph, centered
+  1m/10m/1hr/24hr/7d/30d range controls, and clickable measurement cards that
+  toggle series while retaining latest-value context. Numeric series show
+  lines and min/max bands; boolean series shade on intervals, with summarized
+  opacity representing sample fractions. A computed MeasurementHistoryPoint
+  resource uses Store queries with a width-based per-series point budget and
+  reconstructible versioned string IDs; raw/summary data covers the full window
+  without listing caps. Range and selection persist across tab changes. See
+  `claude/measurement-history.md` for the API, precision limits and verification; Instances has a create/select modal, crosshair
   attachment mode and per-port measurement menus. All frontend I/O uses Store.
   Backdated samples are retained in separately marked summary segments before
   pruning. See `claude/instance-measurements.md`; the older `claude/measurements.md`

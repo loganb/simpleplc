@@ -142,24 +142,31 @@ end
 
 ## Response Format
 
-All responses use the same envelope:
+Index responses use flat resource arrays and an ordered list of primary IDs:
 
 ```json
 {
-  "objects": {
-    "Device":  [{ "id": 1, … }, { "id": 2, … }],
-    "Reading": [{ "id": 10, … }]
-  },
-  "metadata":   { … },
-  "invalidates": { … }
+  "query": [1, 2],
+  "devices": [{ "id": 1 }, { "id": 2 }],
+  "host_interfaces": [{ "id": 10 }],
+  "metadata": { "total": 2 }
 }
 ```
 
-- `objects` — primary resource and any expounded sideloads, grouped by class name
-- `metadata` — optional, from `query_metadata`
-- `invalidates` — optional, on create/update responses
-
-Create responses additionally include `"object"` (singular) with the newly created record.
+- Resource keys are plural underscored API names; additional arrays contain
+  expounded records. There is no `objects` wrapper.
+- `query` contains primary result IDs only, in query order, including an empty
+  array for an empty result. The client resolves those IDs through its record
+  cache and exposes `metadata` on the query result.
+- Show/update return the same flat resource arrays without `query`. Create
+  additionally returns the new record's `id` at the top level.
+- Create/update may include `invalidates`, keyed by singular underscored model
+  names with values `all`, `queries` or `records`.
+- Optimistically locked records include `lock_version` automatically.
+- Client record identity is model + ID, independent of query arguments.
+  Computed resources must give distinct logical records distinct IDs and
+  implement `canonicalize_ids`/`by_ids` for show. They may use plain Ruby
+  value objects rather than database tables; see HostPort.
 
 ## Query Parameter
 

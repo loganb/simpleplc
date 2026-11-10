@@ -35,11 +35,15 @@ export type InstancesUXTree = {
   };
 };
 
+export type HistoryRange = '1m' | '10m' | '1hr' | '24hr' | '7d' | '30d';
+export type MeasurementsUXTree = { data: { range: HistoryRange; deselectedIds: number[] } };
+export type MeasurementsUXState = URLTreeState<MeasurementsUXTree>;
+
 export type AppUXTree = UXTreeDefinition & {
   data: Record<string, never>;
   pages: {
     dashboard: DashboardUXTree;
-    measurements: DashboardUXTree;
+    measurements: MeasurementsUXTree;
     instances: InstancesUXTree;
     devices: DevicesUXTree;
     logic: LogicUXTree;

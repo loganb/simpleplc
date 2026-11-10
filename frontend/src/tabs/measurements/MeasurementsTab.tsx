@@ -1,23 +1,33 @@
+import { useLoaders } from '../../lib/DataLoader2';
 import type { ReifiedQueryResult } from '../../lib/RestfulModelStore';
 import type { MeasurementFields } from '../../store';
+import type { HistoryRange, MeasurementsUXState } from '../../uxTree';
+import { MeasurementHistoryGraph } from './MeasurementHistoryGraph';
+import { useMeasurementHistory } from './useMeasurementHistory';
 
-export function MeasurementsTab({ measurements }: { measurements: ReifiedQueryResult<MeasurementFields> }) {
+const ranges: HistoryRange[] = ['1m', '10m', '1hr', '24hr', '7d', '30d'];
+const colors = ['#2563eb', '#dc2626', '#059669', '#9333ea', '#d97706', '#0891b2', '#be185d', '#4d7c0f'];
+const colorFor = (id: number) => colors[Math.abs(id) % colors.length];
+
+export function MeasurementsTab({ measurements, ux, refreshToken }: { measurements: ReifiedQueryResult<MeasurementFields>; ux: MeasurementsUXState; refreshToken: number }) {
+  const { range, deselected } = useLoaders(() => ({ range: ux.get('range') ?? '1hr', deselected: ux.get('deselectedIds') ?? [] }), [ux], []);
   const records = measurements.filter(record => record._found);
+  const selected = records.filter(record => record._found && !deselected.includes(record.id as number));
+  const history = useMeasurementHistory(selected.map(record => record.id as number), range, refreshToken);
+  const points = history.points?.filter(point => point._found) ?? [];
+  const series = selected.map(record => ({ measurementId: record.id as number, name: record.name, color: colorFor(record.id as number), points: points.filter(point => point._found && point.measurement_id === record.id).map(point => point as import('./historyTypes').MeasurementHistoryPointFields) }));
   return <section class="space-y-5">
-    <div><h2 class="text-lg font-semibold">Measurements</h2><p class="text-sm text-text-muted">Recent values from instance inputs and outputs.</p></div>
+    <div><h2 class="text-lg font-semibold">Measurements</h2><p class="text-sm text-text-muted">Measurement history from instance inputs and outputs.</p></div>
     {!measurements._loaded ? <p role="status">Loading measurements…</p> : !measurements._found ? <p role="alert" class="text-error">Could not load measurements. Retrying when available.</p> : records.length === 0 ?
-      <p class="rounded border border-dashed border-border p-5 text-text-muted">No measurements yet. Attach one from an instance.</p> :
-      <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{records.map(record => record._found && <article key={String(record.id)} class="rounded-lg border border-border p-4">
-        <h3 class="font-semibold">{record.name}</h3>
-        <p class="text-sm text-text-muted">{record.source ? `${record.source.logic_instance_name} · ${record.source.name}` : 'Detached'}</p>
-        {record.preview.length === 0 ? <p class="mt-3 text-sm text-text-muted">No recorded points yet.</p> : <ul class="mt-3 space-y-2 text-sm">
-          {record.preview.map(point => 'snapshot' in point ? <li key={point.id} class="border-t border-border pt-2">
-            <span class="font-semibold">{String(point.snapshot.value)}</span> <span class="text-text-muted">· {point.snapshot.logic_instance_name} · {point.snapshot.source_name} · {new Date(point.recorded_at).toLocaleString()}</span>
-          </li> : <li key={point.id} class="border-t border-border pt-2">
-            <span>Summary · {point.sample_count} samples · {new Date(point.bucket_start).toLocaleString()}</span>
-            {point.summaries.map((group, index) => <div key={index} class="text-text-muted">{group.late ? 'Additional samples · ' : ''}{group.logic_instance_name} · {group.source_name} · {group.value_type}: {Object.entries(group.statistics).map(([key, value]) => `${key}: ${String(value)}`).join(', ')}</div>)}
-          </li>)}
-        </ul>}
-      </article>)}</div>}
+      <p class="rounded border border-dashed border-border p-5 text-text-muted">No measurements yet. Attach one from an instance.</p> : <>
+      <div class="flex flex-wrap justify-center gap-1" aria-label="History range">{ranges.map(item => <button type="button" aria-pressed={range === item} class={`rounded px-3 py-1.5 text-sm ${range === item ? 'bg-active-bg text-active font-semibold ring-1 ring-active' : 'bg-surface-alt'}`} onClick={() => ux.set('range', item)}>{item}</button>)}</div>
+      <MeasurementHistoryGraph series={series} since={history.since} until={history.until} onPlotWidth={history.onPlotWidth} />
+      {selected.length === 0 ? <p role="status">Select a measurement to see its history.</p> : history.error ? <p role="alert">Could not load measurement history.</p> : history.loading ? <p role="status">Loading history…</p> : points.length === 0 ? <p role="status">No history in this range.</p> : null}
+      <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{records.map(record => record._found && <button type="button" key={String(record.id)} aria-pressed={!deselected.includes(record.id as number)} onClick={() => ux.set('deselectedIds', deselected.includes(record.id as number) ? deselected.filter(id => id !== record.id as number) : [...deselected, record.id as number])} class={`rounded-lg border p-4 text-left ${deselected.includes(record.id as number) ? 'border-border opacity-60' : 'border-current'}`} style={{ borderColor: deselected.includes(record.id as number) ? undefined : colorFor(record.id as number) }}>
+        <span class="block font-semibold"><span aria-hidden="true" class="mr-2 inline-block h-3 w-3 rounded-full" style={{ backgroundColor: colorFor(record.id as number) }} />{record.name}</span>
+        <span class="block text-sm text-text-muted">{record.source ? `${record.source.logic_instance_name} · ${record.source.name}` : 'Detached'}</span>
+        {record.preview.length === 0 ? <span class="mt-3 block text-sm text-text-muted">No recorded points yet.</span> : <span class="mt-3 block space-y-2 text-sm">{record.preview.slice(0, 1).map(point => 'snapshot' in point ? <span key={point.id} class="block border-t border-border pt-2"><span class="font-semibold">{point.snapshot.value === null ? 'Unavailable' : typeof point.snapshot.value === 'number' ? point.snapshot.value.toLocaleString(undefined, { maximumSignificantDigits: 6 }) : String(point.snapshot.value)}</span> <span class="text-text-muted">· {point.snapshot.logic_instance_name} · {point.snapshot.source_name} · {new Date(point.recorded_at).toLocaleString()}</span></span> : <span key={point.id} class="block border-t border-border pt-2">Summary · {point.sample_count} samples · {new Date(point.bucket_start).toLocaleString()}{point.summaries.map((group, index) => <span key={index} class="block text-text-muted">{group.logic_instance_name} · {group.source_name} · {Object.entries(group.statistics).map(([key, value]) => `${key}: ${String(value)}`).join(', ')}</span>)}</span>)}</span>}
+      </button>)}</div>
+    </>}
   </section>;
 }

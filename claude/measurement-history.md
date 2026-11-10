@@ -1,6 +1,6 @@
 # Measurement history graphs
 
-Status: expanded plan approved by Logan on 2026-11-10; implementation started.
+Status: expanded plan approved by Logan on 2026-11-10; implemented and verified locally. Not deployed.
 Task name agreed: `measurement-history`.
 
 ## Design
@@ -139,8 +139,7 @@ results. No delegation or implementation before confirmation.
 ## Detailed implementation specification — review draft, 2026-11-10
 
 This section resolves implementation choices left open above and takes
-precedence where the earlier outline is less specific. Do not implement until
-Logan confirms this expanded plan. Agents must report contract changes to the
+precedence where the earlier outline is less specific. Logan confirmed this expanded plan on 2026-11-10. Agents must report contract changes to the
 parent before changing the shared types or semantics.
 
 ### Frontend rendering: no graphing library
@@ -425,8 +424,7 @@ empty selection makes no query, selection survives tab switch, no new clock
 value on Store notification, loading after range change, stale response cannot
 relabel old data, correct true_fraction tooltip and known-null vs unknown last.
 
-No implementation is authorized by this expanded draft alone; submit it to
-Logan for confirmation as required by AGENTS.md.
+This draft was approved by Logan on 2026-11-10 before implementation began.
 
 ## Chart library evaluation — 2026-11-10
 
@@ -539,3 +537,73 @@ selective imports and report the actual delta; do not compare unrelated npm
 package sizes or cite vendor benchmarks as app measurements. If unacceptable
 performance or adapter complexity appears, report evidence before changing
 the library. Backend/API plan and identity contract are unaffected.
+
+
+## Implementation and verification — 2026-11-10
+
+Completed by three Terra agents (backend, ECharts rendering, frontend Store/UX
+integration), reviewed and integrated by the parent. Approved plan was committed
+first as 4bb7278, establishing a clean tree before code implementation.
+
+Final implementation uses ECharts 6.1.0 selective imports and SVGRenderer. Boolean
+background intervals use custom rectangles rather than markArea; no unused
+MarkAreaComponent ships. Numeric bucket means use stepped lines across adjacent
+compatible intervals, with separate min/max rectangles and explicit null/source
+gaps. Outlines were removed from boolean buckets after real-browser inspection
+showed that dense outlines obscured long-range numeric plots. Fractions remain
+inspectable through timestamp details even when zero. Graph details label raw,
+minute and combined summaries in ordinary language, with shared uncertainty
+notes. Arrow-key navigation works from timestamps and arbitrary hovered times.
+
+The point ID codec uses the documented canonical JSON/base64url layout. Source
+groups use SHA-256 over the ordered snapshot fields. Partial expired boundary
+minutes expose their full support; adjacent coarser buckets trim their support
+to avoid overlap and double shading. Index and show share the reducer and were
+compared through HTTP on the review dataset as well as in RSpec. Summary-derived
+last values are conservatively unknown; exact transitions are not reconstructed.
+Sample/rollup listings have no default/max cap; caller-specified positive limits
+remain supported and invalid values return 422. Trace listing caps are unchanged.
+
+Frontend queries use only Store and capture a stable shared window. A local
+query-key guard prevents DataLoader2's retained result from presenting an older
+window after input changes. Deselected IDs and range live in the UX tree; new
+measurements therefore start selected and tab switches preserve user choices.
+No new frontend polling cadence, recording, maintenance or hardware behavior.
+
+Verification:
+
+- Final focused RSpec: 20 examples, 0 failures (new API/codec and existing
+  measurement request coverage). Full suite before the last edge regression:
+  375 examples, only the same two baseline HostPorts failures at
+  spec/requests/host_ports_spec.rb:76 and :87 due to unavailable /dev/ttyUSB0
+  on this Mac. The final edge regression was then added and passed in the
+  focused suite; no claim of a completely green full suite.
+- Full frontend suite: 95 tests in 18 files pass. TypeScript noEmit check and
+  production build pass. Ruby lint: 10 changed/new API/model/controller/service/
+  spec files pass; git diff --check passes.
+- Browser: built frontend served on temporary port 5199 against API-only Rails
+  on port 3002 and disposable plc_history_review_20261110 database. Four series,
+  2,343 raw samples and 172,760 minute rollups covered 30 days. Real ECharts SVG
+  verified at 1440px desktop and 390px mobile: numeric/boolean/mixed selection,
+  boolean-only plot, 30-day range, pointer/keyboard details, all-off state,
+  selection/range persistence across tabs, width-driven 1400/300 point budgets,
+  and no horizontal overflow or page errors. Inspected rendered screenshots.
+- Playwright's bundled Chromium download repeatedly timed out; used Playwright
+  with installed Chrome channel (157.0.8103.39), not the prohibited Chromium CLI.
+- Production JS isolated from the running development watcher: 754,449 bytes raw,
+  251,190 bytes gzip. Baseline: 205,633 raw / 61,384 gzip. Delta: 548,816 raw /
+  189,806 gzip. Bundle size is a material ECharts tradeoff, now measured.
+- Four-series 30-day HTTP query with target_points=600 returned 1,448 points
+  (362 per series, 2-hour nominal buckets plus partial edges) and about 1.16 MB
+  of JSON. Initial request 4.73s; warm request 4.58s on this Mac in Rails
+  development mode. Batching EXPLAIN used the primary-key index, retrieving
+  1,000 selected rollups in 0.656ms with 72 shared-buffer hits. Ruby JSON/group
+  reduction and full history scanning remain costs even though returned point
+  count is bounded by requested presentation resolution. Measure on the Pi
+  before production deployment; no production performance guarantee is made.
+
+Known implementation limits: bulk by_ids batches sample lookups but reconstructs
+separate bucket descriptors independently; ordinary show requests use one ID.
+Summary timestamps cannot supply exact historical on/off intervals or missing
+positions within a minute. No schema migration is needed. No deployment or
+poller was started. Temporary services and review database are removed after QA.

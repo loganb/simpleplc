@@ -451,3 +451,8 @@ export const MeasurementSample: ModelDefinition<MeasurementSampleFields> = {
 export const MeasurementRollup: ModelDefinition<MeasurementRollupFields> = {
   name: 'measurement_rollup', inflections: { plural: 'measurement_rollups', title: 'MeasurementRollup' }, singleton: false,
 };
+
+// Computed, read-only history points.
+export const MeasurementHistoryPoint: ModelDefinition<import('./tabs/measurements/historyTypes').MeasurementHistoryPointFields> = {
+  name: 'measurement_history_point', inflections: { plural: 'measurement_history_points', title: 'MeasurementHistoryPoint' }, singleton: false,
+};

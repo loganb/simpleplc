@@ -1,0 +1,3 @@
+class MeasurementHistoryPointsController < ApplicationController
+  include RestfulApiController
+end
