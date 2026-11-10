@@ -607,3 +607,110 @@ separate bucket descriptors independently; ordinary show requests use one ID.
 Summary timestamps cannot supply exact historical on/off intervals or missing
 positions within a minute. No schema migration is needed. No deployment or
 poller was started. Temporary services and review database are removed after QA.
+
+## Revision: boundary context, live cadence and readable IDs
+
+Status: revision approved by Logan; implementation in progress.
+This extends the existing task; no new schema or hardware behavior.
+
+### Findings and proposed behavior
+
+The raw query currently returns only [since,until) samples. A line cannot cross
+its left plot boundary when its first returned observation is after since;
+boolean shading likewise misses a state established before since. Separately,
+the captured window advances only on the root refresh (normally five minutes),
+which makes a one-minute graph stale. Both need correction. Missing readings
+must still remain missing; neither change should fabricate an entire minute
+of values for a newly attached or stopped measurement.
+
+For raw-mode series, include one nearest raw observation strictly before since
+and one nearest observation at/after until when one exists, per measurement.
+Use indexed batched lateral lookups, not a query per measurement/point. Return
+these ordinary sample records in the same query envelope, with actual sample
+IDs/timestamps. They are boundary context and do not count toward the requested
+interior point budget (at most two extras per raw series). Update metadata
+returned_points to include them. Do not let context change raw/bucket selection
+or interior aggregate statistics. Bucket summaries already expose interval
+support and need no fictitious extra observations in this revision.
+
+Pass the visible since/until into the frontend transformation. Clip numeric
+segments at the window boundaries using the same linear interpolation as the
+existing raw line renderer; calculate numeric bounds from visible geometry,
+not an arbitrary out-of-window context value. Clip boolean state intervals
+similarly. Preserve null/type/source breaks: the nearest context observation
+must never be skipped just because it is null or has a different source.
+Context timestamps must not become out-of-window keyboard stops. Inspection
+at a boundary must identify the actual observed sample timestamps, rather
+than claiming a sample was recorded at the clipping boundary. No extrapolation
+past the latest observation to fill the right edge; the next observation can
+bracket the right boundary only for historical windows. A genuine tail gap
+remains visible until a new sample arrives.
+
+Scale-dependent live query cadence (visible Measurements tab only):
+
+| Range | Refresh interval |
+| --- | --- |
+| 1m | 2 seconds |
+| 10m | 5 seconds |
+| 1hr | 15 seconds |
+| 24hr | 60 seconds |
+| 7d | 2 minutes |
+| 30d | 5 minutes |
+
+Use completion-aware scheduling: do not queue a new history query while the
+current one is pending. Stop the timer on unmount, hidden document or empty
+selection. Resume immediately when visible with a selection. Preserve root
+explicit refresh behavior. Range changes fetch immediately. Capture now once
+per actual refresh and keep the window fixed while processing that query.
+Retain the last successful graph with its matching window while refreshing;
+swap window+points atomically when new results arrive. Initial load still
+shows loading, background updates use a small updating status, failures keep
+old data with an error indication. Never label old points as a new time window
+or clear/recreate the chart every two seconds. Keep the full-query-key guard
+against DataLoader2's stale dependency result. Test no-overlap scheduling,
+visibility cleanup, resumed updates, range changes, failure and stale results.
+
+### Revised ID wire format (replaces original version-1 codec)
+
+The client continues to treat IDs as opaque, but their text is readable.
+Delimiter is exactly U+1F539 SMALL BLUE DIAMOND: 🔹. No version header and
+no base64 or JSON wrapper. Join the existing ordered payload values:
+
+    s🔹12🔹345
+    b🔹12🔹1762819200000000🔹1762819260000000🔹<64 lowercase SHA-256 hex characters>
+
+Sample tokens: s, measurement ID, sample ID. Bucket tokens: b, measurement ID,
+start Unix microseconds, end Unix microseconds, source-group digest. Retain the
+current digest definition and integer timestamps; this changes encoding only,
+not record meaning. These token alphabets cannot contain the separator, so no
+escaping convention is required. Store already URL-encodes IDs for fetch;
+verify Unicode routing through a real request and through the client.
+
+Decode by exact separator, exact token count and s/b discriminator. Positive
+IDs use canonical decimal digits without leading zeros; timestamps use signed
+canonical decimal integers (zero allowed, negative zero rejected) within the
+existing safe range. Digests use lowercase 64-character hex. Re-encode equality
+validates canonical form. Reject old mhp1/base64 IDs and malformed tokens as
+404. No compatibility decoder: this is a direct revision of initial version 1;
+a future version can have a distinguishable header as Logan requested. Source
+names remain in the source object rather than making IDs delimiter-sensitive.
+No persisted IDs exist; expire/reload frontend query records on deployment.
+
+### Implementation packets after confirmation
+
+1. Backend Terra owns codec, query context retrieval and RSpec: red tests for
+   predecessor/null/source changes, missing context, historical successor,
+   extra points outside budget, Unicode show/index equality and codec vectors.
+   Existing bucket/edge aggregation and listing behavior must remain green.
+2. Frontend Terra owns hook/cadence and its real Store tests: fake-clock tests
+   per range, no timer leaks/hidden requests, atomic successful display,
+   failures/in-flight suppression, root refresh and stale-response regression.
+3. Graph Terra owns window-clipping transforms and graph tests: predecessor
+   crosses left edge, historical successor crosses right edge, outlier context
+   does not inflate Y range, null/source breaks, boolean intervals, no fake
+   timestamp labels, no out-of-window keyboard stops. Coordinate the explicit
+   transform inputs with parent before editing shared contracts.
+4. Parent reviews all three packets, verifies real built UI at 1m with sparse
+   observations and live 2-second updates, inspects Unicode IDs through actual
+   HTTP and Store fetch, runs focused/full required checks, updates overview
+   and records outcomes. No second poller or production testing/deployment.
