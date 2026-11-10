@@ -12,7 +12,7 @@ const sourceKey = ({ source: s }: MeasurementHistoryPointFields) => JSON.stringi
   s.logic_instance_id, s.logic_diagram_id, s.source_type, s.source_id, s.value_type,
   s.logic_instance_name, s.logic_diagram_name, s.source_name,
 ]);
-export function buildHistorySeries(series: HistoryGraphSeries): TransformedHistory {
+export function buildHistorySeries(series: HistoryGraphSeries, window?: { since: number; until: number }): TransformedHistory {
   const result: TransformedHistory = { series, lines: [], bucketLines: [], buckets: [], booleans: [] };
   const points = [...series.points].sort((a, b) => Date.parse(a.start) - Date.parse(b.start) || Date.parse(a.end) - Date.parse(b.end));
   let line: NumericPoint[] = [];
@@ -34,12 +34,38 @@ export function buildHistorySeries(series: HistoryGraphSeries): TransformedHisto
         result.booleans.push({ start, end, fraction: Math.max(0, Math.min(1, point.statistics.true_fraction)), point });
       }
     }
-    if (point.kind === 'sample' && previous?.kind === 'sample' && previous.source.value_type === 'boolean' && previous.value === true && sourceKey(previous) === sourceKey(point) && start > Date.parse(previous.start)) {
-      result.booleans.push({ start: Date.parse(previous.start), end: start, fraction: 1, point: previous });
+    if (point.kind === 'sample' && previous?.kind === 'sample' && previous.source.value_type === 'boolean' && typeof previous.value === 'boolean' && sourceKey(previous) === sourceKey(point) && start > Date.parse(previous.start)) {
+      result.booleans.push({ start: Date.parse(previous.start), end: start, fraction: previous.value ? 1 : 0, point: previous });
     }
     previous = point;
   }
   flush();
+  if (window) {
+    const { since, until } = window;
+    result.lines = result.lines.flatMap(({ points }) => {
+      const clipped: NumericPoint[] = [];
+      const add = (point: NumericPoint) => {
+        if (!clipped.length || clipped[clipped.length - 1].time !== point.time) clipped.push(point);
+      };
+      if (points.length === 1 && points[0].time >= since && points[0].time <= until) add(points[0]);
+      for (let i = 1; i < points.length; i++) {
+        const a = points[i - 1], b = points[i];
+        if (b.time < since || a.time > until) continue;
+        const interpolate = (time: number) => ({ time, value: a.value + (b.value - a.value) * (time - a.time) / (b.time - a.time) });
+        add(a.time < since ? interpolate(since) : a);
+        add(b.time > until ? interpolate(until) : b);
+      }
+      return clipped.length ? [{ points: clipped }] : [];
+    });
+    result.booleans = result.booleans.flatMap(interval => {
+      const start = Math.max(interval.start, since), end = Math.min(interval.end, until);
+      return start < end ? [{ ...interval, start, end }] : [];
+    });
+    result.buckets = result.buckets.flatMap(bucket => {
+      const start = Math.max(bucket.start, since), end = Math.min(bucket.end, until);
+      return start < end ? [{ ...bucket, start, end }] : [];
+    });
+  }
   let current: NumericPoint[] = [];
   let prior: typeof result.buckets[number] | undefined;
   for (const bucket of result.buckets) {
@@ -61,4 +87,14 @@ export function numericDomain(series: TransformedHistory[]): [number, number] | 
   if (min === Infinity) return null;
   const padding = min === max ? Math.max(Math.abs(min) * 0.05, 1) : (max - min) * 0.05;
   return [min - padding, max + padding];
+}
+
+/** Whether a series has observations or supported geometry in the visible window. */
+export function hasVisibleHistory(series: HistoryGraphSeries, window: { since: number; until: number }): boolean {
+  if (series.points.some(point => {
+    const start = Date.parse(point.start), end = Date.parse(point.end);
+    return point.kind === 'sample' ? start >= window.since && start < window.until : start < window.until && end > window.since;
+  })) return true;
+  const visible = buildHistorySeries(series, window);
+  return visible.lines.length > 0 || visible.booleans.length > 0 || visible.buckets.length > 0;
 }

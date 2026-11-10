@@ -1,8 +1,7 @@
-require "base64"
 require "digest"
 
 module MeasurementHistoryPointId
-  PREFIX = "mhp1_".freeze
+  SEPARATOR = "🔹".freeze
   MAX_SAFE = 9_007_199_254_740_991
   FIELDS = %w[logic_instance_id logic_diagram_id source_type source_id value_type logic_instance_name logic_diagram_name source_name].freeze
 
@@ -11,24 +10,26 @@ module MeasurementHistoryPointId
   end
 
   def self.encode(payload)
-    PREFIX + Base64.urlsafe_encode64(JSON.generate(payload), padding: false)
+    payload.join(SEPARATOR)
   end
 
   def self.decode(id)
-    return unless id.is_a?(String) && id.match?(/\Amhp1_[A-Za-z0-9_-]+\z/)
-    data = JSON.parse(Base64.urlsafe_decode64(id.delete_prefix(PREFIX)))
-    return unless data.is_a?(Array) && encode(data) == id
-    positive = ->(v) { v.is_a?(Integer) && v.positive? }
-    safe = ->(v) { v.is_a?(Integer) && v.abs <= MAX_SAFE }
-    case data
+    return unless id.is_a?(String)
+    tokens = id.split(SEPARATOR, -1)
+    positive = /\A[1-9][0-9]*\z/
+    signed = /\A(?:0|[1-9][0-9]*|-[1-9][0-9]*)\z/
+    case tokens
     in [ "s", measurement_id, sample_id ]
-      data if positive.call(measurement_id) && positive.call(sample_id)
+      return unless positive.match?(measurement_id) && positive.match?(sample_id)
+      data = [ "s", measurement_id.to_i, sample_id.to_i ]
     in [ "b", measurement_id, start_us, end_us, digest ]
-      data if positive.call(measurement_id) && safe.call(start_us) && safe.call(end_us) && start_us < end_us && digest.is_a?(String) && digest.match?(/\A[0-9a-f]{64}\z/)
+      return unless positive.match?(measurement_id) && signed.match?(start_us) && signed.match?(end_us) && digest.match?(/\A[0-9a-f]{64}\z/)
+      start_value, end_value = start_us.to_i, end_us.to_i
+      return unless start_value.abs <= MAX_SAFE && end_value.abs <= MAX_SAFE && start_value < end_value
+      data = [ "b", measurement_id.to_i, start_value, end_value, digest ]
     else
-      nil
+      return
     end
-  rescue ArgumentError, JSON::ParserError
-    nil
+    data if encode(data) == id
   end
 end

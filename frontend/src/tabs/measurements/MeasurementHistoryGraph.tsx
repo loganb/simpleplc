@@ -22,21 +22,72 @@ const pointDescription = (point: MeasurementHistoryPointFields) => {
 export function MeasurementHistoryGraph({ series, since, until, onPlotWidth }: MeasurementHistoryGraphProps) {
   const container = useRef<HTMLDivElement>(null);
   const chart = useRef<echarts.ECharts | null>(null);
+  const cursorTime = useRef<number | null>(null);
+  const highlighted = useRef<{ seriesId: string; dataIndex: number }[]>([]);
+  const clearHighlights = (instance: echarts.ECharts) => {
+    highlighted.current.forEach(item => instance.dispatchAction({ type: 'downplay', ...item }));
+    highlighted.current = [];
+  };
+  const pointer = useRef<{ x: number; y: number } | null>(null);
+  const restoreCursor = useRef<() => void>(() => {});
   const callback = useRef(onPlotWidth);
   callback.current = onPlotWidth;
-  const transformed = useMemo(() => series.map(buildHistorySeries), [series]);
+  const transformed = useMemo(() => series.map(item => buildHistorySeries(item, { since: Date.parse(since), until: Date.parse(until) })), [series, since, until]);
   const times = useMemo(() => {
     const from = Date.parse(since), to = Date.parse(until);
-    return [...new Set(series.flatMap(s => s.points.flatMap(p => {
+    return [...new Set([...transformed.flatMap(s => [...s.lines.flatMap(line => line.points.map(point => point.time)), ...s.booleans.flatMap(interval => [interval.start, interval.end])]), ...series.flatMap(s => s.points.flatMap(p => {
       const start = Date.parse(p.start), end = Date.parse(p.end);
       if (!Number.isFinite(start) || !Number.isFinite(end) || start > to || (p.kind === 'bucket' ? end <= from : start < from)) return [];
       return [Math.max(start, from)];
-    })))].sort((a, b) => a - b);
-  }, [series, since, until]);
+    }))])].sort((a, b) => a - b);
+  }, [series, transformed, since, until]);
   const [selectedTime, setSelectedTime] = useState<number | null>(null);
   const [keyboardDetails, setKeyboardDetails] = useState(false);
   const timesRef = useRef(times); timesRef.current = times;
   const seriesRef = useRef(series); seriesRef.current = series;
+  const highlightNumeric = (instance: echarts.ECharts, time: number) => {
+    clearHighlights(instance);
+    for (const item of transformed) {
+      const candidates = [
+        ...item.lines.map((line, i) => ({ line, seriesId: `line-${item.series.measurementId}-${i}` })),
+        ...item.bucketLines.map((line, i) => ({ line, seriesId: `bucket-line-${item.series.measurementId}-${i}` })),
+      ];
+      let closest: { seriesId: string; dataIndex: number; distance: number } | undefined;
+      for (const { line, seriesId } of candidates) line.points.forEach((point, dataIndex) => {
+        const distance = Math.abs(point.time - time);
+        if (!closest || distance < closest.distance) closest = { seriesId, dataIndex, distance };
+      });
+      if (closest) {
+        const { seriesId, dataIndex } = closest;
+        highlighted.current.push({ seriesId, dataIndex });
+        instance.dispatchAction({ type: 'highlight', seriesId, dataIndex });
+      }
+    }
+  };
+  const highlightRef = useRef(highlightNumeric); highlightRef.current = highlightNumeric;
+  const selectPointer = (instance: echarts.ECharts, x: number, y: number) => {
+    if (!instance.containPixel({ gridIndex: 0 }, [x, y])) return;
+    const time = instance.convertFromPixel({ xAxisIndex: 0 }, x) as number;
+    const nearest = timesRef.current.reduce<number | null>((best, next) => best === null || Math.abs(next - time) < Math.abs(best - time) ? next : best, null);
+    const inBucket = seriesRef.current.some(s => s.points.some(p => p.kind === 'bucket' && Date.parse(p.start) <= time && time < Date.parse(p.end)));
+    const selected = inBucket ? time : nearest;
+    if (selected !== null) {
+      cursorTime.current = selected;
+      setSelectedTime(selected);
+      instance.dispatchAction({ type: 'updateAxisPointer', x, y });
+      highlightRef.current(instance, time);
+    }
+  };
+  const selectPointerRef = useRef(selectPointer); selectPointerRef.current = selectPointer;
+  restoreCursor.current = () => {
+    const instance = chart.current, time = cursorTime.current;
+    if (!instance) return;
+    if (pointer.current) { selectPointerRef.current(instance, pointer.current.x, pointer.current.y); return; }
+    if (time === null) return;
+    if (time < Date.parse(since) || time > Date.parse(until)) { cursorTime.current = null; return; }
+    instance.dispatchAction({ type: 'updateAxisPointer', x: instance.convertToPixel({ xAxisIndex: 0 }, time), y: 30 });
+    highlightRef.current(instance, time);
+  };
   useEffect(() => {
     if (!container.current) return;
     const element = container.current;
@@ -44,12 +95,9 @@ export function MeasurementHistoryGraph({ series, since, until, onPlotWidth }: M
     chart.current = instance;
     const choose = (event: { offsetX: number; offsetY: number }) => {
       if (!instance.containPixel({ gridIndex: 0 }, [event.offsetX, event.offsetY])) return;
-      const time = instance.convertFromPixel({ xAxisIndex: 0 }, event.offsetX) as number;
-      const nearest = timesRef.current.reduce<number | null>((best, next) => best === null || Math.abs(next - time) < Math.abs(best - time) ? next : best, null);
-      const inBucket = seriesRef.current.some(s => s.points.some(p => p.kind === 'bucket' && Date.parse(p.start) <= time && time < Date.parse(p.end)));
+      pointer.current = { x: event.offsetX, y: event.offsetY };
       setKeyboardDetails(false);
-      if (inBucket) setSelectedTime(time);
-      else if (nearest !== null) setSelectedTime(nearest);
+      selectPointerRef.current(instance, event.offsetX, event.offsetY);
     };
     let lastHover = -Infinity;
     const hover = (event: { offsetX: number; offsetY: number }) => {
@@ -58,16 +106,19 @@ export function MeasurementHistoryGraph({ series, since, until, onPlotWidth }: M
       lastHover = now;
       choose(event);
     };
+    const leave = () => { pointer.current = null; cursorTime.current = null; instance.dispatchAction({ type: 'updateAxisPointer', currTrigger: 'leave' }); clearHighlights(instance); };
+    element.addEventListener('mouseleave', leave);
     instance.getZr().on('click', choose);
     instance.getZr().on('mousemove', hover);
     const resize = () => {
       instance.resize();
+      restoreCursor.current();
       callback.current?.(Math.max(1, element.clientWidth - 75));
     };
     const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(resize);
     observer?.observe(element);
     resize();
-    return () => { observer?.disconnect(); instance.getZr().off('click', choose); instance.getZr().off('mousemove', hover); instance.dispose(); chart.current = null; };
+    return () => { element.removeEventListener('mouseleave', leave); observer?.disconnect(); instance.getZr().off('click', choose); instance.getZr().off('mousemove', hover); instance.dispose(); chart.current = null; };
   }, []);
   useEffect(() => {
     const instance = chart.current;
@@ -102,13 +153,17 @@ export function MeasurementHistoryGraph({ series, since, until, onPlotWidth }: M
     }
     const duration = Date.parse(until) - Date.parse(since);
     const timeFormat = new Intl.DateTimeFormat(undefined, duration <= 600_000 ? { hour: 'numeric', minute: '2-digit', second: '2-digit' } : duration <= 86_400_000 ? { hour: 'numeric', minute: '2-digit' } : { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
-    instance.setOption({ animation: false, aria: { enabled: true, label: { description: 'Measurement history chart. Use left and right arrow keys to explore readings.' } }, grid: { left: 55, right: 20, top: 15, bottom: 45 }, xAxis: { type: 'time', min: Date.parse(since), max: Date.parse(until), axisLabel: { hideOverlap: true, formatter: (value: number) => timeFormat.format(new Date(value)) }, axisPointer: { show: true, snap: false } }, yAxis: { type: 'value', min: domain?.[0] ?? 0, max: domain?.[1] ?? 1, show: domain !== null, axisLabel: { showMinLabel: false, showMaxLabel: false, formatter: (value: number) => new Intl.NumberFormat(undefined, { maximumSignificantDigits: 4 }).format(value) } }, tooltip: { trigger: 'axis', showContent: false, triggerOn: 'mousemove|click' }, series: chartSeries }, { notMerge: true });
+    instance.setOption({ animation: false, aria: { enabled: true, label: { description: 'Measurement history chart. Use left and right arrow keys to explore readings.' } }, grid: { left: 55, right: 20, top: 15, bottom: 45 }, xAxis: { type: 'time', min: Date.parse(since), max: Date.parse(until), axisLabel: { hideOverlap: true, formatter: (value: number) => timeFormat.format(new Date(value)) }, axisPointer: { show: true, snap: false } }, yAxis: { type: 'value', min: domain?.[0] ?? 0, max: domain?.[1] ?? 1, show: domain !== null, axisLabel: { showMinLabel: false, showMaxLabel: false, formatter: (value: number) => new Intl.NumberFormat(undefined, { maximumSignificantDigits: 4 }).format(value) } }, tooltip: { trigger: 'axis', showContent: false, triggerOn: 'none' }, series: chartSeries }, { notMerge: true });
+    restoreCursor.current();
     if (container.current) callback.current?.(Math.max(1, container.current.clientWidth - 75));
   }, [transformed, since, until]);
   const activeTime = selectedTime !== null && selectedTime >= Date.parse(since) && selectedTime <= Date.parse(until) ? selectedTime : times[0];
-  const details = activeTime === undefined ? [] : series.flatMap(s => {
+  const details = activeTime === undefined ? [] : series.flatMap((s, index) => {
     const buckets = s.points.filter(p => p.kind === 'bucket' && Date.parse(p.start) <= activeTime && activeTime < Date.parse(p.end));
-    const samples = s.points.filter(p => p.kind === 'sample');
+    const visible = transformed[index];
+    const intersects = visible.lines.some(line => line.points.length > 1 && line.points[0].time <= activeTime && activeTime <= line.points[line.points.length - 1].time)
+      || visible.booleans.some(interval => interval.point.kind === 'sample' && interval.start <= activeTime && activeTime <= interval.end);
+    const samples = s.points.filter(p => p.kind === 'sample' && (intersects || (Date.parse(p.start) >= Date.parse(since) && Date.parse(p.start) <= Date.parse(until))));
     const nearest = samples.reduce<MeasurementHistoryPointFields | undefined>((best, point) => !best || Math.abs(Date.parse(point.start) - activeTime) < Math.abs(Date.parse(best.start) - activeTime) ? point : best, undefined);
     return [...buckets, ...(nearest ? [nearest] : [])].map(point => ({ name: s.name, point }));
   });
@@ -126,8 +181,13 @@ export function MeasurementHistoryGraph({ series, since, until, onPlotWidth }: M
         ? times.find(time => time > activeTime) ?? times[times.length - 1]
         : [...times].reverse().find(time => time < activeTime) ?? times[0];
       setKeyboardDetails(true);
+      pointer.current = null;
+      cursorTime.current = next ?? null;
       setSelectedTime(next ?? null);
-      if (next !== undefined && chart.current) chart.current.dispatchAction({ type: 'updateAxisPointer', x: chart.current.convertToPixel({ xAxisIndex: 0 }, next), y: 30 });
+      if (next !== undefined && chart.current) {
+        chart.current.dispatchAction({ type: 'updateAxisPointer', x: chart.current.convertToPixel({ xAxisIndex: 0 }, next), y: 30 });
+        highlightRef.current(chart.current, next);
+      }
     }}>
       <div ref={container} class="h-60 w-full sm:h-80" />
     </div>

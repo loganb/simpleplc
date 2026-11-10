@@ -70,7 +70,23 @@ module MeasurementHistory
 
     def raw_points(ids)
       return [] if ids.empty?
-      MeasurementSample.where(measurement_id: ids, recorded_at: time(@since)...time(@until)).find_each.map { |s| self.class.sample(s) }
+      interior = MeasurementSample.where(measurement_id: ids, recorded_at: time(@since)...time(@until)).find_each.map { |s| self.class.sample(s) }
+      # One index-backed lookup per direction and measurement, in one database query.
+      connection = MeasurementSample.connection
+      values = ids.map { |id| "(#{Integer(id)})" }.join(", ")
+      since = connection.quote(time(@since))
+      till = connection.quote(time(@until))
+      context = MeasurementSample.find_by_sql(<<~SQL)
+        SELECT sample.* FROM (VALUES #{values}) AS selected(measurement_id)
+        CROSS JOIN LATERAL (
+          (SELECT * FROM measurement_samples WHERE measurement_id = selected.measurement_id AND recorded_at < #{since}
+           ORDER BY recorded_at DESC, id DESC LIMIT 1)
+          UNION ALL
+          (SELECT * FROM measurement_samples WHERE measurement_id = selected.measurement_id AND recorded_at >= #{till}
+           ORDER BY recorded_at ASC, id ASC LIMIT 1)
+        ) AS sample
+      SQL
+      interior.concat(context.map { |sample| self.class.sample(sample) })
     end
 
     def bucket_points(ids, duration, fixed: false)

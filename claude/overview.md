@@ -35,8 +35,12 @@ HVAC PLC controller application — a web interface for monitoring and controlli
   lines and min/max bands; boolean series shade on intervals, with summarized
   opacity representing sample fractions. A computed MeasurementHistoryPoint
   resource uses Store queries with a width-based per-series point budget and
-  reconstructible versioned string IDs; raw/summary data covers the full window
-  without listing caps. Range and selection persist across tab changes. See
+  reconstructible emoji-delimited string IDs; raw/summary data covers the full window
+  without listing caps. Raw queries include neighboring observations for correct edge clipping.
+  Live refresh scales from 2 seconds at 1m to 5 minutes at 30d, retaining the
+  displayed snapshot while updates load and pausing new periodic requests
+  while hidden. Cursor and numeric highlights persist across updates.
+  Range and selection persist across tab changes. See
   `claude/measurement-history.md` for the API, precision limits and verification; Instances has a create/select modal, crosshair
   attachment mode and per-port measurement menus. All frontend I/O uses Store.
   Backdated samples are retained in separately marked summary segments before

@@ -11,8 +11,32 @@ RSpec.describe "Measurement history points", type: :request do
     expect(response).to have_http_status(:ok)
     point = response.parsed_body.fetch("measurement_history_points").sole
     expect(point).to include("kind" => "sample", "value" => 0, "count" => 1)
-    get "/measurement_history_points/#{point.fetch('id')}"
+    get "/measurement_history_points/#{ERB::Util.url_encode(point.fetch('id'))}"
     expect(response.parsed_body.fetch("measurement_history_points").sole).to eq(point)
+  end
+
+  it "returns nearest boundary observations without consuming the interior budget" do
+    other = Measurement.create!(name: "Other")
+    from = now - 60
+    before = MeasurementSample.create!(measurement: measurement, recorded_at: from - 2, snapshot: source.merge("value" => true, "value_type" => "boolean"))
+    nearest = MeasurementSample.create!(measurement: measurement, recorded_at: from - 1, snapshot: source.merge("value" => nil, "source_name" => "Changed"))
+    inside = MeasurementSample.create!(measurement: measurement, recorded_at: from, snapshot: source.merge("value" => false, "value_type" => "boolean"))
+    after = MeasurementSample.create!(measurement: measurement, recorded_at: now, snapshot: source.merge("value" => false, "value_type" => "boolean"))
+    MeasurementSample.create!(measurement: measurement, recorded_at: now + 1, snapshot: source.merge("value" => 4))
+    get "/measurement_history_points", params: { q: { measurement_ids: [ measurement.id, other.id ], since: from.iso8601, until: now.iso8601, target_points: 1 }.to_json }
+    expect(response).to have_http_status(:ok)
+    points = response.parsed_body.fetch("measurement_history_points")
+    expect(points.map { |p| p.fetch("id") }).to eq([ nearest, inside, after ].map { |s| "s🔹#{measurement.id}🔹#{s.id}" })
+    expect(points.first).to include("value" => nil, "null_count" => 1, "source" => include("source_name" => "Changed"))
+    expect(points.last).to include("value" => false, "count" => 1)
+    expect(response.parsed_body.fetch("metadata").fetch("series")).to include(include("measurement_id" => measurement.id, "kind" => "sample", "returned_points" => 3), include("measurement_id" => other.id, "returned_points" => 0))
+    points.each do |point|
+      get "/measurement_history_points/#{ERB::Util.url_encode(point.fetch('id'))}"
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body.fetch("measurement_history_points").sole).to eq(point)
+    end
+    get "/measurement_history_points/mhp1_WyJzIiwxLDJd"
+    expect(response).to have_http_status(:not_found)
   end
 
   it "rejects invalid budgets and missing measurements" do
@@ -44,7 +68,7 @@ RSpec.describe "Aggregated measurement history", type: :request do
     point = query(minute, minute + 60).sole
     expect(point).to include("count" => 150, "null_count" => 1, "coverage" => "mixed", "last_known" => false)
     expect(point.fetch("statistics")).to include("mean" => 12.0, "min" => 8, "max" => 22, "last" => nil)
-    get "/measurement_history_points/#{point.fetch('id')}"
+    get "/measurement_history_points/#{ERB::Util.url_encode(point.fetch('id'))}"
     expect(response.parsed_body.fetch("measurement_history_points").sole).to eq(point)
   end
 
@@ -53,7 +77,7 @@ RSpec.describe "Aggregated measurement history", type: :request do
       summaries: [ source.merge("statistics" => { "count" => 2, "mean" => 2, "min" => 1, "max" => 3 }) ])
     point = query(minute + 15, minute + 45).sole
     expect(point).to include("start" => minute.iso8601(6), "end" => (minute + 60).iso8601(6), "count" => 2)
-    get "/measurement_history_points/#{point.fetch('id')}"
+    get "/measurement_history_points/#{ERB::Util.url_encode(point.fetch('id'))}"
     expect(response.parsed_body.fetch("measurement_history_points").sole).to eq(point)
   end
 
@@ -82,7 +106,7 @@ RSpec.describe "History tier merging", type: :request do
     MeasurementSample.create!(measurement: measurement, recorded_at: minute + 40, rolled_up: true, snapshot: source.merge("value" => false))
     points = history(minute + 5, minute + 35, 1)
     expect(points.sole).to include("count" => 2, "coverage" => "raw", "statistics" => include("true_fraction" => 1.0))
-    get "/measurement_history_points/#{points.sole.fetch('id')}"
+    get "/measurement_history_points/#{ERB::Util.url_encode(points.sole.fetch('id'))}"
     expect(response.parsed_body.fetch("measurement_history_points").sole).to eq(points.sole)
   end
   it "weights boolean summaries and keeps renamed source groups separate" do
@@ -95,7 +119,7 @@ RSpec.describe "History tier merging", type: :request do
     expect(points.size).to eq(2)
     expect(points.find { |p| p.dig("source", "source_name") == "Ready" }.dig("statistics", "true_fraction")).to eq(0.75)
     points.each do |point|
-      get "/measurement_history_points/#{point.fetch('id')}"
+      get "/measurement_history_points/#{ERB::Util.url_encode(point.fetch('id'))}"
       expect(response.parsed_body.fetch("measurement_history_points").sole).to eq(point)
     end
   end
@@ -129,7 +153,7 @@ RSpec.describe "Multi-bucket history", type: :request do
     expect(points.sum { |point| point.fetch("count") }).to eq(3)
     expect(points.map { |point| point.dig("source", "value_type") }).to include("number", "boolean")
     points.each do |point|
-      get "/measurement_history_points/#{point.fetch('id')}"
+      get "/measurement_history_points/#{ERB::Util.url_encode(point.fetch('id'))}"
       expect(response.parsed_body.fetch("measurement_history_points").sole).to eq(point)
     end
   end
@@ -179,7 +203,7 @@ RSpec.describe "Historical edge support", type: :request do
     expect(points.sum { |p| p.fetch("count") }).to eq(12)
     points.each_cons(2) { |a, b| expect(a.fetch("end")).to be <= b.fetch("start") }
     points.each do |point|
-      get "/measurement_history_points/#{point.fetch('id')}"
+      get "/measurement_history_points/#{ERB::Util.url_encode(point.fetch('id'))}"
       expect(response.parsed_body.fetch("measurement_history_points").sole).to eq(point)
     end
   end

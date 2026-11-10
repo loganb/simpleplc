@@ -610,7 +610,7 @@ poller was started. Temporary services and review database are removed after QA.
 
 ## Revision: boundary context, live cadence and readable IDs
 
-Status: revision approved by Logan; implementation in progress.
+Status: revision approved by Logan; implemented and verified locally. Not deployed.
 This extends the existing task; no new schema or hardware behavior.
 
 ### Findings and proposed behavior
@@ -714,3 +714,74 @@ No persisted IDs exist; expire/reload frontend query records on deployment.
    observations and live 2-second updates, inspects Unicode IDs through actual
    HTTP and Store fetch, runs focused/full required checks, updates overview
    and records outcomes. No second poller or production testing/deployment.
+
+
+### Revision implementation and verification
+
+Completed by three Terra agents and reviewed by the parent. The approved
+revision plan was committed before code as 671fbdb. IDs now use exactly the
+specified 🔹 delimiter and no header; old mhp1/base64 IDs return 404. The API
+batches predecessor/successor lookups using lateral scans over the existing
+measurement/time index. Raw context does not change the interior point budget,
+aggregate statistics or point meaning.
+
+Window clipping uses visible numeric geometry for the Y domain; synthetic
+edge geometry does not become a claimed recorded observation. Transparent
+false boolean intervals remain inspectable, and context-only stopped series
+show the empty state instead of a misleading blank chart. A context point
+alone never extends the latest value to the current time.
+
+Live queries follow the approved cadence, with completion-aware timers, tab
+visibility handling and cleanup. Explicit refreshes coalesce while a query
+is pending. Window and points swap together after success; the previous
+successful snapshot stays visible during a background update or failure.
+Memoized graph series prevent updating-status-only renders from resetting
+ECharts. The current Store API cannot cancel an already-started request or
+its automatic retry: this revision stops new periodic windows while hidden,
+unmounted or unselected, but an outstanding Store retry may still finish.
+
+Logan also reported the cursor line and highlighted dot disappearing when
+motion stopped. The parent could not reproduce that exact disappearance with
+static fixture data. Two relevant runtime behaviors were addressed: chart
+updates replace pointer state, and the shared axis-pointer nearest-series
+selection can pick a boolean rectangle instead of a numeric point. The graph
+now explicitly restores pointer position after updates/resize, independently
+highlights the nearest numeric point for each measurement, and clears both on
+actual mouseleave. Pointer mode preserves pixel position as the live window
+advances; keyboard mode preserves selected timestamp. No new chart library or
+controller was added for markers.
+
+Verification on the revision:
+
+- Full RSpec: 377 examples; only the same two baseline HostPorts failures due
+  to absent /dev/ttyUSB0 on this Mac. All new API, context, emoji codec and
+  existing aggregation regressions pass. RuboCop passes all four changed
+  backend/spec files with cache disabled.
+- Real-browser verification used the built graph with test-only instrumentation
+  exposing ECharts and Store for assertions. A separate database,
+  plc_history_revision_review, held sparse numeric/boolean samples and a
+  stopped probe; a temporary script generated simulated readings there only.
+  API-only Rails used port 3002 and static frontend port 5199. No poller,
+  hardware or development/production data was used.
+- At 1m, numeric geometry and boolean support start exactly at the requested
+  left boundary; the newest observation retains an honest right-side gap.
+  Actual Store.fetch(id,true) percent-encodes the emoji sample ID and the Rails
+  show response returns the same ID. RSpec also covers Unicode bucket show.
+- Observed live requests about 2.03 seconds apart with fast local responses;
+  the displayed window advances with new samples. The graph stops periodic
+  queries when its tab unmounts. Selecting the stopped probe alone presents
+  'No history in this range.' despite its predecessor context record.
+- Captured ECharts state and inspected SVG confirmed the alignment line and
+  emphasized numeric symbol after mouse movement stopped (1 second) and
+  after multiple 2-second refreshes. Cursor pixel position stayed unchanged
+  as the selected time advanced with the window. Both clear on actual leave.
+  Browser page-error collection was empty.
+- Frontend regression coverage includes all six cadence choices, in-flight
+  suppression, visibility/resume, coalesced explicit refresh, retained error
+  snapshot, old-query rejection, stable graph props during background load,
+  clipped edges, false/null/source boundaries, cursor restoration and mixed
+  boolean/numeric highlighting. Final frontend suite: 114 tests in 18 files pass; TypeScript checking,
+  production build and git diff --check pass.
+
+No schema migration or deployment. Temporary simulated publisher, API/static
+servers and review database are removed after verification.

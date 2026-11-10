@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildHistorySeries, numericDomain } from './historySeries';
+import { buildHistorySeries, hasVisibleHistory, numericDomain } from './historySeries';
 import type { HistoryGraphSeries, HistorySamplePoint, HistoryBucketPoint, HistorySource } from './historyTypes';
 
 const source = { value_type: 'number' as const, logic_instance_id: 1, logic_instance_name: 'Instance', logic_diagram_id: 1, logic_diagram_name: 'Diagram', source_type: 'LogicOutput' as const, source_id: 1, source_name: 'Output' };
@@ -20,7 +20,7 @@ describe('history series', () => {
     const bool = { ...source, value_type: 'boolean' as const };
     const b = { ...bucket(8, 10, 0, 1, 0), source: bool, statistics: { true_fraction: 0.5 } };
     const result = buildHistorySeries(series([sample(1, true, bool), sample(3, false, bool), sample(4, true, bool), sample(5, null, bool), sample(6, true, bool), b]));
-    expect(result.booleans.map(x => [x.start, x.end, x.fraction])).toEqual([[1000, 3000, 1], [4000, 5000, 1], [8000, 10000, 0.5]]);
+    expect(result.booleans.map(x => [x.start, x.end, x.fraction])).toEqual([[1000, 3000, 1], [3000, 4000, 0], [4000, 5000, 1], [8000, 10000, 0.5]]);
     expect(numericDomain([result])).toBeNull();
   });
   it('joins adjacent compatible bucket means but breaks at gaps, nulls, and source changes', () => {
@@ -33,6 +33,38 @@ describe('history series', () => {
       [[0, -2], [2000, -2], [2000, 2], [5000, 2]],
       [[5000, 2], [6000, 2]], [[6000, 3], [7000, 3]], [[9000, 3], [10000, 3]],
     ]);
+  });
+
+  it('clips raw lines to the window and derives the domain from visible geometry', () => {
+    const result = buildHistorySeries(series([sample(0, 1000), sample(10, 0), sample(20, 10), sample(30, 1010)]), { since: 9000, until: 21000 });
+    expect(result.lines[0].points).toEqual([{ time: 9000, value: 100 }, { time: 10000, value: 0 }, { time: 20000, value: 10 }, { time: 21000, value: 110 }]);
+    expect(numericDomain([result])).toEqual([-5.5, 115.5]);
+  });
+  it('does not draw outside observations or cross null and source boundaries', () => {
+    const changed = { ...source, source_id: 2 };
+    const window = { since: 10000, until: 20000 };
+    expect(buildHistorySeries(series([sample(0, 1), sample(5, 2)]), window).lines).toEqual([]);
+    expect(buildHistorySeries(series([sample(0, 1), sample(15, null), sample(30, 2)]), window).lines).toEqual([]);
+    expect(buildHistorySeries(series([sample(0, 1), sample(30, 2, changed)]), window).lines).toEqual([]);
+    expect(buildHistorySeries(series([sample(15, 2)]), window).lines[0].points).toEqual([{ time: 15000, value: 2 }]);
+  });
+  it('clips boolean intervals without extrapolating or crossing source changes', () => {
+    const bool = { ...source, value_type: 'boolean' as const };
+    const window = { since: 10000, until: 20000 };
+    const result = buildHistorySeries(series([sample(0, true, bool), sample(15, true, bool), sample(30, false, bool)]), window);
+    expect(result.booleans.map(x => [x.start, x.end])).toEqual([[10000, 15000], [15000, 20000]]);
+    expect(buildHistorySeries(series([sample(0, true, bool), sample(15, true, { ...bool, source_id: 2 })]), window).booleans).toEqual([]);
+    expect(buildHistorySeries(series([sample(15, true, bool)]), window).booleans).toEqual([]);
+  });
+
+  it('retains false observed intervals for inspection and detects context-only empty history', () => {
+    const bool = { ...source, value_type: 'boolean' as const };
+    const window = { since: 10000, until: 20000 };
+    const falseSeries = series([sample(0, false, bool), sample(30, false, bool)]);
+    expect(buildHistorySeries(falseSeries, window).booleans.map(x => [x.start, x.end, x.fraction])).toEqual([[10000, 20000, 0]]);
+    expect(hasVisibleHistory(falseSeries, window)).toBe(true);
+    expect(hasVisibleHistory(series([sample(0, 1), sample(5, 2)]), window)).toBe(false);
+    expect(hasVisibleHistory(series([sample(15, null)]), window)).toBe(true);
   });
 
 });

@@ -64,4 +64,67 @@ describe('MeasurementHistoryGraph', () => {
     expect(screen.getByText(/Sample at .*: 1/)).toBeTruthy();
   });
 
+  it('keeps the cursor through a refresh and clears it on leaving the graph', () => {
+    const view = render(<MeasurementHistoryGraph series={points} since="1970-01-01T00:00:00Z" until="1970-01-01T00:01:00Z" />);
+    const hover = mocks.zr.on.mock.calls.find(([name]) => name === 'mousemove')?.[1];
+    act(() => hover({ offsetX: 45, offsetY: 10 }));
+    expect(mocks.instance.dispatchAction).toHaveBeenCalledWith(expect.objectContaining({ type: 'updateAxisPointer', x: 45 }));
+    view.rerender(<MeasurementHistoryGraph series={[...points]} since="1970-01-01T00:00:00Z" until="1970-01-01T00:01:00Z" />);
+    expect(mocks.instance.dispatchAction).toHaveBeenCalledWith(expect.objectContaining({ type: 'updateAxisPointer', x: 45 }));
+    fireEvent.mouseLeave(screen.getByRole('group').firstElementChild!);
+    expect(mocks.instance.dispatchAction).toHaveBeenCalledWith({ type: 'updateAxisPointer', currTrigger: 'leave' });
+  });
+  it('offers clipped edges for keyboard navigation while identifying actual samples', () => {
+    const crossing = [{ ...points[0], points: [
+      { ...points[0].points[0], start: new Date(-1000).toISOString(), end: new Date(-1000).toISOString(), recorded_at: new Date(-1000).toISOString() },
+      { ...points[0].points[1], start: new Date(3000).toISOString(), end: new Date(3000).toISOString(), recorded_at: new Date(3000).toISOString() },
+    ] }];
+    render(<MeasurementHistoryGraph series={crossing} since="1970-01-01T00:00:00Z" until="1970-01-01T00:00:02Z" />);
+    expect(screen.getByText(/Sample at .*: 1/)).toBeTruthy();
+    fireEvent.keyDown(screen.getByRole('group'), { key: 'ArrowRight' });
+    expect(screen.getByText(/Sample at .*: 2/)).toBeTruthy();
+    expect(screen.getByText(new Date(2000).toLocaleString(), { selector: 'strong' })).toBeTruthy();
+  });
+
+  it('restores the pointer after resize and removes it on leave', () => {
+    let resize: ResizeObserverCallback = () => {};
+    vi.stubGlobal('ResizeObserver', class { constructor(callback: ResizeObserverCallback) { resize = callback; } observe() {} disconnect() {} });
+    try {
+      render(<MeasurementHistoryGraph series={points} since="1970-01-01T00:00:00Z" until="1970-01-01T00:01:00Z" />);
+      const hover = mocks.zr.on.mock.calls.find(([name]) => name === 'mousemove')?.[1];
+      act(() => hover({ offsetX: 10, offsetY: 10 }));
+      mocks.instance.dispatchAction.mockClear();
+      act(() => resize([], {} as ResizeObserver));
+      expect(mocks.instance.dispatchAction).toHaveBeenCalledWith(expect.objectContaining({ type: 'updateAxisPointer', x: 10 }));
+      fireEvent.mouseLeave(screen.getByRole('group').firstElementChild!);
+      mocks.instance.dispatchAction.mockClear();
+      act(() => resize([], {} as ResizeObserver));
+      expect(mocks.instance.dispatchAction).not.toHaveBeenCalled();
+    } finally { vi.unstubAllGlobals(); }
+  });
+  it('makes a false state spanning the window inspectable', () => {
+    const booleanSource = { ...source, value_type: 'boolean' as const };
+    const falseSeries: HistoryGraphSeries[] = [{ ...points[0], points: [-1, 3].map(n => ({ id: String(n), measurement_id: 1, kind: 'sample' as const, start: new Date(n * 1000).toISOString(), end: new Date(n * 1000).toISOString(), recorded_at: new Date(n * 1000).toISOString(), value: false, count: 1, null_count: 0, source: booleanSource })) }];
+    render(<MeasurementHistoryGraph series={falseSeries} since="1970-01-01T00:00:00Z" until="1970-01-01T00:00:02Z" />);
+    expect(screen.getByText(/Sample at .*: false/)).toBeTruthy();
+    expect(mocks.instance.setOption.mock.lastCall?.[0].series[0].data).toEqual([[0, 2000, 0, 0]]);
+  });
+
+  it('highlights numeric data independently of overlapping boolean intervals and clears it on leave', () => {
+    const booleanSource = { ...source, value_type: 'boolean' as const };
+    const booleanSeries: HistoryGraphSeries = { measurementId: 2, name: 'Fan', color: '#abcdef', points: [{
+      id: 'b', measurement_id: 2, kind: 'bucket', start: new Date(0).toISOString(), end: new Date(5000).toISOString(), source: booleanSource,
+      count: 1, null_count: 0, statistics: { true_fraction: 1 }, last_known: false, coverage: 'summary', gap_detail: 'minute',
+    }] };
+    const view = render(<MeasurementHistoryGraph series={[...points, booleanSeries]} since="1970-01-01T00:00:00Z" until="1970-01-01T00:01:00Z" />);
+    const hover = mocks.zr.on.mock.calls.find(([name]) => name === 'mousemove')?.[1];
+    act(() => hover({ offsetX: 45, offsetY: 10 }));
+    expect(mocks.instance.dispatchAction).toHaveBeenCalledWith({ type: 'highlight', seriesId: 'line-1-0', dataIndex: 0 });
+    mocks.instance.dispatchAction.mockClear();
+    view.rerender(<MeasurementHistoryGraph series={[...points, booleanSeries]} since="1970-01-01T00:00:00Z" until="1970-01-01T00:01:00Z" />);
+    expect(mocks.instance.dispatchAction).toHaveBeenCalledWith({ type: 'highlight', seriesId: 'line-1-0', dataIndex: 0 });
+    fireEvent.mouseLeave(screen.getByRole('group').firstElementChild!);
+    expect(mocks.instance.dispatchAction).toHaveBeenCalledWith({ type: 'downplay', seriesId: 'line-1-0', dataIndex: 0 });
+  });
+
 });
