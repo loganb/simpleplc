@@ -4,7 +4,7 @@ Read AGENTS.md too.
 
 ## Running Things (read this before hunting for `ruby`)
 
-Ruby 4.0.2 and Node 22 come from **mise** (`mise.toml`), and `mise` itself lives
+Ruby 4.0.9 and Node 22 come from **mise** (`mise.toml`), and `mise` itself lives
 at `~/.local/bin/mise`, which is **not on `PATH` in a non-login shell**. So a
 bare `ruby`, `bundle`, `rails`, or `npx` fails with "command not found", and
 `bin/rails` fails the same way because it shebangs to `env ruby`. There is no
