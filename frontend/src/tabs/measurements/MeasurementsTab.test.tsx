@@ -3,9 +3,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import TreeStore from '../../lib/TreeStore';
 import type { MeasurementsUXTree } from '../../uxTree';
 const graphProps = vi.hoisted(() => vi.fn());
-vi.mock('./MeasurementHistoryGraph', () => ({ MeasurementHistoryGraph: (props: unknown) => { graphProps(props); return <div>Graph</div>; } }));
+vi.mock('./MeasurementHistoryGraph', () => ({ MeasurementHistoryGraph: (props: { series: { points: unknown[] }[]; onPlotWidth: (width: number) => void }) => { graphProps(props); return <button onClick={() => props.onPlotWidth(300)}>Graph</button>; } }));
 const ux = new TreeStore<MeasurementsUXTree>().subtree();
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/preact';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/preact';
 import type { ReifiedQueryResult } from '../../lib/RestfulModelStore';
 import type { LogicInputFields, LogicOutputFields, MeasurementFields } from '../../store';
 import type { HistorySource } from './historyTypes';
@@ -87,6 +87,53 @@ describe('MeasurementsTab', () => {
     expect(patch).toHaveBeenCalledWith('/measurements/82', { measurement: { clear_data: true } }, expect.anything());
     expect(screen.getByRole('button', { name: 'Select Return temp measurement' }).getAttribute('aria-pressed')).toBe('true');
     confirm.mockRestore(); patch.mockRestore();
+  });
+
+  it('does not dismiss the menu when Safari blurs a menu item during a pointer press', async () => {
+    ux.set('deselectedIds', []);
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const patch = vi.spyOn(Store.axios, 'patch').mockResolvedValue({ data: { measurements: [] } } as never);
+    render(<MeasurementsTab ux={ux} refreshToken={0} measurements={query([{ id: 87, name: 'Safari focus', source: null, preview: [] }])} />);
+    const trigger = screen.getByRole('button', { name: 'Actions for Safari focus' });
+    fireEvent.click(trigger);
+    const clear = screen.getByRole('menuitem', { name: 'Clear data…' });
+    expect(document.activeElement).toBe(clear);
+    fireEvent.pointerDown(clear);
+    await act(async () => { clear.blur(); });
+    expect(document.activeElement).not.toBe(clear);
+    fireEvent.pointerUp(clear);
+    expect(screen.getByRole('menuitem', { name: 'Clear data…' })).toBeTruthy();
+    fireEvent.click(clear);
+    expect(patch).toHaveBeenCalledWith('/measurements/87', { measurement: { clear_data: true } }, expect.anything());
+    confirm.mockRestore(); patch.mockRestore();
+  });
+
+  it('clears a visible graph after the confirmed Store mutation succeeds', async () => {
+    ux.set('range', '1m');
+    ux.set('deselectedIds', []);
+    Object.defineProperty(document, 'hidden', { configurable: true, value: false });
+    Store.io_rate_limiter.currentRps = 1_000_000;
+    const pointTime = new Date().toISOString();
+    const oldPoint = { id: 'old-point', measurement_id: 86, kind: 'sample', start: pointTime, end: pointTime, recorded_at: pointTime, value: 23, count: 1, null_count: 0, source: {} };
+    const get = vi.spyOn(Store.axios, 'get').mockResolvedValueOnce({ data: { query: ['old-point'], measurement_history_points: [oldPoint] } } as never)
+      .mockResolvedValueOnce({ data: { query: [], measurement_history_points: [] } } as never);
+    const patch = vi.spyOn(Store.axios, 'patch').mockResolvedValue({ data: { measurements: [{ id: 86, name: 'Clear integration', logic_instance_id: null, source_type: null, source_id: null, source: null, preview_kind: null, preview: [] }], invalidates: { measurement_history_point: 'queries' } } } as never);
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    graphProps.mockClear();
+    try {
+      render(<MeasurementsTab ux={ux} refreshToken={0} measurements={query([{ id: 86, name: 'Clear integration', source: null, preview: [] }])} />);
+      fireEvent.click(screen.getByText('Graph'));
+      await waitFor(() => expect(get).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(graphProps.mock.lastCall![0].series[0].points).toHaveLength(1));
+
+      fireEvent.click(screen.getByRole('button', { name: 'Actions for Clear integration' }));
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Clear data…' }));
+      expect(patch).toHaveBeenCalledWith('/measurements/86', { measurement: { clear_data: true } }, expect.anything());
+      await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
+      await waitFor(() => expect(graphProps.mock.lastCall![0].series[0].points).toHaveLength(0));
+    } finally {
+      get.mockRestore(); patch.mockRestore(); confirm.mockRestore();
+    }
   });
 
   it('keeps the card and reports clear failures', async () => {

@@ -42,7 +42,9 @@ HVAC PLC controller application — a web interface for monitoring and controlli
   the visible chart while protecting it from older in-flight results. Delete
   removes the measurement and dependent history while retaining its source,
   instance, and instance traces. See `claude/measurement-card-actions.md` for
-  behavior and validation. A computed MeasurementHistoryPoint
+  behavior and validation. A Safari pointer-focus fix prevents card blur
+  from unmounting the menu before its click can open confirmation; see
+  `claude/measurement-clear-fix.md`. A computed MeasurementHistoryPoint
   resource uses Store queries with a width-based per-series point budget and
   reconstructible emoji-delimited string IDs; raw/summary data covers the full window
   without listing caps. Raw queries include neighboring observations for correct edge clipping.

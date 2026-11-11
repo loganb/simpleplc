@@ -54,6 +54,8 @@ function MeasurementCard({ record, selected, color, onSelect, onClear }: { recor
   const cardRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  // Safari can blur the focused menu item on pointerdown without assigning a related target.
+  const pointerDownInCard = useRef(false);
   const { txnResult, saving } = useTxnStatus(txn);
   useEffect(() => {
     if (txnResult?.status === 'succeeded') {
@@ -65,13 +67,16 @@ function MeasurementCard({ record, selected, color, onSelect, onClear }: { recor
   useEffect(() => {
     if (!menuOpen) return;
     const dismissOutside = (event: PointerEvent) => { if (!cardRef.current?.contains(event.target as Node)) setMenuOpen(false); };
+    const finishPointer = () => { pointerDownInCard.current = false; };
     const escape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') { event.preventDefault(); setMenuOpen(false); triggerRef.current?.focus(); }
     };
     document.addEventListener('pointerdown', dismissOutside);
+    document.addEventListener('pointerup', finishPointer);
+    document.addEventListener('pointercancel', finishPointer);
     document.addEventListener('keydown', escape);
     menuRef.current?.querySelector<HTMLButtonElement>('button')?.focus();
-    return () => { document.removeEventListener('pointerdown', dismissOutside); document.removeEventListener('keydown', escape); };
+    return () => { document.removeEventListener('pointerdown', dismissOutside); document.removeEventListener('pointerup', finishPointer); document.removeEventListener('pointercancel', finishPointer); document.removeEventListener('keydown', escape); };
   }, [menuOpen]);
   const fail = txnResult?.status === 'error';
   const menuId = `measurement-actions-${record.id}`;
@@ -102,7 +107,7 @@ function MeasurementCard({ record, selected, color, onSelect, onClear }: { recor
     const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : (current + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
     items[next].focus();
   };
-  return <div ref={cardRef} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setMenuOpen(false); }} class={`group relative rounded-lg border ${selected ? '' : 'opacity-60'} ${menuOpen ? 'z-30' : ''}`} style={{ borderColor: selected ? color : undefined }}>
+  return <div ref={cardRef} onPointerDownCapture={() => { pointerDownInCard.current = menuOpen; }} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget as Node) && !pointerDownInCard.current) setMenuOpen(false); }} class={`group relative rounded-lg border ${selected ? '' : 'opacity-60'} ${menuOpen ? 'z-30' : ''}`} style={{ borderColor: selected ? color : undefined }}>
     <button type="button" aria-label={`Select ${record.name} measurement`} aria-pressed={selected} onClick={onSelect} class="block min-h-full w-full rounded-lg p-4 pr-14 text-left">
       <span class="block font-semibold"><span aria-hidden="true" class="mr-2 inline-block h-3 w-3 rounded-full" style={{ backgroundColor: color }} />{record.name}</span>
       <span class="block text-sm text-text-muted">{record.source ? `${record.source.logic_instance_name} · ${record.source.name}` : 'Detached'}</span>

@@ -128,3 +128,14 @@ On the deployment Pi, the full RSpec suite passed 389 examples, including the
 new request specs. The full frontend suite passed 123 tests; TypeScript checking
 and the production build passed. Production was deployed at `598deba` with no
 migration. Service and fresh-poll verification is in `claude/deployment.md`.
+
+## safari pointer fix — 2026-11-10
+
+safari could blur the focused menu item before dispatching its pointer click;
+the card dismissed and unmounted the menu, so neither confirmation nor the
+mutation ran. preserve the open menu during an internal pointer press, resetting
+the guard on pointerup/cancel. keyboard focus dismissal still applies.
+
+verified the failure and the repaired confirmation in actual local safari,
+canceling without deleting live history. added full store-to-graph clear
+coverage alongside the pointer regression. see `measurement-clear-fix.md`.
