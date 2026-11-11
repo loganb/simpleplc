@@ -235,6 +235,35 @@ eight bindings all computed false and every physical output remained off. The
 frontend install now reports one high-severity npm audit finding; it was not
 changed during this deployment.
 
+## Instance history and batched polling deployed — 2026-10-21
+
+Deployed `1fefda1` from `origin/main` with `bin/deploy`. The frontend build
+succeeded and production database preparation applied the device settings,
+trace index, live instance-state, and trace-rollup migrations. `/up` returned
+200; the new device and trace-rollup APIs responded. The web, poller, and logic
+runner services are active with zero restarts. Devices 3, 4, and 5 resumed
+fresh successful polls; the RS-485 interface is online. The active heat-control
+instance emitted schema-v2 traces after restart, with all desired relay outputs
+false and all relay read-backs false. History maintenance is catching up older
+traces; at the first check, the newest rollup was `2026-09-30T01:45:00Z` while
+new live traces were already being written.
+
+The planned 24 h pre-deploy SD-card/WAL baseline and current-rate cycle-time
+measurement were skipped at the user's direction. The post-deploy 24 h
+measurement remains outstanding. npm reported two high-severity findings;
+dependencies were not changed to address them during deployment.
+
+## Device management and NT48C32 scan fix deployed — 2026-10-23
+
+Deployed `e5831e2` from `origin/main` with `bin/deploy` via `mise exec`.
+The frontend built and the `device_scans` migration completed. The target,
+web, poller, and logic-runner services are active with zero restarts; `/up`
+and the host-interface, device, and device-scan APIs return HTTP 200. The
+production interface is online, devices 3, 4, and 5 resumed fresh successful
+polls with no device or output-write errors, and the active heat-control
+instance emitted a fresh trace. npm reported four audit findings (two
+moderate, two high); dependency changes were outside this deployment.
+
 ## Interface update period deployed — 2026-10-24
 
 Cherry-picked the production pulse-counter dashboard commit and interface
@@ -246,3 +275,23 @@ heartbeats, and devices 3, 5, and 6 resumed fresh `ok` polls across two checks.
 Device 4 continued to report a read timeout, also present in the poller log
 before this deployment. No requests were sent to production port 3001 during
 verification. npm reported five audit findings (two moderate, three high).
+
+## Measurement history and bus quiet gap deployed — 2026-11-10
+
+Fetched GitHub `main` at `4b3aeeb`, cherry-picked the production-only RS-485
+quiet-gap commit `452bdc8` on top as `50b09c3`, and pushed `50b09c3` to
+`origin/main`. Deployed that exact commit with `bin/deploy`. The frontend build
+and `CreateInstanceMeasurementHistory` migration succeeded. The migration added
+`measurements`, `measurement_samples`, and `measurement_rollups`.
+
+Before deployment, the combined tree passed 384 RSpec examples, 117 frontend
+tests, TypeScript checking, and a production frontend build. The PTY-based bus
+timing spec sends a hangup signal on this host; running RSpec with HUP ignored
+let all seven of its examples complete. The deployment's npm install reported
+five audit findings (two moderate, three high).
+
+After restart, the target, web, poller, and logic runner were active. The three
+services reported success and zero restarts. The RS-485 interface was online
+with a fresh heartbeat and no connection error; devices 3, 4, 5, and 6 had
+fresh `ok` polls. Logic instance state 1 recorded a fresh evaluation. The new
+tables were present. No requests were sent to production port 3001.

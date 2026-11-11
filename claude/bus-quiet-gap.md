@@ -1,6 +1,6 @@
 # Bus Quiet Gap
 
-Status: implemented locally 2026-10-25 with a 50 ms gap and per-line poller log timestamps. Not deployed or committed.
+Status: committed on `main` and deployed at `50b09c3` on 2026-11-10 with a 50 ms gap and per-line poller log timestamps. Whether the gap prevents the board hang remains unverified.
 
 Leave a fixed stretch of silence on the RS-485 bus between every Modbus
 transaction, to try to stop the N4D8B08 relay board at address 2 (device 4)

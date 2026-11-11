@@ -1,6 +1,6 @@
 # Instance History
 
-Status: design agreed 2026-10-13; steps 1-9, the code part of 10, and local verification of 11 are implemented (uncommitted, undeployed). Still to do on the Pi: the step 10 baselines/measurements and the production deploy (needs approval).
+Status: design agreed 2026-10-13; deployed at `1fefda1` on 2026-10-21. Production is emitting schema-v2 traces and the new history API responds. The planned 24 h pre-deploy SD-card/WAL baseline and poller cycle-time measurement were skipped at the user's direction; collect the post-deploy 24 h measurements to quantify the rate change.
 
 Implementation notes: the rollup builder is `Logic::TraceRollupBuilder`; maintenance is `Logic::HistoryMaintenance`; async commit is `ApplicationRecord.async_commit_transaction`. State rows are created lazily on an instance's first evaluation (the migration backfills only instances that already have traces).
 

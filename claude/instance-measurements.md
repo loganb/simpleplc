@@ -1,6 +1,6 @@
 # Instance Measurements
 
-Status: plan approved by Logan; implemented and verified locally. Not deployed.
+Status: plan approved by Logan; implemented, verified, and deployed at `50b09c3` on 2026-11-10.
 
 This replaces the old, removed diagram/device measurement concept described in
 `claude/measurements.md`.

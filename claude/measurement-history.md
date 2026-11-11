@@ -1,6 +1,6 @@
 # Measurement history graphs
 
-Status: expanded plan approved by Logan on 2026-11-10; implemented and verified locally. Not deployed.
+Status: expanded plan approved by Logan on 2026-11-10; implemented, verified, and deployed at `50b09c3`.
 Task name agreed: `measurement-history`.
 
 ## Design
