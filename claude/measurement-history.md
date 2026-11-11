@@ -785,3 +785,44 @@ Verification on the revision:
 
 No schema migration or deployment. Temporary simulated publisher, API/static
 servers and review database are removed after verification.
+
+## Revision: compact cursor readout and units
+
+Status: presentation revision approved by Logan; implementation in progress.
+
+Findings: LogicInput and LogicOutput already have nullable units exposed by
+both APIs, and App already loads both collections through Store. Measurement
+snapshots and MeasurementApi's source metadata currently omit units. Existing
+historical units cannot be reconstructed if a source was deleted or its units
+changed. Do not guess units from a measurement name or another attachment.
+
+Proposed UI:
+
+- One cursor timestamp for the entire readout, using actual pointer time for
+  mouse/touch and the selected timestamp for keyboard. No timestamp per value.
+- Compact labeled values, colored to match graph/card, arranged in a wrapping
+  row rather than verbose paragraphs. For example: Supply temperature 22.4 °C;
+  Heating On. Numeric buckets show mean plus optional compact min–max range;
+  boolean buckets show e.g. 65% on. Missing values display an em dash.
+- Drop sample kind, source/instance names, latest/unknown fields, sample/null
+  counts, coverage details and repeated precision notes from the cursor readout.
+  Keep names/attachment context on the cards. Preserve the existing graph's
+  gaps, aggregate shading and accurate underlying statistics.
+- Format numeric values with at most two decimal places, preserving zero and
+  false. Show raw booleans as On/Off. Do not change source values or calculations.
+- Use each point's source_type/source_id to resolve current source units from
+  the already-loaded LogicInput/LogicOutput records. Only numeric values get
+  units. A detached measurement's historical source can still resolve if the
+  port exists; an absent/deleted source stays unlabeled. These are the source's
+  CURRENT configured units, not a claim of historically snapshotted units.
+  No new request per point or card; no direct Axios. No schema/API/ID changes.
+  Historical unit snapshotting, if desired, is a separate data-model revision.
+
+Implementation after confirmation: delegate compact graph readout/formatting
+and pointer-time alignment to one Terra agent, and root Store collection to
+readout unit wiring to another with separate file ownership and parent-frozen
+optional units-resolver prop. Parent reviews source-specific unit resolution,
+missing/deleted sources, compact numeric/boolean aggregate labels, accessibility,
+keyboard and stationary-pointer regressions, runs focused frontend tests,
+TypeScript/build, and verifies desktop/mobile in the existing safe browser
+workflow. No backend or hardware changes. Update overview and this task note.
