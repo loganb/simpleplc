@@ -35,4 +35,5 @@ export interface MeasurementHistoryGraphProps {
   since: string;
   until: string;
   onPlotWidth?: (width: number) => void;
+  unitsFor?: (source: HistorySource) => string | null;
 }

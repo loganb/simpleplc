@@ -2,11 +2,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import TreeStore from '../../lib/TreeStore';
 import type { MeasurementsUXTree } from '../../uxTree';
-vi.mock('./MeasurementHistoryGraph', () => ({ MeasurementHistoryGraph: () => <div>Graph</div> }));
+const graphProps = vi.hoisted(() => vi.fn());
+vi.mock('./MeasurementHistoryGraph', () => ({ MeasurementHistoryGraph: (props: unknown) => { graphProps(props); return <div>Graph</div>; } }));
 const ux = new TreeStore<MeasurementsUXTree>().subtree();
 import { cleanup, render, screen } from '@testing-library/preact';
 import type { ReifiedQueryResult } from '../../lib/RestfulModelStore';
-import type { MeasurementFields } from '../../store';
+import type { LogicInputFields, LogicOutputFields, MeasurementFields } from '../../store';
+import type { HistorySource } from './historyTypes';
 import { MeasurementsTab } from './MeasurementsTab';
 
 const query = (records: Partial<MeasurementFields>[], loaded = true) => Object.assign(records.map(r => ({ ...r, _found: true })), { _loaded: loaded, _found: loaded }) as unknown as ReifiedQueryResult<MeasurementFields>;
@@ -32,6 +34,28 @@ describe('MeasurementsTab', () => {
     expect(screen.getByRole('alert').textContent).toContain('Could not load measurements');
     rerender(<MeasurementsTab ux={ux} refreshToken={0} measurements={query([])} />);
     expect(screen.getByText(/No measurements yet/)).toBeTruthy();
+  });
+
+  it('resolves units by historical source type and ID and follows current port changes', () => {
+    const measurement = query([{ id: 1, name: 'Temperature', source: { id: 99, name: 'Current', value_type: 'number', logic_diagram_id: 1, logic_diagram_name: 'D', logic_instance_name: 'I' }, preview_kind: null, preview: [] }]);
+    const ports = <T,>(records: unknown[]) => records as ReifiedQueryResult<T & { id: number }>;
+    const inputs = ports<LogicInputFields>([{ id: 1, _found: true, units: '°C' }, { id: 2, _found: true, units: '  ' }, { id: 3, _found: false }, { id: 99, _found: true, units: 'wrong' }]);
+    const outputs = ports<LogicOutputFields>([{ id: 1, _found: true, units: 'V' }]);
+    const source = (source_type: 'LogicInput' | 'LogicOutput', source_id: number, value_type: 'number' | 'boolean' = 'number') => ({ source_type, source_id, value_type } as HistorySource);
+    const view = render(<MeasurementsTab ux={ux} refreshToken={0} measurements={measurement} logicInputs={inputs} logicOutputs={outputs} />);
+    const resolver = graphProps.mock.lastCall![0].unitsFor;
+    expect(resolver(source('LogicInput', 1))).toBe('°C');
+    expect(resolver(source('LogicOutput', 1))).toBe('V');
+    expect(resolver(source('LogicInput', 1, 'boolean'))).toBeNull();
+    expect(resolver(source('LogicInput', 2))).toBeNull();
+    expect(resolver(source('LogicInput', 3))).toBeNull();
+    expect(resolver(source('LogicInput', 4))).toBeNull();
+    view.rerender(<MeasurementsTab ux={ux} refreshToken={1} measurements={measurement} logicInputs={[...inputs] as typeof inputs} logicOutputs={[...outputs] as typeof outputs} />);
+    expect(graphProps.mock.lastCall![0].unitsFor).toBe(resolver);
+    const changedInputs = ports<LogicInputFields>([{ id: 1, _found: true, units: '°F' }]);
+    view.rerender(<MeasurementsTab ux={ux} refreshToken={1} measurements={measurement} logicInputs={changedInputs} logicOutputs={outputs} />);
+    expect(graphProps.mock.lastCall![0].unitsFor(source('LogicInput', 1))).toBe('°F');
+    expect(graphProps.mock.lastCall![0].unitsFor(source('LogicInput', 99))).toBeNull();
   });
 
 });

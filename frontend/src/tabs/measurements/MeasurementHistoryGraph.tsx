@@ -7,19 +7,24 @@ import type { MeasurementHistoryGraphProps, MeasurementHistoryPointFields } from
 import { buildHistorySeries, numericDomain } from './historySeries';
 
 echarts.use([CustomChart, LineChart, GridComponent, TooltipComponent, AriaComponent, SVGRenderer]);
-const formatNumber = (value: number) => new Intl.NumberFormat(undefined, { maximumSignificantDigits: 6 }).format(value);
+const formatNumber = (value: number) => new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(value);
 const formatTime = (time: number) => new Date(time).toLocaleString();
-const pointDescription = (point: MeasurementHistoryPointFields) => {
-  const source = `${point.source.logic_instance_name} · ${point.source.source_name}`;
-  if (point.kind === 'sample') return `Sample at ${formatTime(Date.parse(point.start))}: ${point.value === null ? 'unavailable' : typeof point.value === 'number' ? formatNumber(point.value) : String(point.value)} · ${source}`;
+const pointDescription = (point: MeasurementHistoryPointFields, unitsFor?: MeasurementHistoryGraphProps['unitsFor']) => {
+  const units = point.source.value_type === 'number' ? unitsFor?.(point.source) : null;
+  const suffix = units ? ` ${units}` : '';
+  if (point.kind === 'sample') {
+    if (point.value === null) return '—';
+    if (typeof point.value === 'boolean') return point.value ? 'On' : 'Off';
+    return `${formatNumber(point.value)}${suffix}`;
+  }
   const stats = point.statistics;
-  const value = point.source.value_type === 'boolean' ? `Fraction of samples true: ${stats.true_fraction === undefined ? 'unavailable' : `${formatNumber(stats.true_fraction * 100)}%`}` : `Mean: ${stats.mean === undefined ? 'unavailable' : formatNumber(stats.mean)}, min: ${stats.min === undefined ? 'unavailable' : formatNumber(stats.min)}, max: ${stats.max === undefined ? 'unavailable' : formatNumber(stats.max)}`;
-  const last = point.last_known ? (stats.last === null || stats.last === undefined ? 'unavailable' : typeof stats.last === 'number' ? formatNumber(stats.last) : String(stats.last)) : 'unknown';
-  const label = point.coverage === 'raw' ? 'Raw-sample summary' : point.coverage === 'mixed' ? 'Combined summary' : 'Minute summary';
-  return `${label} ${formatTime(Date.parse(point.start))}–${formatTime(Date.parse(point.end))} · ${value} · latest: ${last} · ${point.count} samples${point.null_count ? `, ${point.null_count} unavailable` : ''} · ${source}`;
+  if (point.source.value_type === 'boolean') return stats.true_fraction == null ? '—' : `${formatNumber(stats.true_fraction * 100)}% on`;
+  if (stats.mean == null) return '—';
+  const range = stats.min != null && stats.max != null && stats.min !== stats.max ? ` (${formatNumber(stats.min)}–${formatNumber(stats.max)})` : '';
+  return `${formatNumber(stats.mean)}${suffix}${range}`;
 };
 
-export function MeasurementHistoryGraph({ series, since, until, onPlotWidth }: MeasurementHistoryGraphProps) {
+export function MeasurementHistoryGraph({ series, since, until, onPlotWidth, unitsFor }: MeasurementHistoryGraphProps) {
   const container = useRef<HTMLDivElement>(null);
   const chart = useRef<echarts.ECharts | null>(null);
   const cursorTime = useRef<number | null>(null);
@@ -43,8 +48,6 @@ export function MeasurementHistoryGraph({ series, since, until, onPlotWidth }: M
   }, [series, transformed, since, until]);
   const [selectedTime, setSelectedTime] = useState<number | null>(null);
   const [keyboardDetails, setKeyboardDetails] = useState(false);
-  const timesRef = useRef(times); timesRef.current = times;
-  const seriesRef = useRef(series); seriesRef.current = series;
   const highlightNumeric = (instance: echarts.ECharts, time: number) => {
     clearHighlights(instance);
     for (const item of transformed) {
@@ -68,12 +71,9 @@ export function MeasurementHistoryGraph({ series, since, until, onPlotWidth }: M
   const selectPointer = (instance: echarts.ECharts, x: number, y: number) => {
     if (!instance.containPixel({ gridIndex: 0 }, [x, y])) return;
     const time = instance.convertFromPixel({ xAxisIndex: 0 }, x) as number;
-    const nearest = timesRef.current.reduce<number | null>((best, next) => best === null || Math.abs(next - time) < Math.abs(best - time) ? next : best, null);
-    const inBucket = seriesRef.current.some(s => s.points.some(p => p.kind === 'bucket' && Date.parse(p.start) <= time && time < Date.parse(p.end)));
-    const selected = inBucket ? time : nearest;
-    if (selected !== null) {
-      cursorTime.current = selected;
-      setSelectedTime(selected);
+    if (Number.isFinite(time)) {
+      cursorTime.current = time;
+      setSelectedTime(time);
       instance.dispatchAction({ type: 'updateAxisPointer', x, y });
       highlightRef.current(instance, time);
     }
@@ -165,13 +165,9 @@ export function MeasurementHistoryGraph({ series, since, until, onPlotWidth }: M
       || visible.booleans.some(interval => interval.point.kind === 'sample' && interval.start <= activeTime && activeTime <= interval.end);
     const samples = s.points.filter(p => p.kind === 'sample' && (intersects || (Date.parse(p.start) >= Date.parse(since) && Date.parse(p.start) <= Date.parse(until))));
     const nearest = samples.reduce<MeasurementHistoryPointFields | undefined>((best, point) => !best || Math.abs(Date.parse(point.start) - activeTime) < Math.abs(Date.parse(best.start) - activeTime) ? point : best, undefined);
-    return [...buckets, ...(nearest ? [nearest] : [])].map(point => ({ name: s.name, point }));
+    const selected = buckets.length ? buckets : nearest ? [nearest] : [];
+    return selected.length ? [{ name: s.name, color: s.color, points: selected }] : [];
   });
-  const notes = [
-    details.some(({ point }) => point.kind === 'bucket' && point.gap_detail === 'minute') ? 'Gaps within summarized minutes are unknown.' : '',
-    details.some(({ point }) => point.kind === 'bucket' && point.source.value_type === 'boolean') ? 'Fractions describe samples, not elapsed time on.' : '',
-    details.some(({ point }) => point.kind === 'sample' && point.source.value_type === 'boolean') ? 'Boolean samples show observed states, not exact transition times.' : '',
-  ].filter(Boolean);
   return <div>
     <div class="flex flex-wrap gap-x-4 gap-y-1 text-sm" aria-label="Measurement legend">{series.map(s => <span key={s.measurementId}><span aria-hidden="true" style={{ color: s.color }}>●</span> {s.name}</span>)}</div>
     <div tabIndex={0} role="group" aria-label="Measurement history. Use left and right arrow keys to explore readings." onKeyDown={event => {
@@ -191,6 +187,6 @@ export function MeasurementHistoryGraph({ series, since, until, onPlotWidth }: M
     }}>
       <div ref={container} class="h-60 w-full sm:h-80" />
     </div>
-    <div aria-live={keyboardDetails ? "polite" : "off"} class="text-sm text-text-muted">{activeTime === undefined ? null : <><strong>{formatTime(activeTime)}</strong>{details.map(({ name, point }) => <div key={`${name}-${point.id}`}><span class="font-semibold">{name}:</span> {pointDescription(point)}</div>)}{notes.length > 0 && <p class="mt-1">{notes.join(' ')}</p>}</>}</div>
+    <div role="region" aria-label="Cursor values" aria-live={keyboardDetails ? "polite" : "off"} class="text-sm text-text-muted">{activeTime === undefined ? null : <><strong>{formatTime(activeTime)}</strong><div class="flex flex-wrap gap-x-4 gap-y-1">{details.map(({ name, color, points }) => <span key={name}><span aria-hidden="true" class="mr-1 inline-block h-2 w-2 rounded-full" style={{ backgroundColor: color }} /><span class="font-semibold">{name}:</span> <span>{points.map(point => pointDescription(point, unitsFor)).join(' / ')}</span></span>)}</div></>}</div>
   </div>;
 }

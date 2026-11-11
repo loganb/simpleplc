@@ -788,7 +788,7 @@ servers and review database are removed after verification.
 
 ## Revision: compact cursor readout and units
 
-Status: presentation revision approved by Logan; implementation in progress.
+Status: presentation revision approved by Logan; implemented and verified locally. Not deployed.
 
 Findings: LogicInput and LogicOutput already have nullable units exposed by
 both APIs, and App already loads both collections through Store. Measurement
@@ -826,3 +826,39 @@ missing/deleted sources, compact numeric/boolean aggregate labels, accessibility
 keyboard and stationary-pointer regressions, runs focused frontend tests,
 TypeScript/build, and verifies desktop/mobile in the existing safe browser
 workflow. No backend or hardware changes. Update overview and this task note.
+
+
+### Compact readout implementation and verification
+
+Implemented by two Terra agents and reviewed by the parent after plan commit
+d6020e4. App passes already-loaded input/output collections to MeasurementsTab;
+its stable resolver keys current units by source type and ID, trims blank units,
+and ignores boolean/missing sources. Updating source units changes the readout
+without changing series data or reinitializing the graph. No extra HTTP query,
+snapshot/ID change, schema migration or backend change.
+
+Readout is a named accessible region with one actual cursor timestamp, colored
+series dots, readable names and compact values. Raw booleans use On/Off; numeric
+values use at most two fractional digits; absent readings use an em dash.
+Numeric summaries show mean plus a distinct min–max range with units once;
+constant ranges are omitted. Boolean summaries show percent on. Overlapping
+historical source groups preserve all values (with each source's current units)
+joined under one measurement name. Removed per-value timestamps, source names,
+sample-kind labels, counts, latest/unknown state and explanatory paragraphs.
+Pointer time comes from the actual chart coordinate; keyboard keeps its chosen
+timestamp. Cursor/marker persistence and keyboard-only announcements remain.
+
+Verification: full frontend suite passes 117 tests across 18 files, TypeScript
+noEmit and production build pass, and git diff --check passes. Focused regressions
+cover input/output ID collisions, updated/equivalent unit collections, historical
+source versus current attachment, absent/blank units, booleans, missing/zero
+values, two-decimal aggregates, overlapping groups and one actual pointer time.
+No Ruby changes, so the prior backend baseline was not rerun for this revision.
+
+Playwright/installed Chrome verified the real built frontend at 1200px desktop
+and 390px mobile using mocked standard Store API responses (no database or
+hardware). Confirmed 22.46 °C, 0 L/min, On, missing dash, numeric range and 65% on;
+only one timestamp appears, with no sample/source/debug labels. Pointer timestamp
+matches ECharts' axis-pointer time, both source types resolve distinct units at
+the same numeric ID, no page errors occur, and mobile has no horizontal overflow.
+Inspected desktop/mobile screenshots. Temporary static server stopped after QA.

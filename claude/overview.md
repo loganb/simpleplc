@@ -39,7 +39,9 @@ HVAC PLC controller application — a web interface for monitoring and controlli
   without listing caps. Raw queries include neighboring observations for correct edge clipping.
   Live refresh scales from 2 seconds at 1m to 5 minutes at 30d, retaining the
   displayed snapshot while updates load and pausing new periodic requests
-  while hidden. Cursor and numeric highlights persist across updates.
+  while hidden. Cursor and numeric highlights persist across updates. A compact
+  readout shows one cursor time, named values and current units from each
+  historical source port when available; units are not snapshotted in history.
   Range and selection persist across tab changes. See
   `claude/measurement-history.md` for the API, precision limits and verification; Instances has a create/select modal, crosshair
   attachment mode and per-port measurement menus. All frontend I/O uses Store.

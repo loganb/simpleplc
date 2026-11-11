@@ -142,7 +142,7 @@ export function App() {
           />
         )}
 
-        {activeTab === 'measurements' && <MeasurementsTab measurements={measurements} ux={rootUx.subtree('measurements')} refreshToken={refreshToken} />}
+        {activeTab === 'measurements' && <MeasurementsTab measurements={measurements} logicInputs={logicInputs} logicOutputs={logicOutputs} ux={rootUx.subtree('measurements')} refreshToken={refreshToken} />}
 
         {activeTab === 'devices' && (
           <DevicesTab

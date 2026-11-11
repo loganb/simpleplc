@@ -1,7 +1,8 @@
 import { useMemo } from 'preact/hooks';
 import { useLoaders } from '../../lib/DataLoader2';
 import type { ReifiedQueryResult } from '../../lib/RestfulModelStore';
-import type { MeasurementFields } from '../../store';
+import type { LogicInputFields, LogicOutputFields, MeasurementFields } from '../../store';
+import type { HistorySource } from './historyTypes';
 import type { HistoryRange, MeasurementsUXState } from '../../uxTree';
 import { MeasurementHistoryGraph } from './MeasurementHistoryGraph';
 import { useMeasurementHistory } from './useMeasurementHistory';
@@ -11,7 +12,16 @@ const ranges: HistoryRange[] = ['1m', '10m', '1hr', '24hr', '7d', '30d'];
 const colors = ['#2563eb', '#dc2626', '#059669', '#9333ea', '#d97706', '#0891b2', '#be185d', '#4d7c0f'];
 const colorFor = (id: number) => colors[Math.abs(id) % colors.length];
 
-export function MeasurementsTab({ measurements, ux, refreshToken }: { measurements: ReifiedQueryResult<MeasurementFields>; ux: MeasurementsUXState; refreshToken: number }) {
+export function MeasurementsTab({ measurements, ux, refreshToken, logicInputs = [], logicOutputs = [] }: { measurements: ReifiedQueryResult<MeasurementFields>; ux: MeasurementsUXState; refreshToken: number; logicInputs?: ReifiedQueryResult<LogicInputFields> | []; logicOutputs?: ReifiedQueryResult<LogicOutputFields> | [] }) {
+  const unitEntries = [
+    ...logicInputs.filter(port => port._found).map(port => ['LogicInput', port.id, port._found ? port.units : null]),
+    ...logicOutputs.filter(port => port._found).map(port => ['LogicOutput', port.id, port._found ? port.units : null]),
+  ];
+  const unitsKey = JSON.stringify(unitEntries);
+  const unitsFor = useMemo(() => {
+    const units = new Map<string, string | null>((JSON.parse(unitsKey) as [string, number, string | null][]).map(([type, id, unit]) => [`${type}:${id}`, unit?.trim() || null]));
+    return (source: HistorySource) => source.value_type === 'number' ? units.get(`${source.source_type}:${source.source_id}`) ?? null : null;
+  }, [unitsKey]);
   const { range, deselected } = useLoaders(() => ({ range: ux.get('range') ?? '1hr', deselected: ux.get('deselectedIds') ?? [] }), [ux], []);
   const records = measurements.filter(record => record._found);
   const selected = records.filter(record => record._found && !deselected.includes(record.id as number));
@@ -27,7 +37,7 @@ export function MeasurementsTab({ measurements, ux, refreshToken }: { measuremen
     {!measurements._loaded ? <p role="status">Loading measurements…</p> : !measurements._found ? <p role="alert" class="text-error">Could not load measurements. Retrying when available.</p> : records.length === 0 ?
       <p class="rounded border border-dashed border-border p-5 text-text-muted">No measurements yet. Attach one from an instance.</p> : <>
       <div class="flex flex-wrap justify-center gap-1" aria-label="History range">{ranges.map(item => <button type="button" aria-pressed={range === item} class={`rounded px-3 py-1.5 text-sm ${range === item ? 'bg-active-bg text-active font-semibold ring-1 ring-active' : 'bg-surface-alt'}`} onClick={() => ux.set('range', item)}>{item}</button>)}</div>
-      <MeasurementHistoryGraph series={series} since={history.since} until={history.until} onPlotWidth={history.onPlotWidth} />
+      <MeasurementHistoryGraph series={series} since={history.since} until={history.until} onPlotWidth={history.onPlotWidth} unitsFor={unitsFor} />
       {selected.length === 0 ? <p role="status">Select a measurement to see its history.</p> : history.error ? <p role="alert">Could not load measurement history.</p> : history.loading ? <p role="status">Loading history…</p> : history.updating ? <p role="status">Updating history…</p> : !hasHistory ? <p role="status">No history in this range.</p> : null}
       <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{records.map(record => record._found && <button type="button" key={String(record.id)} aria-pressed={!deselected.includes(record.id as number)} onClick={() => ux.set('deselectedIds', deselected.includes(record.id as number) ? deselected.filter(id => id !== record.id as number) : [...deselected, record.id as number])} class={`rounded-lg border p-4 text-left ${deselected.includes(record.id as number) ? 'border-border opacity-60' : 'border-current'}`} style={{ borderColor: deselected.includes(record.id as number) ? undefined : colorFor(record.id as number) }}>
         <span class="block font-semibold"><span aria-hidden="true" class="mr-2 inline-block h-3 w-3 rounded-full" style={{ backgroundColor: colorFor(record.id as number) }} />{record.name}</span>
