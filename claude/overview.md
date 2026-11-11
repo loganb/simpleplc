@@ -25,7 +25,7 @@ HVAC PLC controller application — a web interface for monitoring and controlli
 
 - **Device management deployment — 2026-10-23:** Simplified device management, a separate DeviceScan resource, and improved NT48C32 scan identification were deployed at `e5831e2`. The scan migration was applied and the configured devices resumed successful polling.
 
-- **Instance measurements — deployed at `50b09c3`** — Independent
+- **Instance measurements — deployed, latest at `598deba`** — Independent
   named probes attach through a polymorphic source to an instance input/output.
   Each evaluation snapshots value, type and source identity, including Compute
   now and computed outputs with hardware writes disabled. Detach/reattach keeps
@@ -42,7 +42,7 @@ HVAC PLC controller application — a web interface for monitoring and controlli
   the visible chart while protecting it from older in-flight results. Delete
   removes the measurement and dependent history while retaining its source,
   instance, and instance traces. See `claude/measurement-card-actions.md` for
-  behavior and verification limits. A computed MeasurementHistoryPoint
+  behavior and validation. A computed MeasurementHistoryPoint
   resource uses Store queries with a width-based per-series point budget and
   reconstructible emoji-delimited string IDs; raw/summary data covers the full window
   without listing caps. Raw queries include neighboring observations for correct edge clipping.

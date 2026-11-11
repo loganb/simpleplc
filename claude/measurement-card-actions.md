@@ -1,6 +1,6 @@
 # measurement-card-actions
 
-Status: implemented locally; no migration or hardware interface changes.
+Status: deployed at `598deba` on 2026-11-10; no migration or hardware interface changes.
 
 ## Design
 
@@ -123,3 +123,8 @@ No migration or hardware interface changes.
   denied (`/tmp/.s.PGSQL.5432`, `Operation not permitted`). Browser verification
   could not run: Playwright launch is denied and no bundled Chromium is
   installed. No live measurement was changed.
+
+On the deployment Pi, the full RSpec suite passed 389 examples, including the
+new request specs. The full frontend suite passed 123 tests; TypeScript checking
+and the production build passed. Production was deployed at `598deba` with no
+migration. Service and fresh-poll verification is in `claude/deployment.md`.

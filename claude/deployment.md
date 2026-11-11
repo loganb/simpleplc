@@ -295,3 +295,20 @@ services reported success and zero restarts. The RS-485 interface was online
 with a fresh heartbeat and no connection error; devices 3, 4, 5, and 6 had
 fresh `ok` polls. Logic instance state 1 recorded a fresh evaluation. The new
 tables were present. No requests were sent to production port 3001.
+
+## Measurement card actions deployed — 2026-11-10
+
+Fast-forwarded development `main` from `f8f65ce` to GitHub commit `598deba`
+and deployed `598deba` with `bin/deploy`. The change adds confirmed Clear data
+and Delete measurement actions to measurement cards. Clear removes only that
+measurement's retained samples and rollups; delete removes the measurement and
+its history. No migration or hardware interface change was needed. The
+frontend build and production `db:prepare` succeeded.
+
+Before deployment, 389 RSpec examples, 123 frontend tests, TypeScript checking,
+and a production frontend build passed. npm reported five audit findings (two
+moderate, three high). After restart, the target, web, poller, and logic runner
+were active; the three services reported success and zero restarts. The RS-485
+interface had a fresh online heartbeat and no connection error. Devices 3–6
+had fresh `ok` polls after restart, and logic instance 1 recorded a new
+evaluation. No requests were sent to production port 3001.
