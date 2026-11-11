@@ -5,11 +5,12 @@ import type { MeasurementsUXTree } from '../../uxTree';
 const graphProps = vi.hoisted(() => vi.fn());
 vi.mock('./MeasurementHistoryGraph', () => ({ MeasurementHistoryGraph: (props: unknown) => { graphProps(props); return <div>Graph</div>; } }));
 const ux = new TreeStore<MeasurementsUXTree>().subtree();
-import { cleanup, render, screen } from '@testing-library/preact';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/preact';
 import type { ReifiedQueryResult } from '../../lib/RestfulModelStore';
 import type { LogicInputFields, LogicOutputFields, MeasurementFields } from '../../store';
 import type { HistorySource } from './historyTypes';
 import { MeasurementsTab } from './MeasurementsTab';
+import { Store } from '../../store';
 
 const query = (records: Partial<MeasurementFields>[], loaded = true) => Object.assign(records.map(r => ({ ...r, _found: true })), { _loaded: loaded, _found: loaded }) as unknown as ReifiedQueryResult<MeasurementFields>;
 afterEach(cleanup);
@@ -56,6 +57,79 @@ describe('MeasurementsTab', () => {
     view.rerender(<MeasurementsTab ux={ux} refreshToken={1} measurements={measurement} logicInputs={changedInputs} logicOutputs={outputs} />);
     expect(graphProps.mock.lastCall![0].unitsFor(source('LogicInput', 1))).toBe('°F');
     expect(graphProps.mock.lastCall![0].unitsFor(source('LogicInput', 99))).toBeNull();
+  });
+
+  it('keeps menu clicks separate from graph selection and sends no request on cancellation', async () => {
+    ux.set('deselectedIds', []);
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const patch = vi.spyOn(Store.axios, 'patch');
+    const destroy = vi.spyOn(Store.axios, 'delete');
+    render(<MeasurementsTab ux={ux} refreshToken={0} measurements={query([{ id: 81, name: 'Supply temp', source: null, preview: [] }])} />);
+    const selection = screen.getByRole('button', { name: 'Select Supply temp measurement' });
+    fireEvent.click(screen.getByRole('button', { name: 'Actions for Supply temp' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Clear data…' }));
+    expect(selection.getAttribute('aria-pressed')).toBe('true');
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('Supply temp'));
+    expect(patch).not.toHaveBeenCalled();
+    expect(destroy).not.toHaveBeenCalled();
+    fireEvent.click(selection);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Select Supply temp measurement' }).getAttribute('aria-pressed')).toBe('false'));
+    confirm.mockRestore(); patch.mockRestore(); destroy.mockRestore();
+  });
+
+  it('sends the write-only clear flag through Store and leaves the card selectable', async () => {
+    ux.set('deselectedIds', []);
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const patch = vi.spyOn(Store.axios, 'patch').mockResolvedValue({ data: { measurements: [{ id: 82, name: 'Return temp', logic_instance_id: null, source_type: null, source_id: null, source: null, preview_kind: null, preview: [] }], invalidates: {} } } as never);
+    render(<MeasurementsTab ux={ux} refreshToken={0} measurements={query([{ id: 82, name: 'Return temp', source: null, preview: [] }])} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Actions for Return temp' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Clear data…' }));
+    expect(patch).toHaveBeenCalledWith('/measurements/82', { measurement: { clear_data: true } }, expect.anything());
+    expect(screen.getByRole('button', { name: 'Select Return temp measurement' }).getAttribute('aria-pressed')).toBe('true');
+    confirm.mockRestore(); patch.mockRestore();
+  });
+
+  it('keeps the card and reports clear failures', async () => {
+    ux.set('deselectedIds', []);
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const patch = vi.spyOn(Store.axios, 'patch').mockRejectedValue({ response: { data: { errors: { base: ['offline'] } }, status: 503 } });
+    render(<MeasurementsTab ux={ux} refreshToken={0} measurements={query([{ id: 83, name: 'Exhaust temp', source: null, preview: [] }])} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Actions for Exhaust temp' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Clear data…' }));
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('offline'));
+    expect(screen.getByRole('button', { name: 'Select Exhaust temp measurement' })).toBeTruthy();
+    confirm.mockRestore(); patch.mockRestore();
+  });
+
+  it('supports arrow navigation, escape, and trigger focus restoration', () => {
+    ux.set('deselectedIds', []);
+    render(<MeasurementsTab ux={ux} refreshToken={0} measurements={query([{ id: 84, name: 'Mixed air', source: null, preview: [] }])} />);
+    const trigger = screen.getByRole('button', { name: 'Actions for Mixed air' });
+    fireEvent.click(trigger);
+    const clear = screen.getByRole('menuitem', { name: 'Clear data…' });
+    const remove = screen.getByRole('menuitem', { name: 'Delete measurement…' });
+    expect(document.activeElement).toBe(clear);
+    fireEvent.keyDown(clear, { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(remove);
+    fireEvent.keyDown(remove, { key: 'Escape' });
+    expect(document.activeElement).toBe(trigger);
+    expect(screen.queryByRole('menu')).toBeNull();
+  });
+
+  it('deletes through Store, blocks repeats while pending, and keeps the card after failure', async () => {
+    ux.set('deselectedIds', []);
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    let reject!: (reason: unknown) => void;
+    const destroy = vi.spyOn(Store.axios, 'delete').mockImplementation(() => new Promise((_resolve, fail) => { reject = fail; }) as never);
+    render(<MeasurementsTab ux={ux} refreshToken={0} measurements={query([{ id: 85, name: 'Zone humidity', source: null, preview: [] }])} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Actions for Zone humidity' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Delete measurement…' }));
+    expect(destroy).toHaveBeenCalledWith('/measurements/85.json');
+    expect(screen.getByRole('button', { name: 'Actions for Zone humidity' }).hasAttribute('disabled')).toBe(true);
+    reject({ response: { data: { errors: { base: ['delete failed'] } }, status: 503 } });
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('delete failed'));
+    expect(screen.getByRole('button', { name: 'Select Zone humidity measurement' })).toBeTruthy();
+    confirm.mockRestore(); destroy.mockRestore();
   });
 
 });

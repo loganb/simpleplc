@@ -35,7 +35,14 @@ HVAC PLC controller application — a web interface for monitoring and controlli
   1m/10m/1hr/24hr/7d/30d range controls, and clickable measurement cards that
   toggle series while retaining latest-value context. Numeric series show
   lines and min/max bands; boolean series shade on intervals, with summarized
-  opacity representing sample fractions. A computed MeasurementHistoryPoint
+  opacity representing sample fractions. Measurement cards have a sibling
+  actions menu for clearing retained samples/rollups or deleting a measurement.
+  Clear uses a write-only `clear_data` PATCH field, preserves identity and
+  attachment, invalidates history queries, publishes a row update, and resets
+  the visible chart while protecting it from older in-flight results. Delete
+  removes the measurement and dependent history while retaining its source,
+  instance, and instance traces. See `claude/measurement-card-actions.md` for
+  behavior and verification limits. A computed MeasurementHistoryPoint
   resource uses Store queries with a width-based per-series point budget and
   reconstructible emoji-delimited string IDs; raw/summary data covers the full window
   without listing caps. Raw queries include neighboring observations for correct edge clipping.

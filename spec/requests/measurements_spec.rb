@@ -62,4 +62,63 @@ RSpec.describe "Measurements API", type: :request do
     expect(response).to have_http_status(:unprocessable_content)
     expect(measurement.reload.logic_instance_id).to be_nil
   end
+
+  it "clears raw and summarized history without changing measurement identity or attachment" do
+    patch "/measurements/#{measurement.id}", params: { measurement: { logic_instance_id: instance.id, source_type: "LogicInput", source_id: input.id } }
+    time = 3.days.ago.beginning_of_minute
+    MeasurementSample.create!(measurement: measurement, recorded_at: Time.current, snapshot: { value: 4 })
+    MeasurementRollup.create!(measurement: measurement, bucket_start: time, sample_count: 1, summaries: [])
+    other = Measurement.create!(name: "Other")
+    MeasurementSample.create!(measurement: other, recorded_at: Time.current, snapshot: { value: 9 })
+
+    expect(RecordChanges).to receive(:publish).with(measurement).once
+    patch "/measurements/#{measurement.id}", params: { measurement: { clear_data: true } }
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.fetch("measurements").sole).to include("name" => "Temperature", "logic_instance_id" => instance.id, "source_type" => "LogicInput", "source_id" => input.id, "preview" => [], "preview_kind" => nil)
+    expect(measurement.reload.measurement_samples).to be_empty
+    expect(measurement.measurement_rollups).to be_empty
+    expect(other.measurement_samples.count).to eq(1)
+    expect(response.parsed_body.fetch("invalidates")).to include("measurement" => "queries", "measurement_sample" => "queries", "measurement_rollup" => "queries", "measurement_history_point" => "queries")
+    Trace.create!(logic_instance: instance)
+    expect(measurement.measurement_samples.count).to eq(1)
+  end
+
+  it "rolls back clearing history when the accompanying attachment is invalid" do
+    sample = MeasurementSample.create!(measurement: measurement, recorded_at: Time.current, snapshot: { value: 4 })
+    rollup = MeasurementRollup.create!(measurement: measurement, bucket_start: 3.days.ago.beginning_of_minute, sample_count: 1, summaries: [])
+
+    patch "/measurements/#{measurement.id}", params: { measurement: { clear_data: true, source_id: input.id } }
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(measurement.measurement_samples.sole).to eq(sample)
+    expect(measurement.measurement_rollups.sole).to eq(rollup)
+  end
+
+  it "treats a false clear flag as a no-op while preserving normal updates" do
+    sample = MeasurementSample.create!(measurement: measurement, recorded_at: Time.current, snapshot: { value: 4 })
+
+    patch "/measurements/#{measurement.id}", params: { measurement: { name: "Renamed", clear_data: false } }
+
+    expect(response).to have_http_status(:ok)
+    expect(measurement.reload.name).to eq("Renamed")
+    expect(measurement.measurement_samples.sole).to eq(sample)
+    expect(response.parsed_body.fetch("measurements").sole).not_to have_key("clear_data")
+  end
+
+  it "deletes a measurement and its history but preserves its instance and traces" do
+    patch "/measurements/#{measurement.id}", params: { measurement: { logic_instance_id: instance.id, source_type: "LogicInput", source_id: input.id } }
+    Trace.create!(logic_instance: instance)
+    MeasurementSample.create!(measurement: measurement, recorded_at: Time.current, snapshot: { value: 4 })
+    MeasurementRollup.create!(measurement: measurement, bucket_start: 3.days.ago.beginning_of_minute, sample_count: 1, summaries: [])
+
+    delete "/measurements/#{measurement.id}"
+
+    expect(response).to have_http_status(:no_content)
+    expect(Measurement.exists?(measurement.id)).to be(false)
+    expect(MeasurementSample.exists?(measurement_id: measurement.id)).to be(false)
+    expect(MeasurementRollup.exists?(measurement_id: measurement.id)).to be(false)
+    expect(LogicInstance.exists?(instance.id)).to be(true)
+    expect(Trace.exists?(logic_instance_id: instance.id)).to be(true)
+  end
 end

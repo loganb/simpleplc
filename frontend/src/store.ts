@@ -442,6 +442,8 @@ export interface MeasurementFields {
   source_id: number | null; source: MeasurementSource | null; preview_kind: 'samples' | 'rollups' | null;
   preview: (MeasurementSampleFields | MeasurementRollupFields)[];
 }
+// Write-only PATCH input; this flag is never returned by the API.
+export interface MeasurementPatchFields extends Partial<MeasurementFields> { clear_data?: boolean }
 export const Measurement: ModelDefinition<MeasurementFields> = {
   name: 'measurement', inflections: { plural: 'measurements', title: 'Measurement' }, singleton: false,
 };

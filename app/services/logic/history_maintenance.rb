@@ -89,6 +89,10 @@ module Logic
         backlog = samples.exists?(recorded_at: ...limit)
       end
       backlog
+    rescue ActiveRecord::RecordNotFound
+      # A web request may delete this measurement after find_each yielded it.
+      # Its history is already gone; continue maintenance for the remaining rows.
+      false
     end
 
     def measurement_rollup_horizon(measurement)

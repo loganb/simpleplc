@@ -42,7 +42,7 @@ class MeasurementApi < RestfulApi
   end
 
   def update_params(params)
-    params.require(:measurement).permit(:name, :logic_instance_id, :source_type, :source_id)
+    params.require(:measurement).permit(:name, :logic_instance_id, :source_type, :source_id, :clear_data)
   end
 
   def update(object, params)
@@ -51,6 +51,7 @@ class MeasurementApi < RestfulApi
       object.errors.add(:base, "Attachment must include all three fields")
       raise ActiveRecord::RecordInvalid, object
     end
+    clear_data = ActiveModel::Type::Boolean.new.cast(params.delete(:clear_data))
     Measurement.transaction do
       if params[:logic_instance_id].present?
         LogicInstance.where(id: params[:logic_instance_id]).lock.load
@@ -59,11 +60,26 @@ class MeasurementApi < RestfulApi
       end
       object.lock!
       object.update!(params)
+      if clear_data
+        object.measurement_samples.delete_all
+        object.measurement_rollups.delete_all
+        object.update!(updated_at: Time.current)
+      end
     end
   end
 
   def invalidates(_object)
-    { Measurement => :queries, LogicInstance => :records }
+    { Measurement => :queries, LogicInstance => :records, MeasurementSample => :queries,
+      MeasurementRollup => :queries, MeasurementHistoryPoint => :queries }
+  end
+
+  def can_destroy(_object) = true
+
+  def destroy(object)
+    Measurement.transaction do
+      object.lock!
+      object.destroy!
+    end
   end
 
   private

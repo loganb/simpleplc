@@ -47,4 +47,11 @@ RSpec.describe "Late measurement samples" do
     expect(MeasurementRollup.exists?(expired.id)).to be(false)
     expect(measurement.measurement_rollups.sole.summaries.first.fetch("statistics")).to include("last" => false, "count" => 1)
   end
+
+  it "skips a measurement deleted after maintenance enumerated it" do
+    measurement = Measurement.create!(name: "Deleted during maintenance")
+    Measurement.find(measurement.id).destroy!
+
+    expect(Logic::HistoryMaintenance.new.send(:roll_up_measurement, measurement, Time.current)).to be(false)
+  end
 end

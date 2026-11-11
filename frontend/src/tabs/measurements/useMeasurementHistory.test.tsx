@@ -14,12 +14,12 @@ describe('measurement history controls', () => {
   it('preserves card selection and range in the tree', () => {
     const ux = new TreeStore<MeasurementsUXTree>().subtree();
     const view = render(<MeasurementsTab measurements={records} ux={ux} refreshToken={0} />);
-    expect(screen.getByRole('button', { name: /One/ }).getAttribute('aria-pressed')).toBe('true');
-    fireEvent.click(screen.getByRole('button', { name: /One/ }));
+    expect(screen.getByRole('button', { name: 'Select One measurement' }).getAttribute('aria-pressed')).toBe('true');
+    fireEvent.click(screen.getByRole('button', { name: 'Select One measurement' }));
     fireEvent.click(screen.getByRole('button', { name: '24hr' }));
     view.unmount();
     render(<MeasurementsTab measurements={records} ux={ux} refreshToken={0} />);
-    expect(screen.getByRole('button', { name: /One/ }).getAttribute('aria-pressed')).toBe('false');
+    expect(screen.getByRole('button', { name: 'Select One measurement' }).getAttribute('aria-pressed')).toBe('false');
     expect(screen.getByRole('button', { name: '24hr' }).getAttribute('aria-pressed')).toBe('true');
   });
 });
@@ -59,8 +59,8 @@ it('queries the real store with sorted IDs and a quantized budget; old results c
 
 import { act } from '@testing-library/preact';
 import type { HistoryRange } from '../../uxTree';
-function LiveProbe({ ids = [74191], range = '1m', refresh = 0 }: { ids?: number[]; range?: HistoryRange; refresh?: number }) {
-  const h = useMeasurementHistory(ids, range, refresh);
+function LiveProbe({ ids = [74191], range = '1m', refresh = 0, reset = 0 }: { ids?: number[]; range?: HistoryRange; refresh?: number; reset?: number }) {
+  const h = useMeasurementHistory(ids, range, refresh, reset);
   return <><button onClick={() => h.onPlotWidth(300)}>Set width</button><output>{JSON.stringify({ since: h.since, until: h.until, loading: h.loading, updating: h.updating, error: h.error, points: h.points?.map(p => p.id) })}</output></>;
 }
 const output = () => JSON.parse(screen.getByRole('status').textContent!);
@@ -132,6 +132,30 @@ describe('live measurement history', () => {
     await advance(20);
     expect(get).toHaveBeenCalledTimes(2);
     await resolveRequest(pending[1]);
+  });
+  it('clears the retained snapshot and ignores an older request that resolves after the clear refresh', async () => {
+    const view = render(<LiveProbe ids={[99004]} />);
+    fireEvent.click(screen.getByText('Set width'));
+    await advance(200); await advance(20);
+    expect(get).toHaveBeenCalledTimes(1);
+    const oldArgs = JSON.parse(decodeURIComponent(String(get.mock.calls[0][0]).split('?q=')[1]));
+    const oldPoint = { id: 'stale-point', measurement_id: 99004, kind: 'sample', start: oldArgs.since, end: oldArgs.since, recorded_at: oldArgs.since, value: 8, count: 1, null_count: 0, source: {} };
+    await resolveRequest(pending[0], { data: { query: ['stale-point'], measurement_history_points: [oldPoint] } });
+    expect(output().points).toEqual(['stale-point']);
+    await advance(2001); await advance(20);
+    expect(get).toHaveBeenCalledTimes(2);
+    const inFlightArgs = JSON.parse(decodeURIComponent(String(get.mock.calls[1][0]).split('?q=')[1]));
+
+    vi.setSystemTime(Date.parse(inFlightArgs.until));
+    view.rerender(<LiveProbe ids={[99004]} reset={1} />);
+    await advance(2); await advance(20);
+    expect(get).toHaveBeenCalledTimes(3);
+    const resetArgs = JSON.parse(decodeURIComponent(String(get.mock.calls[2][0]).split('?q=')[1]));
+    expect(Date.parse(resetArgs.until)).toBe(Date.parse(inFlightArgs.until) + 1);
+    await resolveRequest(pending[2]);
+    await resolveRequest(pending[1], { data: { query: ['stale-point'], measurement_history_points: [oldPoint] } });
+    expect(output().until).toBe(resetArgs.until);
+    expect(output().points).toEqual([]);
   });
   it('retains a successful window and reports a failed background request', async () => {
     let reject!: (reason: unknown) => void;
