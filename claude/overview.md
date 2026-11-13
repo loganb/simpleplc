@@ -19,7 +19,7 @@ HVAC PLC controller application — a web interface for monitoring and controlli
 - **Database**: PostgreSQL 18 (installed via the PGDG apt repo on the Pi; a single instance serves both dev and prod, separated by database name). Production config keeps the Solid stack — Solid Queue, Solid Cache, Solid Cable — on separate PostgreSQL databases, so Redis is still not needed. Solid Queue runs in-Puma (`SOLID_QUEUE_IN_PUMA=true`) for background jobs. The record-update stream uses the primary database through the PostgreSQL Cable adapter; the old Solid Cable database is unused by this stream.
 - **Real-time**: Action Cable at /cable uses the record_postgresql adapter (Rails PostgreSQL LISTEN/NOTIFY plus listener recovery). Opted-in model updates invalidate already-known frontend records. HTTP remains the request transport; periodic refresh still covers queries and derived/time/filesystem changes.
 - **Deployment**: dev and production both run on the same Raspberry Pi (the actual HVAC controller hardware). Production runs from a `git worktree` at `/opt/plc_controller/current`, deployed via `bin/deploy`, and is supervised by native systemd (`plc_controller-web`, `plc_controller-poller`, grouped under `plc_controller.target`) — no Docker/Kamal. Puma serves the built frontend directly (same-origin, no nginx). Full design and rationale in `claude/deployment.md`.
-- **Tooling**: Ruby 4.0.2, Node 22, managed via mise (same toolchain for dev and prod on the Pi).
+- **Tooling**: Ruby 4.0.9, Node 22, managed via mise (same toolchain for dev and prod on the Pi).
 
 ## Current State
 
@@ -36,15 +36,11 @@ HVAC PLC controller application — a web interface for monitoring and controlli
   toggle series while retaining latest-value context. Numeric series show
   lines and min/max bands; boolean series shade on intervals, with summarized
   opacity representing sample fractions. Measurement cards have a sibling
-  actions menu for clearing retained samples/rollups or deleting a measurement.
-  Clear uses a write-only `clear_data` PATCH field, preserves identity and
-  attachment, invalidates history queries, publishes a row update, and resets
-  the visible chart while protecting it from older in-flight results. Delete
-  removes the measurement and dependent history while retaining its source,
-  instance, and instance traces. See `claude/measurement-card-actions.md` for
-  behavior and validation. A Safari pointer-focus fix prevents card blur
-  from unmounting the menu before its click can open confirmation; see
-  `claude/measurement-clear-fix.md`. A computed MeasurementHistoryPoint
+  actions menu for deleting a measurement and its dependent history while
+  retaining its source, instance, and instance traces. clear data has been
+  removed from both the menu and API. the Safari pointer-focus fix remains so
+  card blur cannot swallow delete clicks. see `claude/measurement-card-actions.md`
+  and `claude/remove-measurement-clear.md`. A computed MeasurementHistoryPoint
   resource uses Store queries with a width-based per-series point budget and
   reconstructible emoji-delimited string IDs; raw/summary data covers the full window
   without listing caps. Raw queries include neighboring observations for correct edge clipping.

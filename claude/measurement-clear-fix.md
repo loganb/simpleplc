@@ -1,6 +1,10 @@
 # measurement-clear-fix
 
-status: approved and implemented locally; browser confirmation verified.
+status: historical investigation; clear data has since been removed.
+
+the shared safari pointer-focus fix remains for delete. clear-only API, UI,
+reset machinery and tests described below are superseded by
+`claude/remove-measurement-clear.md`.
 
 ## design and findings
 

@@ -14,10 +14,10 @@ export const REFRESH_MS: Record<HistoryRange, number> = {
   '7d': 120_000, '30d': 300_000,
 };
 
-type Request = { selection: string; range: HistoryRange; budget: number; since: string; until: string; key: string; generation: number };
+type Request = { selection: string; range: HistoryRange; budget: number; since: string; until: string; key: string };
 type Snapshot = { request: Request; points: ReifiedQueryResult<MeasurementHistoryPointFields> };
 
-export function useMeasurementHistory(ids: number[], range: HistoryRange, refreshToken: number, resetToken = 0) {
+export function useMeasurementHistory(ids: number[], range: HistoryRange, refreshToken: number) {
   const [width, setWidth] = useState(0);
   const [budget, setBudget] = useState(0);
   const [visible, setVisible] = useState(() => !document.hidden);
@@ -25,8 +25,6 @@ export function useMeasurementHistory(ids: number[], range: HistoryRange, refres
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const lastRefreshToken = useRef(refreshToken);
   const refreshPending = useRef(false);
-  const requestGeneration = useRef(0);
-  const lastRequestUntil = useRef(0);
   const onPlotWidth = useCallback((next: number) => setWidth(Number.isFinite(next) && next > 0 ? next : 0), []);
   useEffect(() => {
     const timer = setTimeout(() => setBudget(width > 0 ? Math.max(1, Math.ceil(width / 100) * 100) : 0), 150);
@@ -38,13 +36,11 @@ export function useMeasurementHistory(ids: number[], range: HistoryRange, refres
     return () => document.removeEventListener('visibilitychange', changed);
   }, []);
   const selection = [...new Set(ids)].sort((a, b) => a - b).join(',');
-  const start = useCallback((force = false) => {
-    const now = Math.max(Date.now(), lastRequestUntil.current + (force ? 1 : 0));
-    lastRequestUntil.current = now;
+  const start = useCallback(() => {
+    const now = Date.now();
     const since = new Date(now - RANGE_MS[range]).toISOString();
     const until = new Date(now).toISOString();
-    if (force) requestGeneration.current += 1;
-    setRequest({ selection, range, budget, since, until, generation: requestGeneration.current, key: JSON.stringify([selection, range, budget, since, until, requestGeneration.current]) });
+    setRequest({ selection, range, budget, since, until, key: JSON.stringify([selection, range, budget, since, until]) });
   }, [selection, range, budget]);
   useEffect(() => {
     if (visible && selection && budget) start();
@@ -66,16 +62,8 @@ export function useMeasurementHistory(ids: number[], range: HistoryRange, refres
       start();
     }
   }, [refreshToken, visible, selection, budget, matches, current?._loading, request, start]);
-  const lastResetToken = useRef(resetToken);
   useEffect(() => {
-    if (lastResetToken.current === resetToken) return;
-    lastResetToken.current = resetToken;
-    setSnapshot(null);
-    refreshPending.current = false;
-    if (visible && selection && budget) start(true);
-  }, [resetToken, visible, selection, budget, start]);
-  useEffect(() => {
-    if (request && request.generation === requestGeneration.current && matches && current?._loaded && current._found && !current._loading) setSnapshot({ request, points: current });
+    if (request && matches && current?._loaded && current._found && !current._loading) setSnapshot({ request, points: current });
   }, [request, matches, current]);
   useEffect(() => {
     if (!visible || !selection || !matches || !current || current._loading || !current._loaded) return;
@@ -83,7 +71,7 @@ export function useMeasurementHistory(ids: number[], range: HistoryRange, refres
     return () => clearTimeout(timer);
   }, [visible, selection, matches, current?._loading, current?._loaded, request, range, start]);
 
-  const displayed = snapshot?.request.generation === requestGeneration.current && snapshot.request.selection === selection && snapshot.request.range === range ? snapshot : null;
+  const displayed = snapshot?.request.selection === selection && snapshot.request.range === range ? snapshot : null;
   // A placeholder window lets the graph measure itself before the first query.
   const placeholder = useMemo(() => {
     const now = Date.now();

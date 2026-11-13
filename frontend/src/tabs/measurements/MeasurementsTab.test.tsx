@@ -62,90 +62,36 @@ describe('MeasurementsTab', () => {
   it('keeps menu clicks separate from graph selection and sends no request on cancellation', async () => {
     ux.set('deselectedIds', []);
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
-    const patch = vi.spyOn(Store.axios, 'patch');
     const destroy = vi.spyOn(Store.axios, 'delete');
     render(<MeasurementsTab ux={ux} refreshToken={0} measurements={query([{ id: 81, name: 'Supply temp', source: null, preview: [] }])} />);
     const selection = screen.getByRole('button', { name: 'Select Supply temp measurement' });
     fireEvent.click(screen.getByRole('button', { name: 'Actions for Supply temp' }));
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Clear data…' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Delete measurement…' }));
     expect(selection.getAttribute('aria-pressed')).toBe('true');
     expect(confirm).toHaveBeenCalledWith(expect.stringContaining('Supply temp'));
-    expect(patch).not.toHaveBeenCalled();
     expect(destroy).not.toHaveBeenCalled();
     fireEvent.click(selection);
     await waitFor(() => expect(screen.getByRole('button', { name: 'Select Supply temp measurement' }).getAttribute('aria-pressed')).toBe('false'));
-    confirm.mockRestore(); patch.mockRestore(); destroy.mockRestore();
+    confirm.mockRestore(); destroy.mockRestore();
   });
 
-  it('sends the write-only clear flag through Store and leaves the card selectable', async () => {
+  it('does not dismiss the menu when Safari blurs a menu item during a pointer press', () => {
     ux.set('deselectedIds', []);
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
-    const patch = vi.spyOn(Store.axios, 'patch').mockResolvedValue({ data: { measurements: [{ id: 82, name: 'Return temp', logic_instance_id: null, source_type: null, source_id: null, source: null, preview_kind: null, preview: [] }], invalidates: {} } } as never);
-    render(<MeasurementsTab ux={ux} refreshToken={0} measurements={query([{ id: 82, name: 'Return temp', source: null, preview: [] }])} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Actions for Return temp' }));
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Clear data…' }));
-    expect(patch).toHaveBeenCalledWith('/measurements/82', { measurement: { clear_data: true } }, expect.anything());
-    expect(screen.getByRole('button', { name: 'Select Return temp measurement' }).getAttribute('aria-pressed')).toBe('true');
-    confirm.mockRestore(); patch.mockRestore();
-  });
-
-  it('does not dismiss the menu when Safari blurs a menu item during a pointer press', async () => {
-    ux.set('deselectedIds', []);
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
-    const patch = vi.spyOn(Store.axios, 'patch').mockResolvedValue({ data: { measurements: [] } } as never);
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const destroy = vi.spyOn(Store.axios, 'delete');
     render(<MeasurementsTab ux={ux} refreshToken={0} measurements={query([{ id: 87, name: 'Safari focus', source: null, preview: [] }])} />);
     const trigger = screen.getByRole('button', { name: 'Actions for Safari focus' });
     fireEvent.click(trigger);
-    const clear = screen.getByRole('menuitem', { name: 'Clear data…' });
-    expect(document.activeElement).toBe(clear);
-    fireEvent.pointerDown(clear);
-    await act(async () => { clear.blur(); });
-    expect(document.activeElement).not.toBe(clear);
-    fireEvent.pointerUp(clear);
-    expect(screen.getByRole('menuitem', { name: 'Clear data…' })).toBeTruthy();
-    fireEvent.click(clear);
-    expect(patch).toHaveBeenCalledWith('/measurements/87', { measurement: { clear_data: true } }, expect.anything());
-    confirm.mockRestore(); patch.mockRestore();
-  });
-
-  it('clears a visible graph after the confirmed Store mutation succeeds', async () => {
-    ux.set('range', '1m');
-    ux.set('deselectedIds', []);
-    Object.defineProperty(document, 'hidden', { configurable: true, value: false });
-    Store.io_rate_limiter.currentRps = 1_000_000;
-    const pointTime = new Date().toISOString();
-    const oldPoint = { id: 'old-point', measurement_id: 86, kind: 'sample', start: pointTime, end: pointTime, recorded_at: pointTime, value: 23, count: 1, null_count: 0, source: {} };
-    const get = vi.spyOn(Store.axios, 'get').mockResolvedValueOnce({ data: { query: ['old-point'], measurement_history_points: [oldPoint] } } as never)
-      .mockResolvedValueOnce({ data: { query: [], measurement_history_points: [] } } as never);
-    const patch = vi.spyOn(Store.axios, 'patch').mockResolvedValue({ data: { measurements: [{ id: 86, name: 'Clear integration', logic_instance_id: null, source_type: null, source_id: null, source: null, preview_kind: null, preview: [] }], invalidates: { measurement_history_point: 'queries' } } } as never);
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
-    graphProps.mockClear();
-    try {
-      render(<MeasurementsTab ux={ux} refreshToken={0} measurements={query([{ id: 86, name: 'Clear integration', source: null, preview: [] }])} />);
-      fireEvent.click(screen.getByText('Graph'));
-      await waitFor(() => expect(get).toHaveBeenCalledTimes(1));
-      await waitFor(() => expect(graphProps.mock.lastCall![0].series[0].points).toHaveLength(1));
-
-      fireEvent.click(screen.getByRole('button', { name: 'Actions for Clear integration' }));
-      fireEvent.click(screen.getByRole('menuitem', { name: 'Clear data…' }));
-      expect(patch).toHaveBeenCalledWith('/measurements/86', { measurement: { clear_data: true } }, expect.anything());
-      await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
-      await waitFor(() => expect(graphProps.mock.lastCall![0].series[0].points).toHaveLength(0));
-    } finally {
-      get.mockRestore(); patch.mockRestore(); confirm.mockRestore();
-    }
-  });
-
-  it('keeps the card and reports clear failures', async () => {
-    ux.set('deselectedIds', []);
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
-    const patch = vi.spyOn(Store.axios, 'patch').mockRejectedValue({ response: { data: { errors: { base: ['offline'] } }, status: 503 } });
-    render(<MeasurementsTab ux={ux} refreshToken={0} measurements={query([{ id: 83, name: 'Exhaust temp', source: null, preview: [] }])} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Actions for Exhaust temp' }));
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Clear data…' }));
-    await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('offline'));
-    expect(screen.getByRole('button', { name: 'Select Exhaust temp measurement' })).toBeTruthy();
-    confirm.mockRestore(); patch.mockRestore();
+    const remove = screen.getByRole('menuitem', { name: 'Delete measurement…' });
+    expect(document.activeElement).toBe(remove);
+    fireEvent.pointerDown(remove);
+    act(() => { remove.blur(); });
+    expect(document.activeElement).not.toBe(remove);
+    fireEvent.pointerUp(remove);
+    expect(screen.getByRole('menuitem', { name: 'Delete measurement…' })).toBeTruthy();
+    fireEvent.click(remove);
+    expect(destroy).not.toHaveBeenCalled();
+    confirm.mockRestore(); destroy.mockRestore();
   });
 
   it('supports arrow navigation, escape, and trigger focus restoration', () => {
@@ -153,10 +99,9 @@ describe('MeasurementsTab', () => {
     render(<MeasurementsTab ux={ux} refreshToken={0} measurements={query([{ id: 84, name: 'Mixed air', source: null, preview: [] }])} />);
     const trigger = screen.getByRole('button', { name: 'Actions for Mixed air' });
     fireEvent.click(trigger);
-    const clear = screen.getByRole('menuitem', { name: 'Clear data…' });
     const remove = screen.getByRole('menuitem', { name: 'Delete measurement…' });
-    expect(document.activeElement).toBe(clear);
-    fireEvent.keyDown(clear, { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(remove);
+    fireEvent.keyDown(remove, { key: 'ArrowDown' });
     expect(document.activeElement).toBe(remove);
     fireEvent.keyDown(remove, { key: 'Escape' });
     expect(document.activeElement).toBe(trigger);

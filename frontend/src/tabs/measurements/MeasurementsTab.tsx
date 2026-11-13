@@ -3,7 +3,7 @@ import { useLoaders } from '../../lib/DataLoader2';
 import type { FoundRecord, ReifiedQueryResult, Txn } from '../../lib/RestfulModelStore';
 import { useTxnStatus } from '../../components/useTxnStatus';
 import { Measurement, Store } from '../../store';
-import type { LogicInputFields, LogicOutputFields, MeasurementFields, MeasurementPatchFields } from '../../store';
+import type { LogicInputFields, LogicOutputFields, MeasurementFields } from '../../store';
 import type { HistorySource } from './historyTypes';
 import type { HistoryRange, MeasurementsUXState } from '../../uxTree';
 import { MeasurementHistoryGraph } from './MeasurementHistoryGraph';
@@ -27,8 +27,7 @@ export function MeasurementsTab({ measurements, ux, refreshToken, logicInputs = 
   const { range, deselected } = useLoaders(() => ({ range: ux.get('range') ?? '1hr', deselected: ux.get('deselectedIds') ?? [] }), [ux], []);
   const records = measurements.filter(record => record._found);
   const selected = records.filter(record => record._found && !deselected.includes(record.id as number));
-  const [historyResetToken, setHistoryResetToken] = useState(0);
-  const history = useMeasurementHistory(selected.map(record => record.id as number), range, refreshToken, historyResetToken);
+  const history = useMeasurementHistory(selected.map(record => record.id as number), range, refreshToken);
   const selectedKey = JSON.stringify(selected.map(record => [record.id, record.name]));
   const series = useMemo(() => {
     const points = history.points?.filter(point => point._found) ?? [];
@@ -42,15 +41,14 @@ export function MeasurementsTab({ measurements, ux, refreshToken, logicInputs = 
       <div class="flex flex-wrap justify-center gap-1" aria-label="History range">{ranges.map(item => <button type="button" aria-pressed={range === item} class={`rounded px-3 py-1.5 text-sm ${range === item ? 'bg-active-bg text-active font-semibold ring-1 ring-active' : 'bg-surface-alt'}`} onClick={() => ux.set('range', item)}>{item}</button>)}</div>
       <MeasurementHistoryGraph series={series} since={history.since} until={history.until} onPlotWidth={history.onPlotWidth} unitsFor={unitsFor} />
       {selected.length === 0 ? <p role="status">Select a measurement to see its history.</p> : history.error ? <p role="alert">Could not load measurement history.</p> : history.loading ? <p role="status">Loading history…</p> : history.updating ? <p role="status">Updating history…</p> : !hasHistory ? <p role="status">No history in this range.</p> : null}
-      <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{records.map(record => record._found && <MeasurementCard key={String(record.id)} record={record} selected={!deselected.includes(record.id as number)} color={colorFor(record.id as number)} onSelect={() => ux.set('deselectedIds', deselected.includes(record.id as number) ? deselected.filter(id => id !== record.id as number) : [...deselected, record.id as number])} onClear={() => setHistoryResetToken(value => value + 1)} />)}</div>
+      <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{records.map(record => record._found && <MeasurementCard key={String(record.id)} record={record} selected={!deselected.includes(record.id as number)} color={colorFor(record.id as number)} onSelect={() => ux.set('deselectedIds', deselected.includes(record.id as number) ? deselected.filter(id => id !== record.id as number) : [...deselected, record.id as number])} />)}</div>
     </>}
   </section>;
 }
 
-function MeasurementCard({ record, selected, color, onSelect, onClear }: { record: FoundRecord<MeasurementFields>; selected: boolean; color: string; onSelect: () => void; onClear: () => void }) {
+function MeasurementCard({ record, selected, color, onSelect }: { record: FoundRecord<MeasurementFields>; selected: boolean; color: string; onSelect: () => void }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [txn, setTxn] = useState<Txn>();
-  const [action, setAction] = useState<'clear' | 'delete'>();
   const cardRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -59,11 +57,9 @@ function MeasurementCard({ record, selected, color, onSelect, onClear }: { recor
   const { txnResult, saving } = useTxnStatus(txn);
   useEffect(() => {
     if (txnResult?.status === 'succeeded') {
-      if (action === 'clear') onClear();
       setTxn(undefined);
-      setAction(undefined);
     }
-  }, [txnResult, txn, action, onClear]);
+  }, [txnResult, txn]);
   useEffect(() => {
     if (!menuOpen) return;
     const dismissOutside = (event: PointerEvent) => { if (!cardRef.current?.contains(event.target as Node)) setMenuOpen(false); };
@@ -80,21 +76,10 @@ function MeasurementCard({ record, selected, color, onSelect, onClear }: { recor
   }, [menuOpen]);
   const fail = txnResult?.status === 'error';
   const menuId = `measurement-actions-${record.id}`;
-  const clear = () => {
-    if (saving) return;
-    if (!window.confirm(`Clear all recorded data for “${record.name}”? The measurement and its attachment will remain, and new data will be recorded during the next evaluation.`)) { setMenuOpen(false); triggerRef.current?.focus(); return; }
-    const changes: MeasurementPatchFields = { clear_data: true };
-    const request = Store.m(Measurement).patch(record.id, changes);
-    setAction('clear');
-    setTxn(request);
-    setMenuOpen(false);
-    triggerRef.current?.focus();
-  };
   const remove = () => {
     if (saving) return;
     if (!window.confirm(`Delete “${record.name}” and all of its recorded data? Its instance, source port, and instance history will remain.`)) { setMenuOpen(false); triggerRef.current?.focus(); return; }
     const request = Store.m(Measurement).destroy(record.id);
-    setAction('delete');
     setTxn(request);
     setMenuOpen(false);
   };
@@ -117,9 +102,8 @@ function MeasurementCard({ record, selected, color, onSelect, onClear }: { recor
       <span aria-hidden="true">⋮</span>
     </button>
     {menuOpen && <div ref={menuRef} id={menuId} role="menu" aria-label={`${record.name} actions`} onKeyDown={moveMenuFocus} class="absolute right-2 top-12 z-20 min-w-48 rounded border border-border bg-surface p-1 shadow-lg">
-      <button type="button" role="menuitem" disabled={saving} onClick={clear} class="block w-full rounded px-3 py-2 text-left hover:bg-surface-alt">Clear data…</button>
       <button type="button" role="menuitem" disabled={saving} onClick={remove} class="block w-full rounded px-3 py-2 text-left text-error hover:bg-surface-alt">Delete measurement…</button>
     </div>}
-    {fail && <p role="alert" class="px-4 pb-3 text-sm text-error">Could not {action === 'clear' ? 'clear data' : 'delete measurement'}: {JSON.stringify(txnResult.errors ?? 'request failed')}</p>}
+    {fail && <p role="alert" class="px-4 pb-3 text-sm text-error">Could not delete measurement: {JSON.stringify(txnResult.errors ?? 'request failed')}</p>}
   </div>;
 }
