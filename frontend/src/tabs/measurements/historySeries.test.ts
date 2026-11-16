@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildHistorySeries, hasVisibleHistory, numericDomain } from './historySeries';
+import { analyzeHistoryRange, buildHistorySeries, hasVisibleHistory, numericDomain } from './historySeries';
 import type { HistoryGraphSeries, HistorySamplePoint, HistoryBucketPoint, HistorySource } from './historyTypes';
 
 const source = { value_type: 'number' as const, logic_instance_id: 1, logic_instance_name: 'Instance', logic_diagram_id: 1, logic_diagram_name: 'Diagram', source_type: 'LogicOutput' as const, source_id: 1, source_name: 'Output' };
@@ -67,4 +67,63 @@ describe('history series', () => {
     expect(hasVisibleHistory(series([sample(15, null)]), window)).toBe(true);
   });
 
+});
+
+describe('robust range', () => {
+  const window = { since: 0, until: 10000 };
+  it('clips isolated extremes without changing the records and preserves full range', () => {
+    const original = series([0, 1, 2, 3, 4, 5, 6, 7, 8].map((n) => sample(n, n === 8 ? 200000 : 1)));
+    const before = JSON.stringify(original);
+    const result = analyzeHistoryRange([buildHistorySeries(original, window)], window);
+    expect(result.robust).toEqual([0, 2]);
+    expect(result.full![1]).toBeGreaterThan(200000);
+    expect(JSON.stringify(original)).toBe(before);
+  });
+  it('keeps different measurement scales and uses bucket means once', () => {
+    const a = series(Array.from({ length: 8 }, (_, n) => sample(n, 1)));
+    const b = series(Array.from({ length: 8 }, (_, n) => bucket(n, n + 1, 1000, n === 7 ? 200000 : 1000, 1000)));
+    const result = analyzeHistoryRange([a, b].map(item => buildHistorySeries(item, window)), window);
+    expect(result.robust).toEqual([-48.95, 1049.95]);
+  });
+  it('uses full geometry for sparse observations and excludes boundary context', () => {
+    const input = series([sample(-1, 100), ...Array.from({ length: 7 }, (_, n) => sample(n, 1)), sample(8, 200000)]);
+    expect(analyzeHistoryRange([buildHistorySeries(input, window)], window).robust).toEqual([0, 2]);
+    const sparse = series([sample(0, 1), sample(1, 200000)]);
+    const result = analyzeHistoryRange([buildHistorySeries(sparse, window)], window);
+    expect(result.robust).toEqual(result.full);
+  });
+});
+
+describe('range edge cases', () => {
+  const window = { since: 0, until: 10000 };
+  const analyze = (items: HistoryGraphSeries[]) => analyzeHistoryRange(items.map(item => buildHistorySeries(item, window)), window);
+  it('excludes right boundary context and handles positive and negative zero-iqr spikes', () => {
+    for (const spike of [-200000, 200000]) {
+      const input = series([...Array.from({ length: 8 }, (_, n) => sample(n, -2)), sample(8, spike), sample(10, spike)]);
+      expect(analyze([input]).robust).toEqual([-3, -1]);
+    }
+    const boundary = series([...Array.from({ length: 7 }, (_, n) => sample(n, 1)), sample(7, 100), sample(10, 100)]);
+    expect(analyze([boundary]).robust).toEqual([0, 2]);
+    // The successor cannot turn seven interior samples into eight observations.
+    const sparseBoundary = series([...Array.from({ length: 6 }, (_, n) => sample(n, 1)), sample(6, 100), sample(10, 1)]);
+    expect(analyze([sparseBoundary]).robust).toEqual(analyze([sparseBoundary]).full);
+  });
+  it('uses full bounds below eight and retains ordinary steps', () => {
+    const sparse = series([...Array.from({ length: 6 }, (_, n) => sample(n, 1)), sample(6, 100)]);
+    expect(analyze([sparse]).robust).toEqual(analyze([sparse]).full);
+    const steps = series(Array.from({ length: 8 }, (_, n) => sample(n, n < 4 ? -10 : 10)));
+    expect(analyze([steps]).robust).toEqual([-11, 11]);
+  });
+  it('uses interpolated quartiles and inclusive nonzero fences', () => {
+    // q1=1, q3=2, so the upper fence is exactly 5.
+    const input = series([1, 1, 1, 1, 2, 2, 2, 5].map((v, n) => sample(n, v)));
+    expect(analyze([input]).robust).toEqual([0.8, 5.2]);
+  });
+  it('ignores null, boolean and nonfinite values and returns finite bounds for extreme arithmetic', () => {
+    const bool = { ...source, value_type: 'boolean' as const };
+    expect(analyze([series([sample(0, null), sample(1, true, bool), sample(2, NaN)])]).robust).toBeNull();
+    const extreme = analyze([series([sample(0, -Number.MAX_VALUE), sample(1, Number.MAX_VALUE)])]);
+    expect(extreme.robust?.every(Number.isFinite)).toBe(true);
+    expect(extreme.full?.every(Number.isFinite)).toBe(true);
+  });
 });

@@ -77,16 +77,20 @@ export function buildHistorySeries(series: HistoryGraphSeries, window?: { since:
   if (current.length) result.bucketLines.push({ points: current });
   return result;
 }
+function paddedDomain(min: number, max: number): [number, number] | null {
+  if (!Number.isFinite(min) || !Number.isFinite(max)) return null;
+  const padding = min === max ? Math.max(Math.abs(min) * 0.05, 1) : (Number.isFinite(max - min) ? (max - min) * 0.05 : max * 0.05 - min * 0.05);
+  return [Number.isFinite(min - padding) ? min - padding : min, Number.isFinite(max + padding) ? max + padding : max];
+}
+
 export function numericDomain(series: TransformedHistory[]): [number, number] | null {
   let min = Infinity, max = -Infinity;
-  const include = (value: number) => { min = Math.min(min, value); max = Math.max(max, value); };
+  const include = (value: number) => { if (Number.isFinite(value)) { min = Math.min(min, value); max = Math.max(max, value); } };
   for (const item of series) {
     for (const line of item.lines) for (const point of line.points) include(point.value);
     for (const bucket of item.buckets) { include(bucket.min); include(bucket.max); }
   }
-  if (min === Infinity) return null;
-  const padding = min === max ? Math.max(Math.abs(min) * 0.05, 1) : (max - min) * 0.05;
-  return [min - padding, max + padding];
+  return paddedDomain(min, max);
 }
 
 /** Whether a series has observations or supported geometry in the visible window. */
@@ -97,4 +101,60 @@ export function hasVisibleHistory(series: HistoryGraphSeries, window: { since: n
   })) return true;
   const visible = buildHistorySeries(series, window);
   return visible.lines.length > 0 || visible.booleans.length > 0 || visible.buckets.length > 0;
+}
+
+export function analyzeHistoryRange(series: TransformedHistory[], window: { since: number; until: number }) {
+  const full = numericDomain(series);
+  let min = Infinity, max = -Infinity;
+  for (const item of series) {
+    const values = item.series.points.flatMap(point => {
+      const start = Date.parse(point.start), end = Date.parse(point.end);
+      if (point.source.value_type !== 'number') return [];
+      if (point.kind === 'sample') return start >= window.since && start < window.until && typeof point.value === 'number' && Number.isFinite(point.value) ? [point.value] : [];
+      const mean = point.statistics.mean;
+      return start < window.until && end > window.since && point.count > 0 && typeof mean === 'number' && Number.isFinite(mean) ? [mean] : [];
+    }).sort((a, b) => a - b);
+    const geometry = [...item.lines.flatMap(line => line.points.map(point => point.value)), ...item.buckets.flatMap(bucket => [bucket.min, bucket.max, bucket.mean])].filter(Number.isFinite);
+    let retained = geometry;
+    if (values.length >= 8) {
+      const quantile = (p: number) => { const i = (values.length - 1) * p, lo = Math.floor(i), hi = Math.ceil(i); return values[lo] + (values[hi] - values[lo]) * (i - lo); };
+      const q1 = quantile(0.25), q3 = quantile(0.75), iqr = q3 - q1, low = q1 - 3 * iqr, high = q3 + 3 * iqr;
+      if ([q1, q3, iqr, low, high].every(Number.isFinite)) {
+        const filtered = geometry.filter(value => value >= low && value <= high);
+        if (filtered.length) retained = filtered;
+      }
+    }
+    for (const value of retained) { min = Math.min(min, value); max = Math.max(max, value); }
+  }
+  return { full, robust: paddedDomain(min, max) };
+}
+
+export interface ClippedHistoryMarker {
+  measurementId: number;
+  time: number;
+  direction: 1 | -1;
+  kind: 'sample' | 'bucket';
+}
+
+/** Classify against the final shared, padded axis, not an individual fence. */
+export function historyClipping(series: TransformedHistory[], window: { since: number; until: number }, domain: [number, number] | null) {
+  const markers: ClippedHistoryMarker[] = [];
+  if (!domain) return { hasClipped: false, markers };
+  const outside = (value: number) => Number.isFinite(value) && (value < domain[0] || value > domain[1]);
+  let hasClipped = false;
+  for (const item of series) {
+    if (item.lines.some(line => line.points.some(point => outside(point.value)))) hasClipped = true;
+    for (const point of item.series.points) {
+      const time = Date.parse(point.start);
+      if (point.kind !== 'sample' || point.source.value_type !== 'number' || typeof point.value !== 'number' || time < window.since || time > window.until || !Number.isFinite(time) || !outside(point.value)) continue;
+      markers.push({ measurementId: item.series.measurementId, time, direction: point.value > domain[1] ? 1 : -1, kind: 'sample' });
+    }
+    for (const bucket of item.buckets) {
+      const time = bucket.start + (bucket.end - bucket.start) / 2;
+      if ([bucket.min, bucket.max, bucket.mean].some(outside)) hasClipped = true;
+      if (bucket.max > domain[1]) markers.push({ measurementId: item.series.measurementId, time, direction: 1, kind: 'bucket' });
+      if (bucket.min < domain[0]) markers.push({ measurementId: item.series.measurementId, time, direction: -1, kind: 'bucket' });
+    }
+  }
+  return { hasClipped, markers };
 }

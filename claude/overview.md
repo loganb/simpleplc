@@ -23,6 +23,17 @@ HVAC PLC controller application — a web interface for monitoring and controlli
 
 ## Current State
 
+- **measurement iqr scaling — implemented locally, not deployed:** measurement
+  history defaults to per-measurement 3×iqr axis fitting with at least eight
+  visible observations (bucket means for summaries), then unions the bounds
+  across selected series. zero-iqr signals retain their dominant level. a
+  full-range checkbox, filled raw-reading / hollow summary boundary triangles
+  and off-scale readouts preserve access to extreme values without changing
+  stored data. bucket quartiles remain approximate and rare legitimate states
+  may clip. 135 frontend tests, type checking and build pass; actual echarts svg
+  rendering is covered at desktop/mobile chart sizes, but browser qa was blocked
+  by chrome aborting in the sandbox. see `claude/measurement-iqr.md`.
+
 - **Device management deployment — 2026-10-23:** Simplified device management, a separate DeviceScan resource, and improved NT48C32 scan identification were deployed at `e5831e2`. The scan migration was applied and the configured devices resumed successful polling.
 
 - **Instance measurements — deployed, latest at `598deba`** — Independent

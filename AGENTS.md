@@ -57,7 +57,7 @@ so don't run it silently inside a larger task.
 - Maintain a `claude/` subdirectory for working notes.
 - Keep `claude/overview.md` up to date with the project's purpose, design, and features. Update it as understanding evolves.
 - Documentation for the hardware is in the doc/ directory
-- For each new task, agree on a short name with the user, then create an implementation plan, in file `claude/<task-name>.md` containing:
+- For each new code change, agree on a short name with the user, then create an implementation plan, in file `claude/<task-name>.md` containing:
   1. The design as discussed during planning.
   2. An implementation plan written **before** starting implementation.
   3. Write the plan and then confirm with me **before** makind the code changes
@@ -73,6 +73,7 @@ so don't run it silently inside a larger task.
 - When starting a new task and I specify how something should work. Take a moment to ask yourself, "does this seem reasonable? What's an alternative implementation?" If you have a quick answer, then ask yourself, "is this better?" If it seems likely it is, ask me about my design choices. 
 - I usually have all the Procfile.dev running in a console. Foreman is running them. If we need a hard restart, you can let me know. 
 - I abhor sycophancy. Be direct, be skeptical, do not withhold criticism. 
+- You do not need to make documentation changes or commit other information to the repository for mere deployments. Documentation and work plans are design documents for feature changes. 
 
 ## Frontend Server I/O
 
