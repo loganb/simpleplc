@@ -139,10 +139,13 @@ describe('MeasurementHistoryGraph', () => {
   });
   it('makes a false state spanning the window inspectable', () => {
     const booleanSource = { ...source, value_type: 'boolean' as const };
-    const falseSeries: HistoryGraphSeries[] = [{ ...points[0], points: [-1, 3].map(n => ({ id: String(n), measurement_id: 1, kind: 'sample' as const, start: new Date(n * 1000).toISOString(), end: new Date(n * 1000).toISOString(), recorded_at: new Date(n * 1000).toISOString(), value: false, count: 1, null_count: 0, source: booleanSource })) }];
+    const falseSeries: HistoryGraphSeries[] = [{ ...points[0], axis: 'right', points: [-1, 3].map(n => ({ id: String(n), measurement_id: 1, kind: 'sample' as const, start: new Date(n * 1000).toISOString(), end: new Date(n * 1000).toISOString(), recorded_at: new Date(n * 1000).toISOString(), value: false, count: 1, null_count: 0, source: booleanSource })) }];
     render(<MeasurementHistoryGraph series={falseSeries} since="1970-01-01T00:00:00Z" until="1970-01-01T00:00:02Z" />);
     expect(screen.getByText('Off')).toBeTruthy();
     expect(mocks.instance.setOption.mock.lastCall?.[0].series[0].data).toEqual([[0, 2000, 0, 0]]);
+    expect(mocks.instance.setOption.mock.lastCall?.[0].yAxis).toEqual([
+      expect.objectContaining({ show: false }), expect.objectContaining({ show: false }),
+    ]);
   });
 
   it('highlights numeric data independently of overlapping boolean intervals and clears it on leave', () => {
@@ -168,25 +171,45 @@ describe('robust display', () => {
   const since = '1970-01-01T00:00:00Z', until = '1970-01-01T00:00:12Z';
   const raw = (values: number[]): HistoryGraphSeries => ({ ...points[0], points: values.map((value, n) => ({ ...points[0].points[0], kind: 'sample' as const, id: String(n), start: new Date(n * 1000).toISOString(), end: new Date(n * 1000).toISOString(), recorded_at: new Date(n * 1000).toISOString(), value })) });
   const option = () => mocks.instance.setOption.mock.lastCall![0];
+  it('uses independent axes for ranges, clipping and series', () => {
+    const left = raw(Array(8).fill(100000));
+    const right = { ...raw([1, 1, 1, 1, 1, 1, 1, 1, 100000]), measurementId: 2, name: 'Right', axis: 'right' as const };
+    const width = vi.fn();
+    const view = render(<MeasurementHistoryGraph series={[left, right]} since={since} until={until} onPlotWidth={width} />);
+    expect(option().yAxis[0].min).toBeGreaterThan(100);
+    expect(option().yAxis[1].max).toBe(2);
+    expect(option().series.find((s: { id: string }) => s.id === 'line-2-0').yAxisIndex).toBe(1);
+    expect(option().series.find((s: { id: string }) => s.id === 'clipped-2').yAxisIndex).toBe(1);
+    expect(screen.getByLabelText('Measurement legend').textContent).toContain('Right (right)');
+    for (let i = 0; i < 8; i++) fireEvent.keyDown(screen.getByRole('group'), { key: 'ArrowRight' });
+    expect(screen.getByLabelText('Cursor values').textContent).toContain('off scale');
+    expect(mocks.instance.dispatchAction).not.toHaveBeenCalledWith({ type: 'highlight', seriesId: 'line-2-0', dataIndex: 8 });
+    const plotWidth = width.mock.lastCall?.[0];
+    view.rerender(<MeasurementHistoryGraph series={[left, { ...right, axis: 'left' }]} since={since} until={until} onPlotWidth={width} />);
+    expect(width.mock.lastCall?.[0]).toBe(plotWidth);
+    expect(option().yAxis[1].show).toBe(false);
+    expect(screen.getByLabelText('Cursor values').textContent).not.toContain('off scale');
+    expect(mocks.instance.dispatchAction).toHaveBeenCalledWith({ type: 'highlight', seriesId: 'line-2-0', dataIndex: 8 });
+  });
   it('preserves true data and cursor while switching range and refreshing selection', () => {
     const input = raw([1, 1, 1, 1, 1, 1, 1, 1, 200000]);
     const view = render(<MeasurementHistoryGraph series={[input]} since={since} until={until} />);
     expect(screen.getByText(/some values are outside the displayed range/)).toBeTruthy();
-    expect(option().yAxis.max).toBe(2);
+    expect(option().yAxis[0].max).toBe(2);
     expect(option().series.find((s: { id: string }) => s.id === 'line-1-0').data[8]).toEqual([8000, 200000]);
     for (let i = 0; i < 8; i++) fireEvent.keyDown(screen.getByRole('group'), { key: 'ArrowRight' });
     expect(screen.getByLabelText('Cursor values').textContent).toContain('200,000');
     expect(screen.getByLabelText('Cursor values').textContent).toContain('off scale');
     expect(mocks.instance.dispatchAction).not.toHaveBeenCalledWith({ type: 'highlight', seriesId: 'line-1-0', dataIndex: 8 });
     fireEvent.click(screen.getByRole('checkbox', { name: 'show full range' }));
-    expect(option().yAxis.max).toBeGreaterThan(200000);
+    expect(option().yAxis[0].max).toBeGreaterThan(200000);
     expect(option().series.find((s: { id: string }) => s.id === 'clipped-1')).toBeUndefined();
     expect(screen.queryByText(/some values are outside the displayed range/)).toBeNull();
     expect(screen.getByLabelText('Cursor values').textContent).toContain('200,000');
     view.rerender(<MeasurementHistoryGraph series={[]} since={since} until={until} />);
     view.rerender(<MeasurementHistoryGraph series={[{ ...input }]} since={since} until={until} />);
     expect((screen.getByRole('checkbox') as HTMLInputElement).checked).toBe(true);
-    expect(option().yAxis.max).toBeGreaterThan(200000);
+    expect(option().yAxis[0].max).toBeGreaterThan(200000);
   });
   it('batches directional raw and midpoint summary markers', () => {
     const input = raw([1, 1, 1, 1, 1, 1, 1, 1, 200000, -200000]);

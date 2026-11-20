@@ -3,11 +3,15 @@ import * as echarts from 'echarts/core';
 import { CustomChart, LineChart } from 'echarts/charts';
 import { AriaComponent, GridComponent, TooltipComponent } from 'echarts/components';
 import { SVGRenderer } from 'echarts/renderers';
-import type { MeasurementHistoryGraphProps, MeasurementHistoryPointFields } from './historyTypes';
+import type { HistoryAxis, MeasurementHistoryGraphProps, MeasurementHistoryPointFields } from './historyTypes';
 import { analyzeHistoryRange, buildHistorySeries, historyClipping } from './historySeries';
 
 echarts.use([CustomChart, LineChart, GridComponent, TooltipComponent, AriaComponent, SVGRenderer]);
+const GRID_SIDE = 65;
+const axes = ['left', 'right'] as const;
+const axisIndex = (axis?: HistoryAxis) => axis === 'right' ? 1 : 0;
 const formatNumber = (value: number) => new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(value);
+const axisNumberFormat = new Intl.NumberFormat(undefined, { maximumSignificantDigits: 4 });
 const formatTime = (time: number) => new Date(time).toLocaleString();
 const pointDescription = (point: MeasurementHistoryPointFields, unitsFor?: MeasurementHistoryGraphProps['unitsFor']) => {
   const units = point.source.value_type === 'number' ? unitsFor?.(point.source) : null;
@@ -39,10 +43,19 @@ export function MeasurementHistoryGraph({ series, since, until, onPlotWidth, uni
   callback.current = onPlotWidth;
   const transformed = useMemo(() => series.map(item => buildHistorySeries(item, { since: Date.parse(since), until: Date.parse(until) })), [series, since, until]);
   const [fullRange, setFullRange] = useState(false);
-  const analysis = useMemo(() => analyzeHistoryRange(transformed, { since: Date.parse(since), until: Date.parse(until) }), [transformed, since, until]);
-  const domain = fullRange ? analysis.full : analysis.robust;
-  const outside = (value: number) => domain !== null && (value < domain[0] || value > domain[1]);
-  const clipping = useMemo(() => historyClipping(transformed, { since: Date.parse(since), until: Date.parse(until) }, domain), [transformed, since, until, domain]);
+  const axisData = useMemo(() => {
+    const bounds = { since: Date.parse(since), until: Date.parse(until) };
+    return axes.map((position, index) => {
+      const items = transformed.filter(item => axisIndex(item.series.axis) === index);
+      const analysis = analyzeHistoryRange(items, bounds);
+      const domain = fullRange ? analysis.full : analysis.robust;
+      return { position, domain, clipping: historyClipping(items, bounds, domain) };
+    });
+  }, [transformed, since, until, fullRange]);
+  const outside = (value: number, axis?: HistoryAxis) => {
+    const domain = axisData[axisIndex(axis)].domain;
+    return domain !== null && (value < domain[0] || value > domain[1]);
+  };
   const times = useMemo(() => {
     const from = Date.parse(since), to = Date.parse(until);
     return [...new Set([...transformed.flatMap(s => [...s.lines.flatMap(line => line.points.map(point => point.time)), ...s.booleans.flatMap(interval => [interval.start, interval.end])]), ...series.flatMap(s => s.points.flatMap(p => {
@@ -65,7 +78,7 @@ export function MeasurementHistoryGraph({ series, since, until, onPlotWidth, uni
         const distance = Math.abs(point.time - time);
         if (!closest || distance < closest.distance) closest = { seriesId, dataIndex, distance, value: point.value };
       });
-      if (closest && !outside(closest.value)) {
+      if (closest && !outside(closest.value, item.series.axis)) {
         const { seriesId, dataIndex } = closest;
         highlighted.current.push({ seriesId, dataIndex });
         instance.dispatchAction({ type: 'highlight', seriesId, dataIndex });
@@ -118,7 +131,7 @@ export function MeasurementHistoryGraph({ series, since, until, onPlotWidth, uni
     const resize = () => {
       instance.resize();
       restoreCursor.current();
-      callback.current?.(Math.max(1, element.clientWidth - 75));
+      callback.current?.(Math.max(1, element.clientWidth - 2 * GRID_SIDE));
     };
     const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(resize);
     observer?.observe(element);
@@ -132,8 +145,10 @@ export function MeasurementHistoryGraph({ series, since, until, onPlotWidth, uni
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const chartSeries: any[] = [];
     for (const item of transformed) {
+      const yAxisIndex = axisIndex(item.series.axis);
+      const { domain, clipping } = axisData[yAxisIndex];
       if (item.booleans.length) chartSeries.push({
-        id: `boolean-${item.series.measurementId}`, type: 'custom', silent: true, z: 1, encode: { x: [0, 1], y: [] },
+        id: `boolean-${item.series.measurementId}`, yAxisIndex, type: 'custom', silent: true, z: 1, encode: { x: [0, 1], y: [] },
         data: item.booleans.map(interval => [interval.start, interval.end, interval.fraction, interval.point.kind === 'bucket' ? 1 : 0]),
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         renderItem: (params: any, api: any) => {
@@ -143,7 +158,7 @@ export function MeasurementHistoryGraph({ series, since, until, onPlotWidth, uni
         },
       });
       if (item.buckets.length) chartSeries.push({
-        id: `bucket-${item.series.measurementId}`, type: 'custom', silent: true, z: 2, encode: { x: [0, 1], y: [2, 3, 4] },
+        id: `bucket-${item.series.measurementId}`, yAxisIndex, type: 'custom', silent: true, z: 2, encode: { x: [0, 1], y: [2, 3, 4] },
         data: item.buckets.map(bucket => [bucket.start, bucket.end, bucket.min, bucket.max, bucket.mean]),
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         renderItem: (params: any, api: any) => {
@@ -154,23 +169,43 @@ export function MeasurementHistoryGraph({ series, since, until, onPlotWidth, uni
       });
       const markers = clipping.markers.filter(marker => marker.measurementId === item.series.measurementId).map(marker => [marker.time, marker.direction, marker.kind === 'bucket' ? 1 : 0]);
       if (markers.length) chartSeries.push({
-        id: `clipped-${item.series.measurementId}`, type: 'custom', silent: true, clip: true, z: 5, encode: { x: 0, y: [] }, data: markers,
+        id: `clipped-${item.series.measurementId}`, yAxisIndex, type: 'custom', silent: true, clip: true, z: 5, encode: { x: 0, y: [] }, data: markers,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         renderItem: (params: any, api: any) => {
-          const x = api.coord([api.value(0), domain![0]])[0], up = api.value(1) > 0;
+          const x = api.coord([api.value(0), domain?.[0] ?? 0])[0], up = api.value(1) > 0;
           const y = up ? params.coordSys.y : params.coordSys.y + params.coordSys.height;
           return { type: 'polygon', shape: { points: up ? [[x, y], [x - 4, y + 7], [x + 4, y + 7]] : [[x, y], [x - 4, y - 7], [x + 4, y - 7]] }, style: { fill: api.value(2) ? 'none' : item.series.color, stroke: item.series.color, lineWidth: 1.5 } };
         },
       });
-      item.bucketLines.forEach((line, i) => chartSeries.push({ id: `bucket-line-${item.series.measurementId}-${i}`, type: 'line', clip: true, data: line.points.map(p => [p.time, p.value]), showSymbol: false, smooth: false, connectNulls: false, lineStyle: { color: item.series.color, width: 2 }, z: 3 }));
-      item.lines.forEach((line, i) => chartSeries.push({ id: `line-${item.series.measurementId}-${i}`, type: 'line', clip: true, data: line.points.map(p => [p.time, p.value]), showSymbol: line.points.length === 1, symbolSize: 6, smooth: false, connectNulls: false, lineStyle: { color: item.series.color, width: 2 }, itemStyle: { color: item.series.color }, z: 3 }));
+      item.bucketLines.forEach((line, i) => chartSeries.push({ id: `bucket-line-${item.series.measurementId}-${i}`, yAxisIndex, type: 'line', clip: true, data: line.points.map(p => [p.time, p.value]), showSymbol: false, smooth: false, connectNulls: false, lineStyle: { color: item.series.color, width: 2 }, z: 3 }));
+      item.lines.forEach((line, i) => chartSeries.push({ id: `line-${item.series.measurementId}-${i}`, yAxisIndex, type: 'line', clip: true, data: line.points.map(p => [p.time, p.value]), showSymbol: line.points.length === 1, symbolSize: 6, smooth: false, connectNulls: false, lineStyle: { color: item.series.color, width: 2 }, itemStyle: { color: item.series.color }, z: 3 }));
     }
     const duration = Date.parse(until) - Date.parse(since);
     const timeFormat = new Intl.DateTimeFormat(undefined, duration <= 600_000 ? { hour: 'numeric', minute: '2-digit', second: '2-digit' } : duration <= 86_400_000 ? { hour: 'numeric', minute: '2-digit' } : { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
-    instance.setOption({ animation: false, aria: { enabled: true, label: { description: 'Measurement history chart. Use left and right arrow keys to explore readings. Filled triangles mark off-scale readings; hollow triangles mark summary intervals at their midpoints.' } }, grid: { left: 55, right: 20, top: 15, bottom: 45 }, xAxis: { type: 'time', min: Date.parse(since), max: Date.parse(until), axisLabel: { hideOverlap: true, formatter: (value: number) => timeFormat.format(new Date(value)) }, axisPointer: { show: true, snap: false } }, yAxis: { type: 'value', min: domain?.[0] ?? 0, max: domain?.[1] ?? 1, show: domain !== null, axisLabel: { showMinLabel: false, showMaxLabel: false, formatter: (value: number) => new Intl.NumberFormat(undefined, { maximumSignificantDigits: 4 }).format(value) } }, tooltip: { trigger: 'axis', showContent: false, triggerOn: 'none' }, series: chartSeries }, { notMerge: true });
+    instance.setOption({
+      animation: false,
+      aria: { enabled: true, label: { description: 'Measurement history chart. Use left and right arrow keys to explore readings. Filled triangles mark off-scale readings. Hollow triangles mark summary intervals at their midpoints.' } },
+      grid: { left: GRID_SIDE, right: GRID_SIDE, top: 15, bottom: 45 },
+      xAxis: {
+        type: 'time', min: Date.parse(since), max: Date.parse(until),
+        axisLabel: { hideOverlap: true, formatter: (value: number) => timeFormat.format(new Date(value)) },
+        axisPointer: { show: true, snap: false },
+      },
+      yAxis: axisData.map(({ position, domain }) => ({
+        type: 'value',
+        position,
+        min: domain?.[0] ?? 0,
+        max: domain?.[1] ?? 1,
+        show: domain !== null,
+        splitLine: { show: domain !== null && (position === 'left' || axisData[0].domain === null) },
+        axisLabel: { showMinLabel: false, showMaxLabel: false, formatter: (value: number) => axisNumberFormat.format(value) },
+      })),
+      tooltip: { trigger: 'axis', showContent: false, triggerOn: 'none' },
+      series: chartSeries,
+    }, { notMerge: true });
     restoreCursor.current();
-    if (container.current) callback.current?.(Math.max(1, container.current.clientWidth - 75));
-  }, [transformed, since, until, domain, clipping]);
+    if (container.current) callback.current?.(Math.max(1, container.current.clientWidth - 2 * GRID_SIDE));
+  }, [transformed, since, until, axisData]);
   const activeTime = selectedTime !== null && selectedTime >= Date.parse(since) && selectedTime <= Date.parse(until) ? selectedTime : times[0];
   const details = activeTime === undefined ? [] : series.flatMap((s, index) => {
     const buckets = s.points.filter(p => p.kind === 'bucket' && Date.parse(p.start) <= activeTime && activeTime < Date.parse(p.end));
@@ -180,12 +215,12 @@ export function MeasurementHistoryGraph({ series, since, until, onPlotWidth, uni
     const samples = s.points.filter(p => p.kind === 'sample' && (intersects || (Date.parse(p.start) >= Date.parse(since) && Date.parse(p.start) <= Date.parse(until))));
     const nearest = samples.reduce<MeasurementHistoryPointFields | undefined>((best, point) => !best || Math.abs(Date.parse(point.start) - activeTime) < Math.abs(Date.parse(best.start) - activeTime) ? point : best, undefined);
     const selected = buckets.length ? buckets : nearest ? [nearest] : [];
-    return selected.length ? [{ name: s.name, color: s.color, points: selected }] : [];
+    return selected.length ? [{ name: s.name, color: s.color, axis: s.axis, points: selected }] : [];
   });
   return <div>
     <label class="text-sm"><input type="checkbox" checked={fullRange} onChange={event => setFullRange(event.currentTarget.checked)} /> show full range</label>
-    {clipping.hasClipped && <p role="note" class="text-sm text-text-muted">some values are outside the displayed range. filled triangles: readings; hollow triangles: summary intervals (midpoints).</p>}
-    <div class="flex flex-wrap gap-x-4 gap-y-1 text-sm" aria-label="Measurement legend">{series.map(s => <span key={s.measurementId}><span aria-hidden="true" style={{ color: s.color }}>●</span> {s.name}</span>)}</div>
+    {axisData.some(axis => axis.clipping.hasClipped) && <p role="note" class="text-sm text-text-muted">some values are outside the displayed range. filled triangles: readings; hollow triangles: summary intervals (midpoints).</p>}
+    <div class="flex flex-wrap gap-x-4 gap-y-1 text-sm" aria-label="Measurement legend">{series.map(s => <span key={s.measurementId}><span aria-hidden="true" style={{ color: s.color }}>●</span> {s.name} ({s.axis ?? 'left'})</span>)}</div>
     <div tabIndex={0} role="group" aria-label="Measurement history. Use left and right arrow keys to explore readings." onKeyDown={event => {
       if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
       event.preventDefault();
@@ -203,6 +238,6 @@ export function MeasurementHistoryGraph({ series, since, until, onPlotWidth, uni
     }}>
       <div ref={container} class="h-60 w-full sm:h-80" />
     </div>
-    <div role="region" aria-label="Cursor values" aria-live={keyboardDetails ? "polite" : "off"} class="text-sm text-text-muted">{activeTime === undefined ? null : <><strong>{formatTime(activeTime)}</strong><div class="flex flex-wrap gap-x-4 gap-y-1">{details.map(({ name, color, points }) => <span key={name}><span aria-hidden="true" class="mr-1 inline-block h-2 w-2 rounded-full" style={{ backgroundColor: color }} /><span class="font-semibold">{name}:</span> <span>{points.map((point, index) => <span key={index}>{index > 0 && ' / '}<span>{pointDescription(point, unitsFor)}</span>{(point.kind === 'sample' ? typeof point.value === 'number' && outside(point.value) : [point.statistics.min, point.statistics.max, point.statistics.mean].some(value => typeof value === 'number' && outside(value))) && ' (off scale)'}</span>)}</span></span>)}</div></>}</div>
+    <div role="region" aria-label="Cursor values" aria-live={keyboardDetails ? "polite" : "off"} class="text-sm text-text-muted">{activeTime === undefined ? null : <><strong>{formatTime(activeTime)}</strong><div class="flex flex-wrap gap-x-4 gap-y-1">{details.map(({ name, color, axis, points }) => <span key={name}><span aria-hidden="true" class="mr-1 inline-block h-2 w-2 rounded-full" style={{ backgroundColor: color }} /><span class="font-semibold">{name}:</span> <span>{points.map((point, index) => <span key={index}>{index > 0 && ' / '}<span>{pointDescription(point, unitsFor)}</span>{(point.kind === 'sample' ? typeof point.value === 'number' && outside(point.value, axis) : [point.statistics.min, point.statistics.max, point.statistics.mean].some(value => typeof value === 'number' && outside(value, axis))) && ' (off scale)'}</span>)}</span></span>)}</div></>}</div>
   </div>;
 }

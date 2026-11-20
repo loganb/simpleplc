@@ -59,6 +59,26 @@ describe('MeasurementsTab', () => {
     expect(graphProps.mock.lastCall![0].unitsFor(source('LogicInput', 99))).toBeNull();
   });
 
+  it('persists axis assignments independently of selection across remounts', async () => {
+    const state = new TreeStore<MeasurementsUXTree>().subtree();
+    const measurements = query([{ id: 90, name: 'Supply', source: null, preview: [] }]);
+    const view = render(<MeasurementsTab ux={state} refreshToken={0} measurements={measurements} />);
+    const selection = screen.getByRole('button', { name: 'Select Supply measurement' });
+    fireEvent.click(screen.getByRole('button', { name: 'Supply is on the left axis. Move to the right axis' }));
+    await waitFor(() => expect(graphProps.mock.lastCall![0].series[0].axis).toBe('right'));
+    expect(selection.getAttribute('aria-pressed')).toBe('true');
+    fireEvent.click(selection);
+    await waitFor(() => expect(selection.getAttribute('aria-pressed')).toBe('false'));
+    fireEvent.click(screen.getByRole('button', { name: 'Supply is on the right axis. Move to the left axis' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Supply is on the left axis. Move to the right axis' }));
+    await screen.findByRole('button', { name: 'Supply is on the right axis. Move to the left axis' });
+    view.unmount();
+    render(<MeasurementsTab ux={state} refreshToken={0} measurements={measurements} />);
+    expect(screen.getByRole('button', { name: 'Supply is on the right axis. Move to the left axis' }).textContent).toBe('→');
+    fireEvent.click(screen.getByRole('button', { name: 'Select Supply measurement' }));
+    await waitFor(() => expect(graphProps.mock.lastCall![0].series[0].axis).toBe('right'));
+  });
+
   it('keeps menu clicks separate from graph selection and sends no request on cancellation', async () => {
     ux.set('deselectedIds', []);
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);

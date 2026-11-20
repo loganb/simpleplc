@@ -22,6 +22,26 @@ const at = (n: number) => new Date(n * 1000).toISOString();
 const source = { value_type: 'number' as const, logic_instance_id: 1, logic_instance_name: 'I', logic_diagram_id: 1, logic_diagram_name: 'D', source_type: 'LogicOutput' as const, source_id: 1, source_name: 'Flow' };
 
 describe('measurement graph SVG rendering', () => {
+  it('renders right-axis lines, bands and both marker types at phone width', () => {
+    renderer.width = 342; renderer.height = 240;
+    const base = { measurementId: 2, name: 'Pressure', color: '#123456', axis: 'right' as const };
+    const raw = Array.from({ length: 10 }, (_, i) => ({ id: `r${i}`, measurement_id: 2, kind: 'sample' as const, start: at(i), end: at(i), recorded_at: at(i), source, count: 1, null_count: 0, value: i === 9 ? 200000 : 1 }));
+    const bucket = { id: 'b', measurement_id: 2, kind: 'bucket' as const, start: at(10), end: at(12), source, count: 20, null_count: 0, statistics: { min: -200000, max: 200000, mean: 1 }, last_known: false, coverage: 'summary' as const, gap_detail: 'minute' as const };
+    const left: HistoryGraphSeries = { measurementId: 1, name: 'Temperature', color: '#abcdef', points: raw.slice(0, 2).map(p => ({ ...p, measurement_id: 1, value: 100000 })) };
+    render(<MeasurementHistoryGraph series={[left, { ...base, points: [...raw, bucket] }]} since={at(0)} until={at(12)} />);
+    const svg = renderer.chart!.renderToSVGString();
+    expect(svg).not.toMatch(/NaN|Infinity/);
+    const option = renderer.chart!.getOption();
+    const series = option.series as { id: string; yAxisIndex: number; data: unknown[] }[];
+    for (const id of ['line-2-0', 'bucket-2', 'bucket-line-2-0', 'clipped-2']) expect(series.find(item => item.id === id)?.yAxisIndex).toBe(1);
+    expect(series.find(item => item.id === 'clipped-2')?.data).toEqual(expect.arrayContaining([[9000, 1, 0], [11000, 1, 1], [11000, -1, 1]]));
+    const axes = option.yAxis as { min: number; max: number }[];
+    expect(axes[0].min).toBeGreaterThan(100);
+    expect(axes[1].max).toBe(2);
+    expect(svg).toContain('100,000');
+    fireEvent.click(screen.getByRole('checkbox', { name: 'show full range' }));
+    expect((renderer.chart!.getOption().series as { id: string }[]).some(item => item.id === 'clipped-2')).toBe(false);
+  });
   it.each([['sample', 1000, 320], ['bucket', 1000, 320], ['sample', 342, 240], ['bucket', 342, 240]] as const)('renders %s spikes at %ipx with the real renderer', (kind, width, height) => {
     renderer.width = width;
     renderer.height = height;

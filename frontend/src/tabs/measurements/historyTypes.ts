@@ -29,7 +29,8 @@ export interface HistoryMetadata {
   target_points: number;
   series: { measurement_id: number; kind: 'sample' | 'bucket'; bucket_seconds: number | null; returned_points: number }[];
 }
-export interface HistoryGraphSeries { measurementId: number; name: string; color: string; points: MeasurementHistoryPointFields[] }
+export type HistoryAxis = 'left' | 'right';
+export interface HistoryGraphSeries { axis?: HistoryAxis; measurementId: number; name: string; color: string; points: MeasurementHistoryPointFields[] }
 export interface MeasurementHistoryGraphProps {
   series: HistoryGraphSeries[];
   since: string;

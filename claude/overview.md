@@ -23,10 +23,18 @@ HVAC PLC controller application — a web interface for monitoring and controlli
 
 ## Current State
 
+- **Measurement dual axis — implemented locally:** The history graph has
+  independent left and right numeric scales on a shared time plot. The arrow
+  on each measurement card shows its assigned side and moves the series on
+  activation. New measurements start on the left. The URL tree remembers right
+  assignments with range and selection. IQR fitting, full range, and off-scale
+  markers apply per axis. Boolean shading spans the plot. See
+  `claude/measurement-dual-axis.md`.
+
 - **measurement iqr scaling — implemented locally, not deployed:** measurement
   history defaults to per-measurement 3×iqr axis fitting with at least eight
   visible observations (bucket means for summaries), then unions the bounds
-  across selected series. zero-iqr signals retain their dominant level. a
+  across selected series on each axis. zero-iqr signals retain their dominant level. a
   full-range checkbox, filled raw-reading / hollow summary boundary triangles
   and off-scale readouts preserve access to extreme values without changing
   stored data. bucket quartiles remain approximate and rare legitimate states

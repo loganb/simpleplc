@@ -4,7 +4,7 @@ import type { FoundRecord, ReifiedQueryResult, Txn } from '../../lib/RestfulMode
 import { useTxnStatus } from '../../components/useTxnStatus';
 import { Measurement, Store } from '../../store';
 import type { LogicInputFields, LogicOutputFields, MeasurementFields } from '../../store';
-import type { HistorySource } from './historyTypes';
+import type { HistoryAxis, HistoryGraphSeries, HistorySource, MeasurementHistoryPointFields } from './historyTypes';
 import type { HistoryRange, MeasurementsUXState } from '../../uxTree';
 import { MeasurementHistoryGraph } from './MeasurementHistoryGraph';
 import { useMeasurementHistory } from './useMeasurementHistory';
@@ -24,14 +24,29 @@ export function MeasurementsTab({ measurements, ux, refreshToken, logicInputs = 
     const units = new Map<string, string | null>((JSON.parse(unitsKey) as [string, number, string | null][]).map(([type, id, unit]) => [`${type}:${id}`, unit?.trim() || null]));
     return (source: HistorySource) => source.value_type === 'number' ? units.get(`${source.source_type}:${source.source_id}`) ?? null : null;
   }, [unitsKey]);
-  const { range, deselected } = useLoaders(() => ({ range: ux.get('range') ?? '1hr', deselected: ux.get('deselectedIds') ?? [] }), [ux], []);
+  const { range, deselected, rightAxisIds } = useLoaders(() => ({
+    range: ux.get('range') ?? '1hr',
+    deselected: ux.get('deselectedIds') ?? [],
+    rightAxisIds: ux.get('rightAxisIds') ?? [],
+  }), [ux], []);
   const records = measurements.filter(record => record._found);
   const selected = records.filter(record => record._found && !deselected.includes(record.id as number));
   const history = useMeasurementHistory(selected.map(record => record.id as number), range, refreshToken);
-  const selectedKey = JSON.stringify(selected.map(record => [record.id, record.name]));
-  const series = useMemo(() => {
+  const axisFor = (id: number): HistoryAxis => rightAxisIds.includes(id) ? 'right' : 'left';
+  const toggleAxis = (id: number) => {
+    const current = ux.get('rightAxisIds') ?? [];
+    ux.set('rightAxisIds', current.includes(id) ? current.filter(item => item !== id) : [...current, id]);
+  };
+  const selectedKey = JSON.stringify(selected.map(record => [record.id, record.name, axisFor(record.id as number)]));
+  const series = useMemo<HistoryGraphSeries[]>(() => {
     const points = history.points?.filter(point => point._found) ?? [];
-    return selected.map(record => ({ measurementId: record.id as number, name: record.name, color: colorFor(record.id as number), points: points.filter(point => point._found && point.measurement_id === record.id).map(point => point as import('./historyTypes').MeasurementHistoryPointFields) }));
+    return selected.map(record => ({
+      measurementId: record.id as number,
+      name: record.name,
+      axis: axisFor(record.id as number),
+      color: colorFor(record.id as number),
+      points: points.filter(point => point.measurement_id === record.id) as MeasurementHistoryPointFields[],
+    }));
   }, [selectedKey, history.points]);
   const hasHistory = useMemo(() => series.some(item => hasVisibleHistory(item, { since: Date.parse(history.since), until: Date.parse(history.until) })), [series, history.since, history.until]);
   return <section class="space-y-5">
@@ -41,12 +56,24 @@ export function MeasurementsTab({ measurements, ux, refreshToken, logicInputs = 
       <div class="flex flex-wrap justify-center gap-1" aria-label="History range">{ranges.map(item => <button type="button" aria-pressed={range === item} class={`rounded px-3 py-1.5 text-sm ${range === item ? 'bg-active-bg text-active font-semibold ring-1 ring-active' : 'bg-surface-alt'}`} onClick={() => ux.set('range', item)}>{item}</button>)}</div>
       <MeasurementHistoryGraph series={series} since={history.since} until={history.until} onPlotWidth={history.onPlotWidth} unitsFor={unitsFor} />
       {selected.length === 0 ? <p role="status">Select a measurement to see its history.</p> : history.error ? <p role="alert">Could not load measurement history.</p> : history.loading ? <p role="status">Loading history…</p> : history.updating ? <p role="status">Updating history…</p> : !hasHistory ? <p role="status">No history in this range.</p> : null}
-      <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{records.map(record => record._found && <MeasurementCard key={String(record.id)} record={record} selected={!deselected.includes(record.id as number)} color={colorFor(record.id as number)} onSelect={() => ux.set('deselectedIds', deselected.includes(record.id as number) ? deselected.filter(id => id !== record.id as number) : [...deselected, record.id as number])} />)}</div>
+      <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{records.map(record => {
+        const id = record.id as number;
+        const isSelected = !deselected.includes(id);
+        return <MeasurementCard
+          key={id}
+          record={record}
+          selected={isSelected}
+          axis={axisFor(id)}
+          color={colorFor(id)}
+          onToggleAxis={() => toggleAxis(id)}
+          onSelect={() => ux.set('deselectedIds', isSelected ? [...deselected, id] : deselected.filter(item => item !== id))}
+        />;
+      })}</div>
     </>}
   </section>;
 }
 
-function MeasurementCard({ record, selected, color, onSelect }: { record: FoundRecord<MeasurementFields>; selected: boolean; color: string; onSelect: () => void }) {
+function MeasurementCard({ record, selected, axis, color, onSelect, onToggleAxis }: { record: FoundRecord<MeasurementFields>; selected: boolean; axis: HistoryAxis; color: string; onSelect: () => void; onToggleAxis: () => void }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [txn, setTxn] = useState<Txn>();
   const cardRef = useRef<HTMLDivElement>(null);
@@ -93,12 +120,17 @@ function MeasurementCard({ record, selected, color, onSelect }: { record: FoundR
     items[next].focus();
   };
   return <div ref={cardRef} onPointerDownCapture={() => { pointerDownInCard.current = menuOpen; }} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget as Node) && !pointerDownInCard.current) setMenuOpen(false); }} class={`group relative rounded-lg border ${selected ? '' : 'opacity-60'} ${menuOpen ? 'z-30' : ''}`} style={{ borderColor: selected ? color : undefined }}>
-    <button type="button" aria-label={`Select ${record.name} measurement`} aria-pressed={selected} onClick={onSelect} class="block min-h-full w-full rounded-lg p-4 pr-14 text-left">
-      <span class="block font-semibold"><span aria-hidden="true" class="mr-2 inline-block h-3 w-3 rounded-full" style={{ backgroundColor: color }} />{record.name}</span>
-      <span class="block text-sm text-text-muted">{record.source ? `${record.source.logic_instance_name} · ${record.source.name}` : 'Detached'}</span>
+    <button type="button" aria-label={`Select ${record.name} measurement`} aria-pressed={selected} onClick={onSelect} class="block min-h-full w-full rounded-lg p-4 text-left">
+      <span class="block pr-20 wrap-anywhere">
+        <span class="block font-semibold"><span aria-hidden="true" class="mr-2 inline-block h-3 w-3 rounded-full" style={{ backgroundColor: color }} />{record.name}</span>
+        <span class="block text-sm text-text-muted">{record.source ? `${record.source.logic_instance_name} · ${record.source.name}` : 'Detached'}</span>
+      </span>
       {record.preview.length === 0 ? <span class="mt-3 block text-sm text-text-muted">No recorded points yet.</span> : <span class="mt-3 block space-y-2 text-sm">{record.preview.slice(0, 1).map(point => 'snapshot' in point ? <span key={point.id} class="block border-t border-border pt-2"><span class="font-semibold">{point.snapshot.value === null ? 'Unavailable' : typeof point.snapshot.value === 'number' ? point.snapshot.value.toLocaleString(undefined, { maximumSignificantDigits: 6 }) : String(point.snapshot.value)}</span> <span class="text-text-muted">· {point.snapshot.logic_instance_name} · {point.snapshot.source_name} · {new Date(point.recorded_at).toLocaleString()}</span></span> : <span key={point.id} class="block border-t border-border pt-2">Summary · {point.sample_count} samples · {new Date(point.bucket_start).toLocaleString()}{point.summaries.map((group, index) => <span key={index} class="block text-text-muted">{group.logic_instance_name} · {group.source_name} · {Object.entries(group.statistics).map(([key, value]) => `${key}: ${String(value)}`).join(', ')}</span>)}</span>)}</span>}
     </button>
-    <button ref={triggerRef} type="button" aria-label={`Actions for ${record.name}`} aria-haspopup="menu" aria-expanded={menuOpen} aria-controls={menuId} disabled={saving} onClick={() => setMenuOpen(open => !open)} class="absolute right-2 top-2 rounded p-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 [@media(hover:hover)_and_(pointer:fine)]:opacity-0 [@media(hover:hover)_and_(pointer:fine)]:group-hover:opacity-100 [@media(hover:hover)_and_(pointer:fine)]:group-focus-within:opacity-100 [@media(hover:hover)_and_(pointer:fine)]:focus-visible:opacity-100">
+    <button type="button" aria-label={`${record.name} is on the ${axis} axis. Move to the ${axis === 'left' ? 'right' : 'left'} axis`} onClick={onToggleAxis} class="absolute right-12 top-2 flex h-10 w-10 items-center justify-center rounded hover:bg-surface-alt focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">
+      <span aria-hidden="true">{axis === 'left' ? '←' : '→'}</span>
+    </button>
+    <button ref={triggerRef} type="button" aria-label={`Actions for ${record.name}`} aria-haspopup="menu" aria-expanded={menuOpen} aria-controls={menuId} disabled={saving} onClick={() => setMenuOpen(open => !open)} class="absolute right-2 top-2 flex h-10 w-10 items-center justify-center rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 [@media(hover:hover)_and_(pointer:fine)]:opacity-0 [@media(hover:hover)_and_(pointer:fine)]:group-hover:opacity-100 [@media(hover:hover)_and_(pointer:fine)]:group-focus-within:opacity-100 [@media(hover:hover)_and_(pointer:fine)]:focus-visible:opacity-100">
       <span aria-hidden="true">⋮</span>
     </button>
     {menuOpen && <div ref={menuRef} id={menuId} role="menu" aria-label={`${record.name} actions`} onKeyDown={moveMenuFocus} class="absolute right-2 top-12 z-20 min-w-48 rounded border border-border bg-surface p-1 shadow-lg">

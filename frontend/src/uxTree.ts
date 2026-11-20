@@ -36,7 +36,7 @@ export type InstancesUXTree = {
 };
 
 export type HistoryRange = '1m' | '10m' | '1hr' | '24hr' | '7d' | '30d';
-export type MeasurementsUXTree = { data: { range: HistoryRange; deselectedIds: number[] } };
+export type MeasurementsUXTree = { data: { range: HistoryRange; deselectedIds: number[]; rightAxisIds: number[] } };
 export type MeasurementsUXState = URLTreeState<MeasurementsUXTree>;
 
 export type AppUXTree = UXTreeDefinition & {
